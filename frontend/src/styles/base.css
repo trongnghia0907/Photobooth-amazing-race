@@ -1,0 +1,24 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg-gradient: linear-gradient(135deg, #F0F7FF 0%, #FFFFFF 50%, #E0F2FE 100%);
+  --btn-gradient: linear-gradient(135deg, #2563EB 0%, #0EA5E9 55%, #38BDF8 100%);
+  --btn-gradient-hover: linear-gradient(135deg, #1D4ED8 0%, #0284C7 55%, #0EA5E9 100%);
+}
+
+* {
+  box-sizing: border-box;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  background: var(--bg-gradient);
+  color: #0F172A;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+

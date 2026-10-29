@@ -1,0 +1,66 @@
+.font-display-title {
+  font-family: 'Fredoka', sans-serif;
+  letter-spacing: 0.02em;
+}
+
+.btn-primary-blue {
+  background: var(--btn-gradient);
+  color: #ffffff;
+  box-shadow: 0 10px 25px -5px rgba(37, 99, 235, 0.45);
+  transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.btn-primary-blue:hover {
+  background: var(--btn-gradient-hover);
+  transform: translateY(-2px) scale(1.01);
+  box-shadow: 0 15px 32px -5px rgba(37, 99, 235, 0.55);
+}
+
+.btn-primary-blue:active {
+  transform: translateY(1px) scale(0.98);
+}
+
+.glass-card {
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(16px);
+  border: 1.5px solid rgba(186, 224, 253, 0.8);
+  box-shadow: 0 20px 50px -12px rgba(37, 99, 235, 0.12);
+}
+
+/* Flash Effect */
+@keyframes cameraFlash {
+  0% { opacity: 1; }
+  100% { opacity: 0; }
+}
+.flash-active {
+  animation: cameraFlash 0.45s ease-out forwards;
+}
+
+/* Countdown Pulse */
+@keyframes countPop {
+  0% { transform: scale(0.5); opacity: 0; }
+  50% { transform: scale(1.15); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+.count-animate {
+  animation: countPop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #F0F7FF;
+}
+::-webkit-scrollbar-thumb {
+  background: #93C5FD;
+  border-radius: 9999px;
+}
+
+/* Video Mirroring */
+.mirror-video {
+  transform: scaleX(-1);
+}
+

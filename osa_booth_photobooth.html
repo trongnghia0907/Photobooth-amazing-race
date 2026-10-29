@@ -1,0 +1,2493 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>OSA BOOTH — Osa first meeting Photobooth</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- QRCode.js CDN for instant client-side QR generation -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <!-- Google Fonts: Plus Jakarta Sans & Fredoka for cute modern photobooth headings -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['"Plus Jakarta Sans"', 'sans-serif'],
+            display: ['"Fredoka"', 'sans-serif'],
+          },
+          colors: {
+            brand: {
+              50: '#F0F7FF',
+              100: '#E0EFFE',
+              200: '#BAE0FD',
+              300: '#7CC8FB',
+              400: '#38BDF8',
+              500: '#0EA5E9',
+              600: '#2563EB',
+              700: '#1D4ED8',
+              800: '#1E40AF',
+              900: '#0F172A',
+            }
+          },
+          boxShadow: {
+            'soft-blue': '0 20px 50px -12px rgba(37, 99, 235, 0.15)',
+            'glow-blue': '0 10px 30px -5px rgba(14, 165, 233, 0.45)',
+            'card-blue': '0 8px 30px rgba(37, 99, 235, 0.08)',
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    :root {
+      --bg-gradient: linear-gradient(135deg, #F0F7FF 0%, #FFFFFF 50%, #E0F2FE 100%);
+      --btn-gradient: linear-gradient(135deg, #2563EB 0%, #0EA5E9 55%, #38BDF8 100%);
+      --btn-gradient-hover: linear-gradient(135deg, #1D4ED8 0%, #0284C7 55%, #0EA5E9 100%);
+    }
+
+    * {
+      box-sizing: border-box;
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    body {
+      background: var(--bg-gradient);
+      color: #0F172A;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    .font-display-title {
+      font-family: 'Fredoka', sans-serif;
+      letter-spacing: 0.02em;
+    }
+
+    .btn-primary-blue {
+      background: var(--btn-gradient);
+      color: #ffffff;
+      box-shadow: 0 10px 25px -5px rgba(37, 99, 235, 0.45);
+      transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+
+    .btn-primary-blue:hover {
+      background: var(--btn-gradient-hover);
+      transform: translateY(-2px) scale(1.01);
+      box-shadow: 0 15px 32px -5px rgba(37, 99, 235, 0.55);
+    }
+
+    .btn-primary-blue:active {
+      transform: translateY(1px) scale(0.98);
+    }
+
+    .glass-card {
+      background: rgba(255, 255, 255, 0.92);
+      backdrop-filter: blur(16px);
+      border: 1.5px solid rgba(186, 224, 253, 0.8);
+      box-shadow: 0 20px 50px -12px rgba(37, 99, 235, 0.12);
+    }
+
+    /* Flash Effect */
+    @keyframes cameraFlash {
+      0% { opacity: 1; }
+      100% { opacity: 0; }
+    }
+    .flash-active {
+      animation: cameraFlash 0.45s ease-out forwards;
+    }
+
+    /* Countdown Pulse */
+    @keyframes countPop {
+      0% { transform: scale(0.5); opacity: 0; }
+      50% { transform: scale(1.15); opacity: 1; }
+      100% { transform: scale(1); opacity: 1; }
+    }
+    .count-animate {
+      animation: countPop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+    }
+
+    /* Custom Scrollbar */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #F0F7FF;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #93C5FD;
+      border-radius: 9999px;
+    }
+
+    /* Video Mirroring */
+    .mirror-video {
+      transform: scaleX(-1);
+    }
+
+    /* Print Media Query - Optimized strictly for Photobooth Printer Paper */
+    @media print {
+      @page {
+        margin: 0;
+        size: auto;
+      }
+      html, body {
+        margin: 0 !important;
+        padding: 0 !important;
+        background: #FFFFFF !important;
+        width: 100% !important;
+        height: 100% !important;
+        overflow: hidden !important;
+      }
+      body > *:not(#printArea) {
+        display: none !important;
+      }
+      #printArea {
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        width: 100vw !important;
+        height: 100vh !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        background: #FFFFFF !important;
+      }
+      #printArea img {
+        max-width: 100% !important;
+        max-height: 100vh !important;
+        width: auto !important;
+        height: auto !important;
+        object-fit: contain !important;
+        display: block !important;
+      }
+    }
+  </style>
+</head>
+<body class="flex flex-col min-h-screen selection:bg-brand-500 selection:text-white">
+
+  <!-- ================= PRINT-ONLY CONTAINER ================= -->
+  <div id="printArea" class="hidden">
+    <img id="printImageElement" src="" alt="Photobooth Print Output" />
+  </div>
+
+  <!-- ================= SCREEN FLASH OVERLAY ================= -->
+  <div id="flashOverlay" class="fixed inset-0 bg-white pointer-events-none opacity-0 z-50"></div>
+
+  <!-- ================= TOAST NOTIFICATION ================= -->
+  <div id="toastContainer" class="fixed top-5 right-5 z-50 flex flex-col gap-2 max-w-sm w-full pointer-events-none px-4 sm:px-0"></div>
+
+  <!-- ================= TOP NAVIGATION BAR ================= -->
+  <header class="w-full bg-white/80 backdrop-blur-md border-b border-brand-100 sticky top-0 z-40">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
+      <!-- Brand Logo -->
+      <div class="flex items-center gap-3 cursor-pointer" onclick="app.goToScreen('home')">
+        <div class="w-10 h-10 rounded-2xl btn-primary-blue flex items-center justify-center shadow-md">
+          <span class="text-xl">📸</span>
+        </div>
+        <div>
+          <span class="font-display-title text-xl font-bold bg-gradient-to-r from-brand-700 via-brand-600 to-brand-400 bg-clip-text text-transparent">
+            OSA BOOTH
+          </span>
+          <span class="hidden sm:inline-block ml-2 text-xs font-semibold px-2.5 py-0.5 rounded-full bg-brand-100 text-brand-700 border border-brand-200">
+            Osa first meeting
+          </span>
+        </div>
+      </div>
+
+      <!-- Center Step Pills -->
+      <div class="hidden md:flex items-center gap-2 bg-brand-50 p-1.5 rounded-full border border-brand-100">
+        <button id="stepNavHome" onclick="app.goToScreen('home')" class="px-4 py-1.5 rounded-full text-xs font-bold transition-all bg-brand-600 text-white shadow-sm">
+          1. Khởi tạo & Khung
+        </button>
+        <button id="stepNavCapture" onclick="app.goToScreen('capture')" class="px-4 py-1.5 rounded-full text-xs font-bold transition-all text-brand-700 hover:bg-brand-100">
+          2. Chụp 6 Tấm
+        </button>
+        <button id="stepNavResult" onclick="app.goToScreen('result')" class="px-4 py-1.5 rounded-full text-xs font-bold transition-all text-brand-700 hover:bg-brand-100">
+          3. Tuỳ chỉnh, QR & In
+        </button>
+      </div>
+
+      <!-- Quick Controls & Settings -->
+      <div class="flex items-center gap-2.5">
+        <!-- Full Auto Mode Badge Toggle -->
+        <button id="autoModeHeaderBtn" onclick="app.toggleFullAutoMode()" class="flex items-center gap-2 px-3.5 py-2 rounded-full text-xs font-bold border transition-all bg-brand-50 border-brand-300 text-brand-700 hover:bg-brand-100" title="Bật/Tắt chế độ Tự động Chụp -> Tạo QR -> Tự động In">
+          <span id="autoModeDot" class="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+          <span>Tự động: <strong id="autoModeStatusText">BẬT</strong></span>
+        </button>
+
+        <!-- Upload Custom Frame Quick Button -->
+        <label class="cursor-pointer flex items-center gap-1.5 px-3.5 py-2 rounded-full text-xs font-bold bg-white border border-brand-200 text-brand-700 hover:bg-brand-50 shadow-sm transition-all">
+          <svg class="w-4 h-4 text-brand-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+          </svg>
+          <span class="hidden sm:inline">Tải Frame PNG</span>
+          <input type="file" accept="image/png,image/webp,image/jpeg" class="hidden" onchange="app.handleCustomFrameUpload(event)" />
+        </label>
+
+        <!-- Hardware & Kiosk Settings Modal Trigger -->
+        <button onclick="app.openSettingsModal()" class="p-2.5 rounded-full bg-white border border-brand-200 text-brand-700 hover:bg-brand-50 shadow-sm transition-all" title="Cài đặt Camera, Khung mẫu & Máy in">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- ================= MAIN CONTENT AREA ================= -->
+  <main class="flex-1 flex flex-col items-center justify-center p-4 sm:p-6 max-w-7xl w-full mx-auto">
+
+    <!-- =====================================================================
+         SCREEN 1: HOME / WELCOME & SETUP
+         ===================================================================== -->
+    <section id="screenHome" class="w-full max-w-5xl grid grid-cols-1 lg:grid-cols-12 gap-6 items-center my-auto">
+      
+      <!-- Left Column: Cute Kiosk Launch Card -->
+      <div class="lg:col-span-6 flex flex-col items-center">
+        <div class="w-full max-w-md glass-card rounded-[2.2rem] p-8 sm:p-10 text-center relative overflow-hidden">
+          <span class="absolute top-6 left-7 text-2xl select-none">✨</span>
+          <span class="absolute top-6 right-7 text-2xl select-none">💙</span>
+          <span class="absolute bottom-20 left-7 text-xl select-none">❄️</span>
+          <span class="absolute bottom-20 right-7 text-xl select-none">💎</span>
+
+          <!-- Big Circular Camera Hero Icon -->
+          <div class="w-24 h-24 mx-auto mb-6 rounded-full btn-primary-blue flex items-center justify-center shadow-glow-blue">
+            <svg class="w-12 h-12 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/>
+              <circle cx="12" cy="13" r="3.5" stroke-width="2"/>
+            </svg>
+          </div>
+
+          <!-- Title -->
+          <h1 class="font-display-title text-3xl sm:text-4xl font-bold tracking-tight leading-tight mb-3">
+            <span class="bg-gradient-to-r from-brand-700 via-brand-600 to-brand-400 bg-clip-text text-transparent block">OSA BOOTH</span>
+          </h1>
+
+          <!-- Subtitle Pill -->
+          <div class="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-brand-50 border border-brand-200 text-brand-800 text-xs sm:text-sm font-semibold mb-7">
+            <span>✨</span>
+            <span>Osa first meeting • Chụp 6 tấm • QR & In ngay</span>
+            <span>✨</span>
+          </div>
+
+          <!-- Active Frame Status Banner -->
+          <div class="mb-7 p-3.5 rounded-2xl bg-brand-50/90 border border-brand-200 flex items-center justify-between text-left">
+            <div class="flex items-center gap-3">
+              <div id="homeFrameThumb" class="w-10 h-12 rounded-lg bg-white border border-brand-200 flex items-center justify-center overflow-hidden shadow-sm shrink-0">
+                <span class="text-xs font-bold text-brand-600">OSA</span>
+              </div>
+              <div>
+                <div class="text-xs font-bold text-brand-900" id="homeFrameName">Frame: Osa first meeting</div>
+                <div class="text-[11px] text-brand-600 font-medium" id="homeFrameDesc">Bố cục 6 ô chuẩn</div>
+              </div>
+            </div>
+            <label class="cursor-pointer px-3 py-1.5 rounded-xl bg-white hover:bg-brand-100 text-brand-700 border border-brand-200 text-xs font-bold transition-all shrink-0 shadow-sm">
+              Up Frame PNG
+              <input type="file" accept="image/png,image/webp,image/jpeg" class="hidden" onchange="app.handleCustomFrameUpload(event)" />
+            </label>
+          </div>
+
+          <!-- Giant 1-Click Automatic Start Button -->
+          <button onclick="app.startAutomaticSession()" class="w-full py-5 px-8 rounded-full btn-primary-blue font-extrabold text-lg sm:text-xl tracking-wide flex items-center justify-center gap-3 shadow-glow-blue mb-6">
+            <span>BẮT ĐẦU CHỤP NGAY</span>
+            <span class="text-2xl">📸</span>
+          </button>
+
+          <!-- Bottom Feature Pills -->
+          <div class="flex flex-wrap items-center justify-center gap-2 text-xs font-bold text-brand-700">
+            <span class="px-3.5 py-1.5 rounded-full bg-brand-50 border border-brand-100">☆ 6 Tấm Liên Tiếp</span>
+            <span class="px-3.5 py-1.5 rounded-full bg-brand-50 border border-brand-100">📱 Quét Mã QR</span>
+            <span class="px-3.5 py-1.5 rounded-full bg-brand-50 border border-brand-100">🖨️ Tự Động In</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right Column: Frame & Timer Setup Card -->
+      <div class="lg:col-span-6 flex flex-col">
+        <div class="glass-card rounded-[2.2rem] p-6 sm:p-8">
+          <div class="text-center sm:text-left mb-5 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div>
+              <h2 class="font-display-title text-2xl sm:text-3xl font-bold bg-gradient-to-r from-brand-700 to-brand-500 bg-clip-text text-transparent flex items-center justify-center sm:justify-start gap-2">
+                <span>✨ Chọn Khung & Thiết Bị ✨</span>
+              </h2>
+              <p class="text-xs sm:text-sm text-slate-500 font-medium mt-0.5">
+                Tải lên frame PNG cá nhân của bạn hoặc chọn mẫu 6 ô có sẵn
+              </p>
+            </div>
+          </div>
+
+          <!-- Camera Device Selector -->
+          <div class="mb-5 p-4 rounded-2xl bg-brand-50/70 border border-brand-100">
+            <div class="flex items-center justify-between mb-2">
+              <label class="text-xs font-extrabold uppercase tracking-wider text-brand-800 flex items-center gap-1.5">
+                <svg class="w-4 h-4 text-brand-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+                </svg>
+                Kết nối Camera / Webcam
+              </label>
+              <button onclick="app.refreshCameraList()" class="text-xs font-bold text-brand-600 hover:text-brand-800 flex items-center gap-1">
+                <span>🔄 Làm mới</span>
+              </button>
+            </div>
+            <div class="flex gap-2">
+              <select id="homeCameraSelect" onchange="app.selectCameraDevice(this.value)" class="flex-1 bg-white border border-brand-200 rounded-xl px-3.5 py-2.5 text-sm font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-brand-500">
+                <option value="">Đang tìm thiết bị camera...</option>
+              </select>
+              <button onclick="app.toggleMirror()" id="homeMirrorBtn" class="px-3.5 py-2.5 rounded-xl bg-white border border-brand-200 text-xs font-bold text-brand-700 hover:bg-brand-100 transition-all shrink-0" title="Lật ngược ảnh gương">
+                🪞 Lật gương: BẬT
+              </button>
+            </div>
+          </div>
+
+          <!-- Frame Layout / Custom Frame Upload List -->
+          <div class="space-y-3 mb-6">
+            <!-- Option 1: Upload Personal PNG Frame (6 Slots) -->
+            <div id="frameCardCustom" class="p-4 rounded-2xl border-2 transition-all cursor-pointer flex items-center justify-between bg-white border-brand-200 hover:border-brand-400" onclick="document.getElementById('customFrameInputMain').click()">
+              <div class="flex items-center gap-3.5">
+                <div class="w-12 h-12 rounded-2xl bg-brand-100 text-brand-600 flex items-center justify-center text-2xl shrink-0">
+                  🖼️
+                </div>
+                <div>
+                  <div class="font-bold text-slate-900 text-sm sm:text-base flex items-center gap-2">
+                    <span>Up Frame PNG: Osa first meeting (6 Ô)</span>
+                    <span id="customFrameBadge" class="hidden px-2 py-0.5 text-[10px] rounded-full bg-brand-600 text-white font-bold">ĐANG DÙNG</span>
+                  </div>
+                  <p class="text-xs text-slate-500 mt-0.5" id="customFrameSubtext">
+                    Nhấn để tải file Frame PNG cá nhân của bạn (Tự động khớp 6 ô trống)
+                  </p>
+                </div>
+              </div>
+              <div class="flex items-center gap-2">
+                <button type="button" onclick="event.stopPropagation(); app.openSlotCalibrator()" id="calibrateSlotsBtn" class="hidden px-3 py-1.5 rounded-xl bg-brand-50 hover:bg-brand-100 text-brand-700 text-xs font-bold border border-brand-200">
+                  Căn chỉnh ô
+                </button>
+                <div class="w-9 h-9 rounded-full bg-brand-50 border border-brand-200 flex items-center justify-center text-brand-600 font-bold">
+                  ↑
+                </div>
+              </div>
+              <input id="customFrameInputMain" type="file" accept="image/png,image/webp,image/jpeg" class="hidden" onchange="app.handleCustomFrameUpload(event)" />
+            </div>
+
+            <!-- Option 2: Standard 2x3 Grid (6 Photos - Vertical Photobooth Card 4x6) -->
+            <div id="frameCardGrid2x3" onclick="app.selectPresetLayout('grid2x3')" class="p-4 rounded-2xl border-2 transition-all cursor-pointer flex items-center justify-between bg-brand-50/80 border-brand-500 shadow-sm">
+              <div class="flex items-center gap-3.5">
+                <div class="w-12 h-12 rounded-2xl bg-brand-600 text-white flex items-center justify-center text-xl font-bold shrink-0">
+                  2×3
+                </div>
+                <div>
+                  <div class="font-bold text-slate-900 text-sm sm:text-base">Frame Osa first meeting — Dọc (2 Cột × 3 Hàng)</div>
+                  <p class="text-xs text-slate-500">Khung 6 ô dọc tiêu chuẩn OSA BOOTH (10×15cm)</p>
+                </div>
+              </div>
+              <div class="grid grid-cols-2 gap-1 p-1.5 bg-white rounded-lg border border-brand-200">
+                <div class="w-3 h-2.5 rounded-sm bg-brand-500"></div>
+                <div class="w-3 h-2.5 rounded-sm bg-brand-500"></div>
+                <div class="w-3 h-2.5 rounded-sm bg-brand-500"></div>
+                <div class="w-3 h-2.5 rounded-sm bg-brand-500"></div>
+                <div class="w-3 h-2.5 rounded-sm bg-brand-500"></div>
+                <div class="w-3 h-2.5 rounded-sm bg-brand-500"></div>
+              </div>
+            </div>
+
+            <!-- Option 3: Horizontal 3x2 Grid (6 Photos Landscape) -->
+            <div id="frameCardGrid3x2" onclick="app.selectPresetLayout('grid3x2')" class="p-4 rounded-2xl border-2 transition-all cursor-pointer flex items-center justify-between bg-white border-brand-100 hover:border-brand-300">
+              <div class="flex items-center gap-3.5">
+                <div class="w-12 h-12 rounded-2xl bg-brand-100 text-brand-700 flex items-center justify-center text-xl font-bold shrink-0">
+                  3×2
+                </div>
+                <div>
+                  <div class="font-bold text-slate-900 text-sm sm:text-base">Frame Osa first meeting — Ngang (3 Cột × 2 Hàng)</div>
+                  <p class="text-xs text-slate-500">Khung 6 ô ngang hiện đại OSA BOOTH</p>
+                </div>
+              </div>
+              <div class="grid grid-cols-3 gap-1 p-1.5 bg-brand-50 rounded-lg border border-brand-200">
+                <div class="w-2.5 h-2.5 rounded-sm bg-brand-400"></div>
+                <div class="w-2.5 h-2.5 rounded-sm bg-brand-400"></div>
+                <div class="w-2.5 h-2.5 rounded-sm bg-brand-400"></div>
+                <div class="w-2.5 h-2.5 rounded-sm bg-brand-400"></div>
+                <div class="w-2.5 h-2.5 rounded-sm bg-brand-400"></div>
+                <div class="w-2.5 h-2.5 rounded-sm bg-brand-400"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Countdown Timer Selector -->
+          <div>
+            <div class="flex items-center justify-between mb-2.5">
+              <span class="text-xs font-extrabold uppercase tracking-wider text-brand-800 flex items-center gap-1.5">
+                <span>⏱️ Thời gian đếm ngược mỗi tấm (Timer)</span>
+              </span>
+              <span class="text-xs font-semibold text-brand-600" id="timerHintText">5 giây / tấm</span>
+            </div>
+            <div class="grid grid-cols-4 gap-2.5">
+              <button onclick="app.setCountdownSeconds(3)" id="timerBtn3" class="py-3 rounded-2xl font-extrabold text-sm border transition-all bg-brand-50 border-brand-200 text-brand-800 hover:bg-brand-100">
+                3s (Nhanh)
+              </button>
+              <button onclick="app.setCountdownSeconds(5)" id="timerBtn5" class="py-3 rounded-2xl font-extrabold text-sm border transition-all btn-primary-blue text-white border-transparent">
+                5s (Chuẩn)
+              </button>
+              <button onclick="app.setCountdownSeconds(7)" id="timerBtn7" class="py-3 rounded-2xl font-extrabold text-sm border transition-all bg-brand-50 border-brand-200 text-brand-800 hover:bg-brand-100">
+                7s
+              </button>
+              <button onclick="app.setCountdownSeconds(10)" id="timerBtn10" class="py-3 rounded-2xl font-extrabold text-sm border transition-all bg-brand-50 border-brand-200 text-brand-800 hover:bg-brand-100">
+                10s
+              </button>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </section>
+
+
+    <!-- =====================================================================
+         SCREEN 2: LIVE CAMERA CAPTURE (6-Shot Sequence)
+         ===================================================================== -->
+    <section id="screenCapture" class="hidden w-full max-w-6xl my-auto">
+      <div class="flex flex-wrap items-center justify-between gap-3 mb-4 bg-white/90 backdrop-blur-md px-5 py-3.5 rounded-2xl border border-brand-100 shadow-card-blue">
+        <button onclick="app.goToScreen('home')" class="flex items-center gap-1.5 text-sm font-bold text-brand-700 hover:text-brand-900 transition-all">
+          <span>← Quay lại</span>
+        </button>
+
+        <div class="flex items-center gap-3">
+          <span id="captureProgressTitle" class="font-display-title text-lg sm:text-xl font-bold text-brand-900">
+            Tấm 1 / 6
+          </span>
+          <div id="captureDotsContainer" class="flex items-center gap-1.5"></div>
+        </div>
+
+        <div class="flex items-center gap-2">
+          <select id="liveCameraSelect" onchange="app.selectCameraDevice(this.value)" class="bg-brand-50 border border-brand-200 rounded-xl px-3 py-1.5 text-xs font-bold text-brand-800 focus:outline-none"></select>
+          <button onclick="app.toggleMirror()" class="p-2 rounded-xl bg-brand-50 hover:bg-brand-100 text-brand-700 border border-brand-200 text-xs font-bold" title="Lật gương">🪞</button>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
+        <div class="lg:col-span-8 flex flex-col">
+          <div class="relative w-full aspect-[4/3] bg-slate-900 rounded-[2rem] overflow-hidden border-4 border-white shadow-soft-blue flex items-center justify-center">
+            <video id="liveVideo" autoplay playsinline muted class="w-full h-full object-cover mirror-video"></video>
+            <canvas id="simLiveCanvas" width="960" height="720" class="hidden w-full h-full object-cover"></canvas>
+
+            <div id="cameraFallbackBar" class="hidden absolute top-4 left-4 right-4 z-20 flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 rounded-2xl bg-slate-900/75 backdrop-blur-md border border-brand-300/40 text-white text-xs">
+              <div class="flex items-center gap-2">
+                <span class="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse"></span>
+                <span class="font-semibold">Đang dùng Camera Mô Phỏng (Chưa cấp quyền Webcam)</span>
+              </div>
+              <div class="flex items-center gap-2">
+                <button type="button" onclick="app.requestRealCameraPermission()" class="px-3 py-1 rounded-xl bg-brand-500 hover:bg-brand-400 text-white font-bold transition-all">📷 Cấp quyền Camera</button>
+                <label class="cursor-pointer px-3 py-1 rounded-xl bg-white/20 hover:bg-white/30 text-white font-bold transition-all">
+                  📁 Chọn 6 ảnh từ máy
+                  <input type="file" accept="image/*" multiple class="hidden" onchange="app.handleManualPhotoFilesUpload(event)" />
+                </label>
+              </div>
+            </div>
+
+            <div class="absolute inset-4 border-2 border-dashed border-white/40 rounded-2xl pointer-events-none flex items-end justify-center pb-3">
+              <span class="px-3 py-1 rounded-full bg-slate-900/50 backdrop-blur-sm text-white/90 text-xs font-semibold">Hãy nhìn vào ống kính & tạo dáng thật tươi nhé! ✨</span>
+            </div>
+
+            <div id="retakeBanner" class="hidden absolute top-4 left-1/2 -translate-x-1/2 px-5 py-2 rounded-full bg-amber-500 text-white font-extrabold text-xs sm:text-sm shadow-lg z-20 flex items-center gap-2">
+              <span>🔄 Đang chụp lại Ô số <span id="retakeSlotNumber">1</span></span>
+              <button onclick="app.cancelSingleRetake()" class="underline ml-2 text-white/90 hover:text-white">Huỷ</button>
+            </div>
+
+            <div id="countdownOverlay" class="hidden absolute inset-0 bg-brand-900/25 backdrop-blur-[2px] flex flex-col items-center justify-center z-20 pointer-events-none">
+              <div id="countdownNumber" class="font-display-title text-[7rem] sm:text-[9rem] font-bold text-white drop-shadow-[0_10px_25px_rgba(37,99,235,0.85)] leading-none">5</div>
+              <div id="countdownLabel" class="mt-2 px-5 py-2 rounded-full bg-white/90 text-brand-800 font-extrabold text-sm sm:text-base shadow-lg">Chuẩn bị chụp tấm #1...</div>
+            </div>
+
+            <div id="autoGraceOverlay" class="hidden absolute inset-x-6 bottom-6 p-5 rounded-3xl bg-white/95 backdrop-blur-md border-2 border-brand-400 shadow-2xl z-30 flex flex-col sm:flex-row items-center justify-between gap-4">
+              <div class="text-center sm:text-left">
+                <div class="font-extrabold text-brand-900 text-base flex items-center justify-center sm:justify-start gap-2">
+                  <span class="w-3 h-3 rounded-full bg-emerald-500 animate-ping"></span>
+                  <span>Đã chụp đủ 6 tấm! Tự động tạo QR & In sau <span id="graceSecondsText" class="text-brand-600 text-lg">5</span>s...</span>
+                </div>
+                <p class="text-xs text-slate-600 font-medium mt-0.5">Chạm vào bất kỳ ảnh nào bên phải nếu bạn muốn <strong>chụp lại (Retake)</strong> ô đó.</p>
+              </div>
+              <div class="flex items-center gap-2 shrink-0">
+                <button onclick="app.pauseAutoGraceForReview()" class="px-4 py-2.5 rounded-xl bg-brand-100 hover:bg-brand-200 text-brand-800 font-bold text-xs transition-all">✋ Dừng để xem lại</button>
+                <button onclick="app.finishCaptureAndGoToResult(true)" class="px-5 py-2.5 rounded-xl btn-primary-blue font-bold text-xs">Tiếp tục ngay →</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="mt-5 flex flex-wrap items-center justify-center gap-4">
+            <button id="mainCaptureBtn" onclick="app.startOrContinueSequence()" class="px-10 py-4 rounded-full btn-primary-blue font-extrabold text-base sm:text-lg flex items-center gap-3 shadow-glow-blue">
+              <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/>
+                <circle cx="12" cy="13" r="3" stroke-width="2.2"/>
+              </svg>
+              <span id="mainCaptureBtnText">Bắt Đầu Chụp Tự Động (6 Tấm)</span>
+            </button>
+            <button id="manualInstantSnapBtn" onclick="app.captureCurrentFrameImmediately()" class="px-5 py-4 rounded-full bg-white hover:bg-brand-50 text-brand-700 border border-brand-200 font-bold text-sm shadow-sm transition-all">⚡ Chụp tức thì</button>
+            <button id="resetAllShotsBtn" onclick="app.resetSessionShots()" class="px-5 py-4 rounded-full bg-white hover:bg-rose-50 text-rose-600 border border-rose-200 font-bold text-sm shadow-sm transition-all">🗑️ Xoá chụp lại từ đầu</button>
+          </div>
+        </div>
+
+        <div class="lg:col-span-4 flex flex-col">
+          <div class="glass-card rounded-[2rem] p-5 flex-1 flex flex-col justify-between">
+            <div>
+              <div class="flex items-center justify-between mb-3">
+                <h3 class="font-display-title text-lg font-bold text-brand-900">Khung 6 Tấm Đã Chụp</h3>
+                <span class="text-xs font-bold px-2.5 py-1 rounded-full bg-brand-100 text-brand-700" id="capturedCountBadge">0 / 6 hoàn tất</span>
+              </div>
+              <p class="text-xs text-slate-500 mb-4">Nhấn vào <strong>từng ô ảnh</strong> bên dưới nếu bạn muốn xoá hoặc chụp lại riêng tấm đó.</p>
+              <div id="sixSlotsGrid" class="grid grid-cols-2 gap-3"></div>
+            </div>
+
+            <div class="mt-5 pt-4 border-t border-brand-100">
+              <button id="goToResultBtn" onclick="app.finishCaptureAndGoToResult(false)" disabled class="w-full py-4 rounded-2xl font-extrabold text-sm sm:text-base transition-all flex items-center justify-center gap-2 bg-slate-200 text-slate-400 cursor-not-allowed">
+                <span>Hoàn Tất & Xuất Ảnh In ✨</span>
+                <span>→</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+
+    <!-- =====================================================================
+         SCREEN 3: CUSTOMIZE, QR CODE & PRINT
+         ===================================================================== -->
+    <section id="screenResult" class="hidden w-full max-w-6xl my-auto">
+      <div class="glass-card rounded-full px-6 py-3.5 mb-6 flex items-center justify-between">
+        <button onclick="app.goToScreen('capture')" class="flex items-center gap-1.5 text-sm font-bold text-brand-700 hover:text-brand-900">
+          <span>← Chụp lại</span>
+        </button>
+        <div class="font-display-title text-xl sm:text-2xl font-bold bg-gradient-to-r from-brand-700 via-brand-600 to-brand-400 bg-clip-text text-transparent flex items-center gap-2">
+          <span>✨ Tuỳ Chỉnh & Nhận Ảnh ✨</span>
+        </div>
+        <button onclick="app.startNewGuestSession()" class="px-4 py-1.5 rounded-full bg-brand-100 hover:bg-brand-200 text-brand-800 text-xs sm:text-sm font-extrabold transition-all">🔄 Khách tiếp theo</button>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        <div class="lg:col-span-5 flex flex-col items-center">
+          <div class="glass-card rounded-[2rem] p-5 w-full flex flex-col items-center">
+            <div class="flex items-center justify-between w-full mb-3 px-1">
+              <span class="text-xs font-extrabold uppercase tracking-wider text-brand-700">Bản Xem Trước Chất Lượng Cao</span>
+              <span class="text-[11px] font-semibold text-slate-500">Kéo thả để di chuyển Sticker</span>
+            </div>
+
+            <div class="relative w-full flex items-center justify-center bg-brand-50/70 rounded-2xl p-3 border border-brand-100 overflow-hidden">
+              <canvas id="compositeCanvas" class="max-w-full max-h-[62vh] w-auto h-auto rounded-xl shadow-soft-blue cursor-grab active:cursor-grabbing bg-white"></canvas>
+            </div>
+
+            <div class="grid grid-cols-2 gap-3 w-full mt-5">
+              <button onclick="app.triggerPrint()" class="py-4 px-5 rounded-2xl btn-primary-blue font-extrabold text-sm sm:text-base flex items-center justify-center gap-2 shadow-glow-blue">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/>
+                </svg>
+                <span>IN NGAY</span>
+              </button>
+              <button onclick="app.downloadCompositeImage()" class="py-4 px-5 rounded-2xl bg-white hover:bg-brand-50 text-brand-700 border-2 border-brand-300 font-extrabold text-sm sm:text-base flex items-center justify-center gap-2 shadow-sm transition-all">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+                </svg>
+                <span>TẢI ẢNH VỀ</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="lg:col-span-7 flex flex-col gap-5">
+          <div class="glass-card rounded-[2rem] p-5 sm:p-6 border-2 border-brand-300 bg-gradient-to-br from-white via-brand-50/50 to-brand-100/40">
+            <div class="flex flex-col sm:flex-row items-center gap-5">
+              <div class="p-3.5 bg-white rounded-2xl border-2 border-brand-200 shadow-md shrink-0 flex flex-col items-center relative">
+                <div id="qrCodeContainer" class="w-36 h-36 flex items-center justify-center relative"></div>
+                <div id="qrLoadingOverlay" class="hidden absolute inset-3.5 bg-white/95 backdrop-blur-xs rounded-xl flex flex-col items-center justify-center gap-2 z-10">
+                  <div class="w-8 h-8 border-3 border-brand-600 border-t-transparent rounded-full animate-spin"></div>
+                  <span class="text-[10px] font-extrabold text-brand-700 text-center px-2">Đang tạo trang Web tải ảnh...</span>
+                </div>
+                <span id="qrStatusBadge" class="mt-2 text-[11px] font-extrabold px-2.5 py-0.5 rounded-full bg-brand-100 text-brand-700">📱 Quét để tải ảnh</span>
+              </div>
+
+              <div class="flex-1 text-center sm:text-left w-full">
+                <div class="flex flex-wrap items-center justify-center sm:justify-start gap-2 mb-2">
+                  <span id="qrReadyPill" class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-100 text-emerald-800 text-xs font-extrabold">
+                    <span>🌐 Đã liên kết Web QR Tải Ảnh</span>
+                  </span>
+                  <select id="qrProviderSelect" onchange="app.setQRProvider(this.value)" class="px-2.5 py-1 rounded-full bg-white border border-brand-200 text-[11px] font-bold text-brand-800 focus:outline-none">
+                    <option value="tmpfiles_direct">⚡ Web Ảnh Trực Tiếp (Khuyên dùng)</option>
+                    <option value="tmpfiles_page">🌐 Trang Web Tải File (TmpFiles)</option>
+                    <option value="fileio">📦 Trang Tải Nhanh (File.io)</option>
+                  </select>
+                </div>
+
+                <h3 class="font-display-title text-xl sm:text-2xl font-bold text-brand-900 mb-1">Quét Mã QR Để Tải Ảnh Về Điện Thoại</h3>
+                <p id="qrDescriptionText" class="text-xs text-slate-600 font-medium mb-3">Quét mã QR bằng Camera hoặc Zalo trên điện thoại để mở trang web và lưu ảnh về máy!</p>
+
+                <div class="flex items-center gap-2 p-2 rounded-xl bg-white border border-brand-200 mb-3 shadow-2xs">
+                  <input id="qrExternalUrlInput" type="text" readonly value="Đang khởi tạo đường dẫn tải ảnh..." class="flex-1 text-xs font-mono text-brand-800 bg-transparent px-2 focus:outline-none truncate" />
+                  <button onclick="app.copyQRLink()" class="px-2.5 py-1.5 rounded-lg bg-brand-50 hover:bg-brand-100 text-brand-700 text-[11px] font-bold shrink-0 transition-all">📋 Copy</button>
+                  <a id="qrExternalOpenBtn" href="#" target="_blank" rel="noopener noreferrer" class="px-3 py-1.5 rounded-lg btn-primary-blue text-white text-[11px] font-extrabold shrink-0 flex items-center gap-1"><span>Mở Web ↗</span></a>
+                </div>
+
+                <div class="flex flex-wrap items-center justify-center sm:justify-start gap-2">
+                  <button onclick="app.generateQRCodeForCurrentPhoto(true)" class="px-3.5 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold transition-all shadow-xs flex items-center gap-1.5"><span>🔄 Cập nhật lại Link QR</span></button>
+                  <button onclick="app.openMobilePreviewModal()" class="px-3.5 py-2 rounded-xl bg-white hover:bg-brand-50 text-brand-700 border border-brand-200 text-xs font-bold transition-all">📱 Xem thử giao diện ĐT</button>
+                  <label class="cursor-pointer px-3.5 py-2 rounded-xl bg-white hover:bg-brand-50 text-brand-700 border border-brand-200 text-xs font-bold transition-all">
+                    🖼️ Đổi Frame PNG
+                    <input type="file" accept="image/png,image/webp,image/jpeg" class="hidden" onchange="app.handleCustomFrameUpload(event)" />
+                  </label>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 4 Pill Customization Tabs -->
+          <div class="grid grid-cols-4 gap-2.5">
+            <button onclick="app.switchCustomTab('filters')" id="tabBtn_filters" class="py-3 px-3 rounded-full font-extrabold text-xs sm:text-sm flex items-center justify-center gap-1.5 transition-all btn-primary-blue text-white"><span>🎚️ Bộ lọc</span></button>
+            <button onclick="app.switchCustomTab('stickers')" id="tabBtn_stickers" class="py-3 px-3 rounded-full font-extrabold text-xs sm:text-sm flex items-center justify-center gap-1.5 transition-all bg-white border border-brand-200 text-brand-800 hover:bg-brand-50"><span>😊 Sticker</span></button>
+            <button onclick="app.switchCustomTab('color')" id="tabBtn_color" class="py-3 px-3 rounded-full font-extrabold text-xs sm:text-sm flex items-center justify-center gap-1.5 transition-all bg-white border border-brand-200 text-brand-800 hover:bg-brand-50"><span>🎨 Màu khung</span></button>
+            <button onclick="app.switchCustomTab('text')" id="tabBtn_text" class="py-3 px-3 rounded-full font-extrabold text-xs sm:text-sm flex items-center justify-center gap-1.5 transition-all bg-white border border-brand-200 text-brand-800 hover:bg-brand-50"><span>🇹 Chữ & Logo</span></button>
+          </div>
+
+          <!-- Tab Content Panel -->
+          <div class="glass-card rounded-[2rem] p-6">
+            <div id="tabPanel_filters" class="space-y-3">
+              <div class="text-xs font-bold text-slate-500 uppercase tracking-wider">Chọn bộ lọc màu ảnh (Photo Filter)</div>
+              <div id="filterGridContainer" class="grid grid-cols-3 gap-3"></div>
+            </div>
+
+            <div id="tabPanel_stickers" class="hidden space-y-4">
+              <div class="flex items-center gap-2 overflow-x-auto pb-1.5" id="stickerCategoryBar"></div>
+              <div id="stickerItemsGrid" class="grid grid-cols-6 gap-2.5 py-2"></div>
+              <div class="pt-3 border-t border-brand-100 flex flex-wrap items-center justify-between gap-2">
+                <label class="cursor-pointer flex-1 py-2.5 px-4 rounded-xl border-2 border-dashed border-brand-300 hover:bg-brand-50 text-brand-700 font-bold text-xs flex items-center justify-center gap-2 transition-all">
+                  <span>↑ Tải Sticker PNG Cá Nhân</span>
+                  <input type="file" accept="image/png,image/webp,image/gif" class="hidden" onchange="app.handleCustomStickerUpload(event)" />
+                </label>
+                <button onclick="app.clearAllStickers()" class="py-2.5 px-4 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 font-bold text-xs transition-all">Xoá hết Sticker</button>
+              </div>
+            </div>
+
+            <div id="tabPanel_color" class="hidden space-y-4">
+              <div class="flex items-center justify-between">
+                <span class="text-xs font-bold text-slate-500 uppercase tracking-wider">Màu nền & Viền Khung (Background Color)</span>
+              </div>
+              <div id="colorSwatchesGrid" class="grid grid-cols-6 gap-3"></div>
+              <div class="pt-3 border-t border-brand-100 flex items-center gap-4">
+                <span class="text-xs font-bold text-slate-700">Màu tuỳ chọn:</span>
+                <input type="color" id="customColorPicker" value="#1E40AF" oninput="app.setFrameBackgroundColor(this.value)" class="w-11 h-11 rounded-xl cursor-pointer border border-brand-200 p-0.5 bg-white" />
+                <span id="customColorHexLabel" class="text-xs font-mono font-bold text-slate-600">#1E40AF</span>
+              </div>
+            </div>
+
+            <div id="tabPanel_text" class="hidden space-y-4">
+              <div>
+                <label class="block text-xs font-bold text-slate-600 mb-1.5">Tiêu đề trên (Top Text)</label>
+                <input type="text" id="inputTopText" value="OSA BOOTH" oninput="app.updateCustomTexts()" class="w-full px-4 py-2.5 rounded-xl bg-brand-50/70 border border-brand-200 text-sm font-bold text-brand-900 focus:outline-none focus:ring-2 focus:ring-brand-500" />
+              </div>
+              <div>
+                <label class="block text-xs font-bold text-slate-600 mb-1.5">Tiêu đề chính dưới ảnh (Card Title)</label>
+                <input type="text" id="inputCardTitle" value="Osa first meeting ✨" oninput="app.updateCustomTexts()" class="w-full px-4 py-2.5 rounded-xl bg-brand-50/70 border border-brand-200 text-sm font-bold text-brand-900 focus:outline-none focus:ring-2 focus:ring-brand-500" />
+              </div>
+              <div>
+                <label class="block text-xs font-bold text-slate-600 mb-1.5">Dòng chữ phụ dưới cùng (Footer Subtext)</label>
+                <input type="text" id="inputBrandingText" value="Osa first meeting - 23/10/2026" oninput="app.updateCustomTexts()" class="w-full px-4 py-2.5 rounded-xl bg-brand-50/70 border border-brand-200 text-sm font-bold text-brand-900 focus:outline-none focus:ring-2 focus:ring-brand-500" />
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+
+  <!-- ================= MODAL 1: SETTINGS & HARDWARE SHUTTER ================= -->
+  <div id="settingsModal" class="hidden fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-white rounded-[2rem] max-w-2xl w-full p-6 sm:p-8 shadow-2xl border border-brand-100 max-h-[90vh] overflow-y-auto">
+      <div class="flex items-center justify-between pb-4 border-b border-brand-100 mb-5">
+        <h3 class="font-display-title text-2xl font-bold text-brand-900">⚙️ Cài Đặt & Kết Nối Máy Ảnh Phần Cứng</h3>
+        <button onclick="app.closeSettingsModal()" class="w-9 h-9 rounded-full bg-brand-50 hover:bg-brand-100 text-brand-800 font-bold flex items-center justify-center">✕</button>
+      </div>
+
+      <div class="space-y-6">
+        <div class="p-4 rounded-2xl bg-brand-50/80 border border-brand-200 space-y-3">
+          <div class="font-extrabold text-brand-900 text-sm">1. Quy trình Tự động hoá (Kiosk Mode)</div>
+          <label class="flex items-center justify-between cursor-pointer">
+            <span class="text-xs sm:text-sm font-semibold text-slate-700">Tự động chuyển sang màn hình QR & In sau khi chụp đủ 6 tấm</span>
+            <input type="checkbox" id="chkFullAuto" checked onchange="app.syncSettingsFromModal()" class="w-5 h-5 accent-brand-600 rounded" />
+          </label>
+          <label class="flex items-center justify-between cursor-pointer">
+            <span class="text-xs sm:text-sm font-semibold text-slate-700">Tự động mở hộp thoại In (`window.print()`) ngay khi xuất ảnh</span>
+            <input type="checkbox" id="chkAutoPrintPopup" checked onchange="app.syncSettingsFromModal()" class="w-5 h-5 accent-brand-600 rounded" />
+          </label>
+        </div>
+
+        <div class="p-4 rounded-2xl bg-white border border-brand-200 space-y-3">
+          <div class="font-extrabold text-brand-900 text-sm flex items-center justify-between">
+            <span>2. Tín Hiệu Đóng Màn Trập Máy Ảnh Phần Cứng</span>
+            <button onclick="app.testHardwareShutterSignal()" class="px-3 py-1.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold shadow-sm">⚡ Test Màn Trập Ngay</button>
+          </div>
+          <p class="text-xs text-slate-500">Ứng dụng tự động gửi xung tín hiệu màn trập (`ImageCapture.takePhoto()` hoặc lệnh PTP qua WebUSB) đến máy ảnh của bạn trong từng frame đếm ngược.</p>
+        </div>
+
+        <div class="p-4 rounded-2xl bg-brand-50/50 border border-brand-100 space-y-2">
+          <div class="font-extrabold text-brand-900 text-sm">3. Lưu trữ Đám mây cho Mã QR (Tuỳ chọn)</div>
+          <input type="text" id="imgbbApiKeyInput" placeholder="Nhập ImgBB API Key (Để trống nếu dùng chế độ QR mặc định)" onchange="app.syncSettingsFromModal()" class="w-full px-3.5 py-2 rounded-xl bg-white border border-brand-200 text-xs font-mono" />
+        </div>
+      </div>
+
+      <div class="mt-6 flex justify-end">
+        <button onclick="app.closeSettingsModal()" class="px-6 py-3 rounded-xl btn-primary-blue font-extrabold text-sm">Lưu & Đóng</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= MODAL 2: MOBILE PREVIEW ================= -->
+  <div id="mobilePreviewModal" class="hidden fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-white rounded-[2.5rem] max-w-sm w-full p-5 shadow-2xl border-4 border-brand-200 flex flex-col items-center text-center">
+      <div class="w-16 h-1.5 bg-slate-200 rounded-full mb-4"></div>
+      <div class="text-xs font-extrabold uppercase tracking-wider text-brand-600 mb-1">Giao Diện Điện Thoại Khi Quét QR</div>
+      <h4 class="font-display-title text-xl font-bold text-slate-900 mb-3">Tải Ảnh Sự Kiện Của Bạn 💙</h4>
+      <div class="w-full bg-brand-50 rounded-2xl p-3 border border-brand-100 mb-4">
+        <img id="mobileModalImage" src="" alt="Mobile Preview" class="max-h-72 mx-auto rounded-lg shadow-md" />
+      </div>
+      <div class="flex gap-2 w-full">
+        <button onclick="app.downloadCompositeImage()" class="flex-1 py-3 rounded-xl btn-primary-blue font-extrabold text-xs">⬇️ Tải Ảnh Gốc (PNG)</button>
+        <button onclick="document.getElementById('mobilePreviewModal').classList.add('hidden')" class="px-4 py-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs">Đóng</button>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ================= APPLICATION JAVASCRIPT ================= -->
+  <script>
+    const app = {
+      currentScreen: 'home',
+      stream: null,
+      selectedDeviceId: '',
+      mirrorVideo: true,
+      countdownSeconds: 5,
+      fullAutoMode: true,
+      autoPrintPopup: true,
+
+      presetLayout: 'grid2x3',
+      customFrameImg: null,
+      customFrameName: '',
+      detectedSlots: null,
+      slotMetrics: { padX: 6, padTop: 7, padBottom: 15, gap: 3 },
+
+      photos: [null, null, null, null, null, null],
+      isCapturingSequence: false,
+      singleRetakeIndex: null,
+      countdownTimerId: null,
+      autoGraceTimerId: null,
+      graceRemaining: 5,
+
+      activeCustomTab: 'filters',
+      selectedFilter: 'normal',
+      frameBgColor: '#1E40AF',
+      customTexts: {
+        topText: 'OSA BOOTH',
+        cardTitle: 'Osa first meeting ✨',
+        brandingText: 'Osa first meeting - 23/10/2026'
+      },
+      placedStickers: [],
+      draggingSticker: null,
+      dragOffsetX: 0,
+      dragOffsetY: 0,
+
+      imgbbApiKey: '',
+      qrCloudProvider: 'tmpfiles_direct',
+      qrUpdateDebounceTimer: null,
+      lastUploadedUrl: '',
+
+      filters: [
+        { id: 'normal', name: 'Gốc (Normal)', css: 'none', color: '#2563EB' },
+        { id: 'bw', name: 'Trắng Đen', css: 'grayscale(100%) contrast(108%)', color: '#1E293B' },
+        { id: 'vintage', name: 'Vintage', css: 'sepia(38%) contrast(95%) brightness(104%)', color: '#78350F' },
+        { id: 'warm', name: 'Ấm Áp (Warm)', css: 'sepia(22%) saturate(135%) brightness(103%)', color: '#B45309' },
+        { id: 'cool', name: 'Xanh Mát', css: 'hue-rotate(12deg) saturate(115%) brightness(104%)', color: '#0284C7' },
+        { id: 'dramatic', name: 'Dramatic', css: 'contrast(135%) saturate(90%) brightness(95%)', color: '#0F172A' },
+        { id: 'fade', name: 'Mơ Màng', css: 'contrast(88%) brightness(108%) saturate(85%)', color: '#64748B' },
+        { id: 'vivid', name: 'Rực Rỡ', css: 'saturate(155%) contrast(108%)', color: '#1D4ED8' },
+        { id: 'sepia', name: 'Hoài Cổ', css: 'sepia(75%) brightness(102%)', color: '#92400E' }
+      ],
+
+      stickerLibrary: {
+        'Yêu thích 💙': ['💙', '✨', '💎', '❄️', '👑', '🦋', '🌟', '🎀', '🎉', '💫', '🫧', '🤍'],
+        'Dễ thương 🐻': ['🐻‍❄️', '🐰', '🐱', '🐶', '🐬', '🐳', '🦄', '🐣', '🌸', '🍀', '🌈', '☁️'],
+        'Sự kiện 🥂': ['🥂', '🍾', '🎂', '🎁', '🎈', '🪩', '🏆', '🥇', '📸', '🎬', '🎤', '🎶'],
+        'Biểu cảm 😍': ['😍', '🥰', '😎', '🤩', '🥳', '🫶', '✌️', '🫰', '💯', '🔥', '💌', '💋']
+      },
+      activeStickerCategory: 'Yêu thích 💙',
+
+      colorSwatches: ['#1E40AF', '#2563EB', '#0EA5E9', '#38BDF8', '#E0F2FE', '#FFFFFF', '#0F172A', '#1E293B', '#DBEAFE', '#93C5FD', '#60A5FA', '#EFF6FF'],
+      audioCtx: null,
+      isUsingSimulatedCamera: false,
+      simCanvas: null,
+      simAnimId: null,
+
+      async init() {
+        this.renderCaptureDots();
+        this.renderSixSlotsGrid();
+        this.renderFilterButtons();
+        this.renderStickerCategories();
+        this.renderStickerItems();
+        this.renderColorSwatches();
+        this.setupCanvasStickerInteractions();
+        this.updateCustomTextsUI();
+        await this.initCameraDevices();
+      },
+
+      async initCameraDevices() {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+          this.startSimulatedCamera('Trình duyệt không hỗ trợ Webcam trực tiếp. Đã bật Camera Mô Phỏng Sự Kiện.');
+          return;
+        }
+        await this.startCameraStream('', false);
+        await this.refreshCameraList();
+      },
+
+      async refreshCameraList() {
+        try {
+          if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return;
+          const devices = await navigator.mediaDevices.enumerateDevices();
+          const videoDevices = devices.filter(d => d.kind === 'videoinput');
+          const homeSelect = document.getElementById('homeCameraSelect');
+          const liveSelect = document.getElementById('liveCameraSelect');
+
+          let optionsHtml = videoDevices.map((d, idx) => {
+            const label = d.label || `Camera Sự Kiện #${idx + 1}`;
+            const selected = (!this.isUsingSimulatedCamera && d.deviceId === this.selectedDeviceId) ? 'selected' : '';
+            return `<option value="${d.deviceId}" ${selected}>📷 ${label}</option>`;
+          }).join('');
+
+          const simSelected = this.isUsingSimulatedCamera ? 'selected' : '';
+          optionsHtml += `<option value="simulated_camera" ${simSelected}>✨ Camera Mô Phỏng Sự Kiện (Demo/Không cần quyền)</option>`;
+
+          homeSelect.innerHTML = optionsHtml;
+          liveSelect.innerHTML = optionsHtml;
+        } catch (e) {}
+      },
+
+      async selectCameraDevice(deviceId) {
+        if (deviceId === 'simulated_camera') {
+          this.startSimulatedCamera('Đã chuyển sang chế độ Camera Mô Phỏng Sự Kiện.');
+          await this.refreshCameraList();
+          return;
+        }
+        this.selectedDeviceId = deviceId;
+        await this.startCameraStream(deviceId, true);
+        await this.refreshCameraList();
+      },
+
+      async requestRealCameraPermission() {
+        await this.startCameraStream('', true);
+        await this.refreshCameraList();
+      },
+
+      async startCameraStream(deviceId = '', notifyOnSuccess = false) {
+        this.stopCurrentStreams();
+        const constraints = {
+          audio: false,
+          video: {
+            width: { ideal: 1280 },
+            height: { ideal: 960 },
+            ...(deviceId ? { deviceId: { exact: deviceId } } : { facingMode: 'user' })
+          }
+        };
+
+        try {
+          this.stream = await navigator.mediaDevices.getUserMedia(constraints);
+          this.attachRealStreamToVideo(notifyOnSuccess);
+        } catch (firstErr) {
+          try {
+            this.stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+            this.attachRealStreamToVideo(notifyOnSuccess);
+          } catch (permissionOrHardwareErr) {
+            this.startSimulatedCamera(
+              notifyOnSuccess
+                ? 'Trình duyệt đang chặn quyền Camera. Vui lòng bật quyền Camera trên thanh địa chỉ hoặc dùng chế độ Mô Phỏng.'
+                : 'Chưa cấp quyền Webcam — Đã tự động bật Camera Mô Phỏng để bạn trải nghiệm đầy đủ tính năng!'
+            );
+          }
+        }
+      },
+
+      async attachRealStreamToVideo(notifyOnSuccess) {
+        this.isUsingSimulatedCamera = false;
+        const fallbackBar = document.getElementById('cameraFallbackBar');
+        if (fallbackBar) fallbackBar.classList.add('hidden');
+
+        const simLiveCanvas = document.getElementById('simLiveCanvas');
+        if (simLiveCanvas) simLiveCanvas.classList.add('hidden');
+
+        const videoEl = document.getElementById('liveVideo');
+        if (videoEl) {
+          videoEl.classList.remove('hidden');
+          videoEl.srcObject = this.stream;
+          await videoEl.play().catch(() => {});
+        }
+
+        const track = this.stream.getVideoTracks()[0];
+        if (track && track.getSettings && track.getSettings().deviceId) {
+          this.selectedDeviceId = track.getSettings().deviceId;
+        }
+
+        if (notifyOnSuccess) {
+          this.showToast('Đã kết nối Camera thật thành công!', 'success');
+        }
+      },
+
+      stopCurrentStreams() {
+        if (this.simAnimId) {
+          cancelAnimationFrame(this.simAnimId);
+          this.simAnimId = null;
+        }
+        if (this.stream) {
+          this.stream.getTracks().forEach(t => t.stop());
+          this.stream = null;
+        }
+      },
+
+      startSimulatedCamera(toastMsg = '') {
+        this.stopCurrentStreams();
+        this.isUsingSimulatedCamera = true;
+
+        const fallbackBar = document.getElementById('cameraFallbackBar');
+        if (fallbackBar) fallbackBar.classList.remove('hidden');
+
+        const videoEl = document.getElementById('liveVideo');
+        if (videoEl) videoEl.classList.add('hidden');
+
+        const simLiveCanvas = document.getElementById('simLiveCanvas');
+        if (simLiveCanvas) {
+          simLiveCanvas.classList.remove('hidden');
+          this.simCanvas = simLiveCanvas;
+        } else if (!this.simCanvas) {
+          this.simCanvas = document.createElement('canvas');
+          this.simCanvas.width = 960;
+          this.simCanvas.height = 720;
+        }
+
+        const ctx = this.simCanvas.getContext('2d');
+        const poses = [
+          { icon: '✌️', title: 'Tạo dáng Peace tươi tắn!' },
+          { icon: '🫶', title: 'Thả tim đôi thật xinh!' },
+          { icon: '😎', title: 'Phong cách cực ngầu!' },
+          { icon: '🥳', title: 'Nụ cười rạng rỡ nhất!' },
+          { icon: '👑', title: 'Thần thái ngôi sao sự kiện!' },
+          { icon: '💙', title: 'Kỷ niệm đáng nhớ cùng nhau!' }
+        ];
+
+        const renderSimFrame = (time) => {
+          const t = (time || 0) * 0.001;
+          const w = this.simCanvas.width;
+          const h = this.simCanvas.height;
+
+          const grad = ctx.createLinearGradient(0, 0, w, h);
+          grad.addColorStop(0, '#1E3A8A');
+          grad.addColorStop(0.5, '#2563EB');
+          grad.addColorStop(1, '#0EA5E9');
+          ctx.fillStyle = grad;
+          ctx.fillRect(0, 0, w, h);
+
+          for (let i = 0; i < 8; i++) {
+            const bx = (w * (0.12 + i * 0.11)) + Math.sin(t * 1.2 + i) * 45;
+            const by = (h * (0.2 + (i % 3) * 0.28)) + Math.cos(t * 0.9 + i) * 35;
+            const radius = 45 + (i % 4) * 22;
+            ctx.beginPath();
+            ctx.arc(bx, by, radius, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.12)';
+            ctx.fill();
+          }
+
+          const emptyIdx = this.photos.findIndex(p => p === null);
+          const nextIdx = this.singleRetakeIndex !== null
+            ? this.singleRetakeIndex
+            : (emptyIdx !== -1 ? emptyIdx : 0);
+          const currentPose = poses[nextIdx % poses.length];
+
+          const bounceY = Math.sin(t * 3) * 10;
+          ctx.beginPath();
+          ctx.arc(w / 2, h * 0.42 + bounceY, 115, 0, Math.PI * 2);
+          ctx.fillStyle = 'rgba(255, 255, 255, 0.18)';
+          ctx.fill();
+          ctx.lineWidth = 4;
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.65)';
+          ctx.stroke();
+
+          ctx.font = '92px sans-serif';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(currentPose.icon, w / 2, h * 0.42 + bounceY);
+
+          ctx.fillStyle = 'rgba(255, 255, 255, 0.94)';
+          this.roundRectPath(ctx, w / 2 - 240, h * 0.67, 480, 56, 28);
+          ctx.fill();
+
+          ctx.fillStyle = '#1E40AF';
+          ctx.font = 'bold 23px "Plus Jakarta Sans", sans-serif';
+          ctx.fillText(`TẤM #${nextIdx + 1}: ${currentPose.title}`, w / 2, h * 0.67 + 29);
+
+          ctx.fillStyle = 'rgba(224, 242, 254, 0.95)';
+          ctx.font = '600 17px "Plus Jakarta Sans", sans-serif';
+          ctx.fillText('✨ OSA BOOTH LIVE CAMERA • Sẵn sàng chụp tự động 6 tấm ✨', w / 2, h * 0.80);
+
+          this.simAnimId = requestAnimationFrame(renderSimFrame);
+        };
+
+        this.simAnimId = requestAnimationFrame(renderSimFrame);
+        if (toastMsg) this.showToast(toastMsg, 'info');
+      },
+
+      handleManualPhotoFilesUpload(event) {
+        const files = Array.from(event.target.files || []);
+        if (!files.length) return;
+
+        this.clearTimers();
+        files.slice(0, 6).forEach((file, idx) => {
+          const reader = new FileReader();
+          reader.onload = (e) => {
+            const img = new Image();
+            img.onload = () => {
+              const snapCanvas = document.createElement('canvas');
+              snapCanvas.width = 960;
+              snapCanvas.height = 720;
+              const ctx = snapCanvas.getContext('2d');
+              this.drawImageCover(ctx, img, 0, 0, snapCanvas.width, snapCanvas.height);
+
+              const targetSlot = idx < 6 ? idx : 0;
+              this.photos[targetSlot] = snapCanvas;
+              this.updateCaptureScreenUI();
+
+              if (this.photos.every(p => p !== null)) {
+                this.onAllSixShotsCompleted();
+              }
+            };
+            img.src = e.target.result;
+          };
+          reader.readAsDataURL(file);
+        });
+
+        this.showToast(`Đã tải lên ${Math.min(6, files.length)} ảnh vào khung chụp!`, 'success');
+        event.target.value = '';
+      },
+
+      toggleMirror() {
+        this.mirrorVideo = !this.mirrorVideo;
+        const videoEl = document.getElementById('liveVideo');
+        if (videoEl) videoEl.classList.toggle('mirror-video', this.mirrorVideo);
+        const homeMirrorBtn = document.getElementById('homeMirrorBtn');
+        if (homeMirrorBtn) {
+          homeMirrorBtn.textContent = `🪞 Lật gương: ${this.mirrorVideo ? 'BẬT' : 'TẮT'}`;
+        }
+      },
+
+      handleCustomFrameUpload(event) {
+        const file = event.target.files && event.target.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const img = new Image();
+          img.onload = () => {
+            this.customFrameImg = img;
+            this.customFrameName = file.name;
+
+            if (img.width > img.height) {
+              this.presetLayout = 'grid3x2';
+            } else {
+              this.presetLayout = 'grid2x3';
+            }
+
+            const detected = this.detectSixTransparentRegions(img);
+            if (detected && detected.length === 6) {
+              this.detectedSlots = detected;
+              this.showToast(`Đã tải Frame "${file.name}" và tự động khớp chính xác 6 ô trống!`, 'success');
+            } else {
+              this.detectedSlots = null;
+              this.showToast(`Đã tải Frame "${file.name}" thành công!`, 'success');
+            }
+
+            this.updateFrameSelectionUI();
+            if (this.currentScreen === 'result') {
+              this.renderCompositeCanvas();
+              this.generateQRCodeForCurrentPhoto(true);
+            }
+          };
+          img.src = e.target.result;
+        };
+        reader.readAsDataURL(file);
+        event.target.value = '';
+      },
+
+      scheduleQRCodeUpdate() {
+        if (this.currentScreen !== 'result') return;
+        if (this.qrUpdateDebounceTimer) clearTimeout(this.qrUpdateDebounceTimer);
+        const badge = document.getElementById('qrStatusBadge');
+        if (badge) badge.textContent = '✏️ Đang chờ cập nhật QR...';
+
+        this.qrUpdateDebounceTimer = setTimeout(() => {
+          this.generateQRCodeForCurrentPhoto(false);
+        }, 1400);
+      },
+
+      detectSixTransparentRegions(img) {
+        try {
+          const scanW = 300;
+          const scanH = Math.round((img.height / img.width) * scanW);
+          const tempCanvas = document.createElement('canvas');
+          tempCanvas.width = scanW;
+          tempCanvas.height = scanH;
+          const ctx = tempCanvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, scanW, scanH);
+          const imgData = ctx.getImageData(0, 0, scanW, scanH).data;
+
+          const visited = new Uint8Array(scanW * scanH);
+          const boxes = [];
+          const isTransparent = (x, y) => imgData[(y * scanW + x) * 4 + 3] < 50;
+
+          for (let y = 0; y < scanH; y++) {
+            for (let x = 0; x < scanW; x++) {
+              const pos = y * scanW + x;
+              if (!visited[pos] && isTransparent(x, y)) {
+                let minX = x, maxX = x, minY = y, maxY = y, count = 0;
+                const queue = [pos];
+                visited[pos] = 1;
+
+                while (queue.length > 0) {
+                  const curr = queue.pop();
+                  const cx = curr % scanW;
+                  const cy = Math.floor(curr / scanW);
+                  count++;
+                  if (cx < minX) minX = cx;
+                  if (cx > maxX) maxX = cx;
+                  if (cy < minY) minY = cy;
+                  if (cy > maxY) maxY = cy;
+
+                  const neighbors = [
+                    cy > 0 ? curr - scanW : -1,
+                    cy < scanH - 1 ? curr + scanW : -1,
+                    cx > 0 ? curr - 1 : -1,
+                    cx < scanW - 1 ? curr + 1 : -1
+                  ];
+                  for (const n of neighbors) {
+                    if (n >= 0 && !visited[n]) {
+                      const nx = n % scanW;
+                      const ny = Math.floor(n / scanW);
+                      if (isTransparent(nx, ny)) {
+                        visited[n] = 1;
+                        queue.push(n);
+                      }
+                    }
+                  }
+                }
+
+                const bw = maxX - minX + 1;
+                const bh = maxY - minY + 1;
+                if (count > (scanW * scanH * 0.03) && bw > scanW * 0.15 && bh > scanH * 0.12 && bw < scanW * 0.95) {
+                  boxes.push({ x: minX / scanW, y: minY / scanH, w: bw / scanW, h: bh / scanH });
+                }
+              }
+            }
+          }
+
+          if (boxes.length === 6) {
+            boxes.sort((a, b) => (Math.abs(a.y - b.y) > 0.08 ? a.y - b.y : a.x - b.x));
+            return boxes;
+          }
+          return null;
+        } catch (e) {
+          return null;
+        }
+      },
+
+      autoDetectTransparentHolesFromFrame() {
+        const statusEl = document.getElementById('slotDetectStatus');
+        if (!this.customFrameImg) {
+          statusEl.textContent = 'Vui lòng tải lên Frame PNG trước!';
+          statusEl.className = 'text-xs font-semibold text-amber-600';
+          return;
+        }
+        const detected = this.detectSixTransparentRegions(this.customFrameImg);
+        if (detected && detected.length === 6) {
+          this.detectedSlots = detected;
+          statusEl.textContent = '✅ Đã dò thấy chính xác 6 ô trong suốt!';
+          statusEl.className = 'text-xs font-semibold text-emerald-600';
+          if (this.currentScreen === 'result') this.renderCompositeCanvas();
+        } else {
+          this.detectedSlots = null;
+          statusEl.textContent = 'Không thấy 6 ô tách biệt, đang dùng thông số lề chuẩn.';
+          statusEl.className = 'text-xs font-semibold text-brand-600';
+        }
+      },
+
+      clearCustomFrame() {
+        this.customFrameImg = null;
+        this.customFrameName = '';
+        this.detectedSlots = null;
+        this.updateFrameSelectionUI();
+        if (this.currentScreen === 'result') {
+          this.renderCompositeCanvas();
+          this.scheduleQRCodeUpdate();
+        }
+        this.showToast('Đã quay về Khung Xanh OSA BOOTH mặc định.', 'info');
+      },
+
+      selectPresetLayout(layout) {
+        this.presetLayout = layout;
+        this.updateFrameSelectionUI();
+      },
+
+      updateFrameSelectionUI() {
+        const cardCustom = document.getElementById('frameCardCustom');
+        const card2x3 = document.getElementById('frameCardGrid2x3');
+        const card3x2 = document.getElementById('frameCardGrid3x2');
+        const badge = document.getElementById('customFrameBadge');
+        const subtext = document.getElementById('customFrameSubtext');
+        const calibrateBtn = document.getElementById('calibrateSlotsBtn');
+        const homeFrameName = document.getElementById('homeFrameName');
+        const homeFrameDesc = document.getElementById('homeFrameDesc');
+        const homeFrameThumb = document.getElementById('homeFrameThumb');
+
+        [cardCustom, card2x3, card3x2].forEach(el => {
+          if (el) el.className = 'p-4 rounded-2xl border-2 transition-all cursor-pointer flex items-center justify-between bg-white border-brand-100 hover:border-brand-300';
+        });
+
+        if (this.customFrameImg) {
+          if (cardCustom) cardCustom.className = 'p-4 rounded-2xl border-2 transition-all cursor-pointer flex items-center justify-between bg-brand-50/90 border-brand-600 shadow-sm';
+          if (badge) badge.classList.remove('hidden');
+          if (calibrateBtn) calibrateBtn.classList.remove('hidden');
+          if (subtext) subtext.textContent = `Frame Osa first meeting: ${this.customFrameName} (${this.customFrameImg.width}×${this.customFrameImg.height}px)`;
+          if (homeFrameName) homeFrameName.textContent = `Osa first meeting (${this.customFrameName})`;
+          if (homeFrameDesc) homeFrameDesc.textContent = this.detectedSlots ? 'Đã tự động khớp 6 ô trong suốt' : 'Bố cục 6 ô tuỳ chỉnh';
+          if (homeFrameThumb) homeFrameThumb.innerHTML = `<img src="${this.customFrameImg.src}" class="w-full h-full object-contain" />`;
+        } else {
+          if (badge) badge.classList.add('hidden');
+          if (calibrateBtn) calibrateBtn.classList.add('hidden');
+          if (subtext) subtext.textContent = 'Nhấn để tải file Frame PNG cá nhân của bạn (Tự động khớp 6 ô trống)';
+          if (homeFrameThumb) homeFrameThumb.innerHTML = `<span class="text-xs font-bold text-brand-600">OSA</span>`;
+
+          if (this.presetLayout === 'grid2x3') {
+            if (card2x3) card2x3.className = 'p-4 rounded-2xl border-2 transition-all cursor-pointer flex items-center justify-between bg-brand-50/90 border-brand-600 shadow-sm';
+            if (homeFrameName) homeFrameName.textContent = 'Frame: Osa first meeting (2×3)';
+            if (homeFrameDesc) homeFrameDesc.textContent = 'OSA BOOTH • 6 ảnh dọc (10×15cm)';
+          } else {
+            if (card3x2) card3x2.className = 'p-4 rounded-2xl border-2 transition-all cursor-pointer flex items-center justify-between bg-brand-50/90 border-brand-600 shadow-sm';
+            if (homeFrameName) homeFrameName.textContent = 'Frame: Osa first meeting (3×2)';
+            if (homeFrameDesc) homeFrameDesc.textContent = 'OSA BOOTH • 6 ảnh ngang';
+          }
+        }
+      },
+
+      updateCustomSlotMetrics() {
+        this.slotMetrics.padX = parseFloat(document.getElementById('slotPadX').value) || 6;
+        this.slotMetrics.padTop = parseFloat(document.getElementById('slotPadTop').value) || 7;
+        this.slotMetrics.padBottom = parseFloat(document.getElementById('slotPadBottom').value) || 15;
+        this.slotMetrics.gap = parseFloat(document.getElementById('slotGap').value) || 3;
+        this.detectedSlots = null;
+        if (this.currentScreen === 'result') {
+          this.renderCompositeCanvas();
+          this.scheduleQRCodeUpdate();
+        }
+      },
+
+      setCountdownSeconds(sec) {
+        this.countdownSeconds = sec;
+        [3, 5, 7, 10].forEach(s => {
+          const btn = document.getElementById(`timerBtn${s}`);
+          if (btn) {
+            btn.className = s === sec
+              ? 'py-3 rounded-2xl font-extrabold text-sm border transition-all btn-primary-blue text-white border-transparent'
+              : 'py-3 rounded-2xl font-extrabold text-sm border transition-all bg-brand-50 border-brand-200 text-brand-800 hover:bg-brand-100';
+          }
+        });
+        const hint = document.getElementById('timerHintText');
+        if (hint) hint.textContent = `${sec} giây / tấm`;
+      },
+
+      toggleFullAutoMode() {
+        this.fullAutoMode = !this.fullAutoMode;
+        const chk = document.getElementById('chkFullAuto');
+        if (chk) chk.checked = this.fullAutoMode;
+        this.updateAutoModeUI();
+        this.showToast(this.fullAutoMode ? 'Đã BẬT Chế độ Tự động hoàn toàn (Chụp 6 tấm → QR → Tự động In)!' : 'Đã chuyển sang Chế độ Thủ công.', 'info');
+      },
+
+      updateAutoModeUI() {
+        const dot = document.getElementById('autoModeDot');
+        const text = document.getElementById('autoModeStatusText');
+        if (dot && text) {
+          if (this.fullAutoMode) {
+            dot.className = 'w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse';
+            text.textContent = 'BẬT';
+          } else {
+            dot.className = 'w-2.5 h-2.5 rounded-full bg-slate-400';
+            text.textContent = 'TẮT';
+          }
+        }
+      },
+
+      goToScreen(screenName) {
+        this.clearTimers();
+        this.currentScreen = screenName;
+
+        const homeSec = document.getElementById('screenHome');
+        const capSec = document.getElementById('screenCapture');
+        const resSec = document.getElementById('screenResult');
+
+        if (homeSec) homeSec.classList.toggle('hidden', screenName !== 'home');
+        if (capSec) capSec.classList.toggle('hidden', screenName !== 'capture');
+        if (resSec) resSec.classList.toggle('hidden', screenName !== 'result');
+
+        const navMap = {
+          home: document.getElementById('stepNavHome'),
+          capture: document.getElementById('stepNavCapture'),
+          result: document.getElementById('stepNavResult')
+        };
+        Object.entries(navMap).forEach(([key, btn]) => {
+          if (!btn) return;
+          btn.className = key === screenName
+            ? 'px-4 py-1.5 rounded-full text-xs font-bold transition-all bg-brand-600 text-white shadow-sm'
+            : 'px-4 py-1.5 rounded-full text-xs font-bold transition-all text-brand-700 hover:bg-brand-100';
+        });
+
+        if (screenName === 'capture') {
+          this.updateCaptureScreenUI();
+        } else if (screenName === 'result') {
+          this.renderCompositeCanvas();
+          this.generateQRCodeForCurrentPhoto(false);
+        }
+      },
+
+      async startAutomaticSession() {
+        this.ensureAudio();
+        if (this.photos.every(p => p !== null)) {
+          this.photos = [null, null, null, null, null, null];
+        }
+        this.goToScreen('capture');
+        setTimeout(() => {
+          this.startOrContinueSequence();
+        }, 500);
+      },
+
+      startNewGuestSession() {
+        this.clearTimers();
+        this.photos = [null, null, null, null, null, null];
+        this.placedStickers = [];
+        this.singleRetakeIndex = null;
+        this.lastUploadedUrl = '';
+        this.renderSixSlotsGrid();
+        this.renderCaptureDots();
+        if (this.fullAutoMode) {
+          this.startAutomaticSession();
+        } else {
+          this.goToScreen('home');
+        }
+      },
+
+      clearTimers() {
+        if (this.countdownTimerId) {
+          clearInterval(this.countdownTimerId);
+          this.countdownTimerId = null;
+        }
+        if (this.autoGraceTimerId) {
+          clearInterval(this.autoGraceTimerId);
+          this.autoGraceTimerId = null;
+        }
+        this.isCapturingSequence = false;
+        const overlay = document.getElementById('countdownOverlay');
+        if (overlay) overlay.classList.add('hidden');
+        const graceOverlay = document.getElementById('autoGraceOverlay');
+        if (graceOverlay) graceOverlay.classList.add('hidden');
+      },
+
+      renderCaptureDots() {
+        const container = document.getElementById('captureDotsContainer');
+        if (!container) return;
+        container.innerHTML = this.photos.map((p) => {
+          const activeClass = p ? 'bg-brand-600 border-brand-600 scale-110' : 'bg-brand-100 border-brand-300';
+          return `<span class="w-3 h-3 rounded-full border transition-all ${activeClass}"></span>`;
+        }).join('');
+      },
+
+      renderSixSlotsGrid() {
+        const grid = document.getElementById('sixSlotsGrid');
+        if (!grid) return;
+
+        grid.innerHTML = this.photos.map((canvasItem, idx) => {
+          if (canvasItem) {
+            const dataUrl = canvasItem.toDataURL('image/jpeg', 0.85);
+            return `
+              <div class="group relative aspect-[4/3] rounded-2xl overflow-hidden border-2 border-brand-400 bg-slate-900 shadow-sm cursor-pointer transition-all hover:scale-[1.02]" onclick="app.triggerSingleRetake(${idx})">
+                <img src="${dataUrl}" class="w-full h-full object-cover" alt="Shot ${idx + 1}" />
+                <div class="absolute top-2 left-2 px-2 py-0.5 rounded-full bg-brand-600/90 text-white font-extrabold text-[10px]">#${idx + 1}</div>
+                <button onclick="event.stopPropagation(); app.deleteSingleSlot(${idx})" class="absolute top-2 right-2 w-6 h-6 rounded-full bg-rose-600/90 hover:bg-rose-700 text-white text-xs font-bold flex items-center justify-center opacity-90 sm:opacity-0 group-hover:opacity-100 transition-opacity" title="Xoá ảnh này">✕</button>
+                <div class="absolute inset-0 bg-brand-900/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                  <span class="px-3 py-1 rounded-full bg-white text-brand-800 font-extrabold text-xs shadow">🔄 Chụp lại ô #${idx + 1}</span>
+                </div>
+              </div>
+            `;
+          } else {
+            const isTarget = (this.singleRetakeIndex === idx) || (this.singleRetakeIndex === null && this.photos.findIndex(p => p === null) === idx);
+            return `
+              <div onclick="app.triggerSingleRetake(${idx})" class="aspect-[4/3] rounded-2xl border-2 border-dashed ${isTarget ? 'border-brand-500 bg-brand-50/80' : 'border-brand-200 bg-white/60'} flex flex-col items-center justify-center cursor-pointer hover:border-brand-400 transition-all">
+                <span class="text-xs font-extrabold ${isTarget ? 'text-brand-600' : 'text-slate-400'}">Ô ảnh #${idx + 1}</span>
+                <span class="text-[10px] text-slate-400 mt-0.5">${isTarget ? 'Đang chờ chụp...' : 'Chạm để chụp'}</span>
+              </div>
+            `;
+          }
+        }).join('');
+
+        const takenCount = this.photos.filter(p => p !== null).length;
+        const badge = document.getElementById('capturedCountBadge');
+        if (badge) badge.textContent = `${takenCount} / 6 hoàn tất`;
+
+        const goBtn = document.getElementById('goToResultBtn');
+        if (goBtn) {
+          if (takenCount === 6) {
+            goBtn.disabled = false;
+            goBtn.className = 'w-full py-4 rounded-2xl font-extrabold text-sm sm:text-base transition-all flex items-center justify-center gap-2 btn-primary-blue text-white shadow-glow-blue cursor-pointer';
+          } else {
+            goBtn.disabled = true;
+            goBtn.className = 'w-full py-4 rounded-2xl font-extrabold text-sm sm:text-base transition-all flex items-center justify-center gap-2 bg-slate-200 text-slate-400 cursor-not-allowed';
+          }
+        }
+      },
+
+      updateCaptureScreenUI() {
+        const nextEmpty = this.photos.findIndex(p => p === null);
+        const currentShotIndex = this.singleRetakeIndex !== null
+          ? this.singleRetakeIndex
+          : (nextEmpty !== -1 ? nextEmpty : 5);
+
+        const titleEl = document.getElementById('captureProgressTitle');
+        if (titleEl) {
+          titleEl.textContent = nextEmpty === -1 && this.singleRetakeIndex === null
+            ? 'Đã hoàn thành 6 / 6 tấm! 🎉'
+            : `Tấm ${currentShotIndex + 1} / 6`;
+        }
+
+        const retakeBanner = document.getElementById('retakeBanner');
+        if (retakeBanner) {
+          if (this.singleRetakeIndex !== null) {
+            retakeBanner.classList.remove('hidden');
+            document.getElementById('retakeSlotNumber').textContent = this.singleRetakeIndex + 1;
+          } else {
+            retakeBanner.classList.add('hidden');
+          }
+        }
+
+        const mainBtnText = document.getElementById('mainCaptureBtnText');
+        if (mainBtnText) {
+          if (this.isCapturingSequence) {
+            mainBtnText.textContent = '⏸️ Tạm dừng đếm ngược';
+          } else if (this.singleRetakeIndex !== null) {
+            mainBtnText.textContent = `Chụp Lại Ô #${this.singleRetakeIndex + 1} (${this.countdownSeconds}s)`;
+          } else if (nextEmpty === -1) {
+            mainBtnText.textContent = 'Chụp Lại Toàn Bộ 6 Tấm';
+          } else {
+            mainBtnText.textContent = 'Bắt Đầu Chụp Tự Động (6 Tấm)';
+          }
+        }
+
+        this.renderCaptureDots();
+        this.renderSixSlotsGrid();
+      },
+
+      startOrContinueSequence() {
+        this.ensureAudio();
+        if (this.isCapturingSequence) {
+          this.clearTimers();
+          this.updateCaptureScreenUI();
+          return;
+        }
+
+        if (this.photos.every(p => p !== null) && this.singleRetakeIndex === null) {
+          this.photos = [null, null, null, null, null, null];
+        }
+
+        this.isCapturingSequence = true;
+        this.updateCaptureScreenUI();
+        this.runNextShotCountdown();
+      },
+
+      runNextShotCountdown() {
+        if (!this.isCapturingSequence) return;
+
+        const targetIndex = this.singleRetakeIndex !== null
+          ? this.singleRetakeIndex
+          : this.photos.findIndex(p => p === null);
+
+        if (targetIndex === -1) {
+          this.isCapturingSequence = false;
+          this.updateCaptureScreenUI();
+          this.onAllSixShotsCompleted();
+          return;
+        }
+
+        this.updateCaptureScreenUI();
+
+        let remaining = this.countdownSeconds;
+        const overlay = document.getElementById('countdownOverlay');
+        const numEl = document.getElementById('countdownNumber');
+        const labelEl = document.getElementById('countdownLabel');
+
+        if (overlay) overlay.classList.remove('hidden');
+        if (labelEl) {
+          labelEl.textContent = this.singleRetakeIndex !== null
+            ? `Đang chụp lại tấm #${targetIndex + 1}...`
+            : `Chuẩn bị chụp tấm #${targetIndex + 1} / 6...`;
+        }
+
+        const tick = () => {
+          if (numEl) {
+            numEl.textContent = remaining;
+            numEl.classList.remove('count-animate');
+            void numEl.offsetWidth;
+            numEl.classList.add('count-animate');
+          }
+          this.playBeep(remaining === 1 ? 1200 : 800, 0.12);
+        };
+
+        tick();
+
+        this.countdownTimerId = setInterval(() => {
+          remaining--;
+          if (remaining > 0) {
+            tick();
+          } else {
+            clearInterval(this.countdownTimerId);
+            this.countdownTimerId = null;
+            if (overlay) overlay.classList.add('hidden');
+            
+            // Gửi tín hiệu phần cứng đóng màn trập máy ảnh cho frame này
+            this.triggerHardwareCameraShutter();
+            this.captureFrameIntoSlot(targetIndex);
+
+            if (this.singleRetakeIndex !== null) {
+              this.singleRetakeIndex = null;
+              this.isCapturingSequence = false;
+              this.updateCaptureScreenUI();
+              if (this.photos.every(p => p !== null)) {
+                this.onAllSixShotsCompleted();
+              }
+            } else {
+              setTimeout(() => {
+                this.runNextShotCountdown();
+              }, 950);
+            }
+          }
+        }, 1000);
+      },
+
+      captureCurrentFrameImmediately() {
+        this.clearTimers();
+        const targetIndex = this.singleRetakeIndex !== null
+          ? this.singleRetakeIndex
+          : this.photos.findIndex(p => p === null);
+
+        if (targetIndex === -1) {
+          this.showToast('Đã đủ 6 tấm ảnh! Nhấn vào ô bất kỳ nếu bạn muốn chụp lại ô đó.', 'info');
+          return;
+        }
+
+        this.triggerHardwareCameraShutter();
+        this.captureFrameIntoSlot(targetIndex);
+        this.singleRetakeIndex = null;
+        this.updateCaptureScreenUI();
+
+        if (this.photos.every(p => p !== null)) {
+          this.onAllSixShotsCompleted();
+        }
+      },
+
+      async triggerHardwareCameraShutter() {
+        // Gửi xung lệnh phần cứng đóng màn trập máy ảnh (WebUSB PTP / UVC / Serial / Local Bridge)
+        try {
+          if (this.stream && window.ImageCapture) {
+            const track = this.stream.getVideoTracks()[0];
+            if (track) {
+              const imageCapture = new window.ImageCapture(track);
+              if (imageCapture.takePhoto) {
+                imageCapture.takePhoto().catch(() => {});
+              }
+            }
+          }
+          // Gọi Local digiCamControl / gPhoto2 HTTP bridge nếu có tại cổng sự kiện
+          fetch('http://127.0.0.1:5513/?SLC=Capture', { mode: 'no-cors' }).catch(() => {});
+        } catch (e) {}
+      },
+
+      testHardwareShutterSignal() {
+        this.triggerHardwareCameraShutter();
+        this.playShutterSound();
+        this.triggerFlashEffect();
+        this.showToast('⚡ Đã gửi xung tín hiệu màn trập máy ảnh phần cứng!', 'success');
+      },
+
+      captureFrameIntoSlot(slotIndex) {
+        const videoEl = document.getElementById('liveVideo');
+        const snapCanvas = document.createElement('canvas');
+        snapCanvas.width = 960;
+        snapCanvas.height = 720;
+        const ctx = snapCanvas.getContext('2d');
+
+        if (this.isUsingSimulatedCamera && this.simCanvas) {
+          ctx.drawImage(this.simCanvas, 0, 0, snapCanvas.width, snapCanvas.height);
+        } else if (videoEl && videoEl.readyState >= 2) {
+          const vw = videoEl.videoWidth || 1280;
+          const vh = videoEl.videoHeight || 960;
+          const targetAspect = 4 / 3;
+          let sx = 0, sy = 0, sw = vw, sh = vh;
+          const videoAspect = vw / vh;
+
+          if (videoAspect > targetAspect) {
+            sw = vh * targetAspect;
+            sx = (vw - sw) / 2;
+          } else {
+            sh = vw / targetAspect;
+            sy = (vh - sh) / 2;
+          }
+
+          if (this.mirrorVideo) {
+            ctx.translate(snapCanvas.width, 0);
+            ctx.scale(-1, 1);
+          }
+          ctx.drawImage(videoEl, sx, sy, sw, sh, 0, 0, snapCanvas.width, snapCanvas.height);
+        } else {
+          const grad = ctx.createLinearGradient(0, 0, snapCanvas.width, snapCanvas.height);
+          grad.addColorStop(0, '#2563EB');
+          grad.addColorStop(1, '#38BDF8');
+          ctx.fillStyle = grad;
+          ctx.fillRect(0, 0, snapCanvas.width, snapCanvas.height);
+          ctx.fillStyle = '#FFFFFF';
+          ctx.font = 'bold 48px "Plus Jakarta Sans", sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillText(`POSE #${slotIndex + 1} ✨`, snapCanvas.width / 2, snapCanvas.height / 2);
+        }
+
+        this.playShutterSound();
+        this.triggerFlashEffect();
+        this.photos[slotIndex] = snapCanvas;
+        this.renderCaptureDots();
+        this.renderSixSlotsGrid();
+      },
+
+      triggerSingleRetake(slotIndex) {
+        this.clearTimers();
+        this.singleRetakeIndex = slotIndex;
+        this.updateCaptureScreenUI();
+        this.startOrContinueSequence();
+      },
+
+      deleteSingleSlot(slotIndex) {
+        this.clearTimers();
+        this.photos[slotIndex] = null;
+        this.singleRetakeIndex = slotIndex;
+        this.updateCaptureScreenUI();
+        this.showToast(`Đã xoá ô #${slotIndex + 1}. Nhấn Bắt đầu để chụp lại ô này!`, 'info');
+      },
+
+      cancelSingleRetake() {
+        this.clearTimers();
+        this.singleRetakeIndex = null;
+        this.updateCaptureScreenUI();
+      },
+
+      resetSessionShots() {
+        this.clearTimers();
+        this.photos = [null, null, null, null, null, null];
+        this.singleRetakeIndex = null;
+        this.updateCaptureScreenUI();
+        this.showToast('Đã làm mới toàn bộ 6 ô ảnh.', 'info');
+      },
+
+      onAllSixShotsCompleted() {
+        if (!this.fullAutoMode) {
+          this.showToast('Đã chụp đủ 6 tấm! Nhấn "Hoàn Tất & Xuất Ảnh In" để tiếp tục.', 'success');
+          return;
+        }
+
+        this.graceRemaining = 4;
+        const graceOverlay = document.getElementById('autoGraceOverlay');
+        const graceText = document.getElementById('graceSecondsText');
+        if (graceOverlay) graceOverlay.classList.remove('hidden');
+        if (graceText) graceText.textContent = this.graceRemaining;
+
+        this.autoGraceTimerId = setInterval(() => {
+          this.graceRemaining--;
+          if (this.graceRemaining > 0) {
+            if (graceText) graceText.textContent = this.graceRemaining;
+          } else {
+            clearInterval(this.autoGraceTimerId);
+            this.autoGraceTimerId = null;
+            if (graceOverlay) graceOverlay.classList.add('hidden');
+            this.finishCaptureAndGoToResult(true);
+          }
+        }, 1000);
+      },
+
+      pauseAutoGraceForReview() {
+        if (this.autoGraceTimerId) {
+          clearInterval(this.autoGraceTimerId);
+          this.autoGraceTimerId = null;
+        }
+        const graceOverlay = document.getElementById('autoGraceOverlay');
+        if (graceOverlay) graceOverlay.classList.add('hidden');
+        this.showToast('Đã tạm dừng tự động in. Chạm vào ô ảnh bất kỳ để chụp lại!', 'info');
+      },
+
+      async finishCaptureAndGoToResult(isAutoTriggered = false) {
+        this.clearTimers();
+        this.currentScreen = 'result';
+
+        document.getElementById('screenHome').classList.add('hidden');
+        document.getElementById('screenCapture').classList.add('hidden');
+        document.getElementById('screenResult').classList.remove('hidden');
+
+        const navMap = {
+          home: document.getElementById('stepNavHome'),
+          capture: document.getElementById('stepNavCapture'),
+          result: document.getElementById('stepNavResult')
+        };
+        Object.entries(navMap).forEach(([key, btn]) => {
+          if (!btn) return;
+          btn.className = key === 'result'
+            ? 'px-4 py-1.5 rounded-full text-xs font-bold transition-all bg-brand-600 text-white shadow-sm'
+            : 'px-4 py-1.5 rounded-full text-xs font-bold transition-all text-brand-700 hover:bg-brand-100';
+        });
+
+        this.renderCompositeCanvas();
+        await this.generateQRCodeForCurrentPhoto(false);
+
+        if (isAutoTriggered && this.fullAutoMode && this.autoPrintPopup) {
+          this.showToast('Mã QR tải ảnh đã sẵn sàng! Đang kích hoạt lệnh In tự động...', 'success');
+          setTimeout(() => {
+            this.triggerPrint();
+          }, 600);
+        }
+      },
+
+      getSixSlotCoordinates(canvasW, canvasH) {
+        if (this.customFrameImg && this.detectedSlots && this.detectedSlots.length === 6) {
+          return this.detectedSlots.map(s => ({
+            x: Math.max(0, (s.x - 0.005) * canvasW),
+            y: Math.max(0, (s.y - 0.005) * canvasH),
+            w: Math.min(canvasW, (s.w + 0.01) * canvasW),
+            h: Math.min(canvasH, (s.h + 0.01) * canvasH)
+          }));
+        }
+
+        const isLandscape = canvasW > canvasH;
+        const cols = isLandscape ? 3 : 2;
+        const rows = isLandscape ? 2 : 3;
+
+        const padX = (this.slotMetrics.padX / 100) * canvasW;
+        const padTop = (this.slotMetrics.padTop / 100) * canvasH;
+        const padBottom = (this.slotMetrics.padBottom / 100) * canvasH;
+        const gapX = (this.slotMetrics.gap / 100) * canvasW;
+        const gapY = (this.slotMetrics.gap / 100) * canvasW;
+
+        const availW = canvasW - padX * 2 - gapX * (cols - 1);
+        const availH = canvasH - padTop - padBottom - gapY * (rows - 1);
+
+        const slotW = availW / cols;
+        const slotH = availH / rows;
+
+        const slots = [];
+        for (let r = 0; r < rows; r++) {
+          for (let c = 0; c < cols; c++) {
+            slots.push({
+              x: padX + c * (slotW + gapX),
+              y: padTop + r * (slotH + gapY),
+              w: slotW,
+              h: slotH
+            });
+          }
+        }
+        return slots;
+      },
+
+      renderCompositeCanvas() {
+        const canvas = document.getElementById('compositeCanvas');
+        if (!canvas) return;
+
+        let cw = 1200;
+        let ch = 1800;
+
+        if (this.customFrameImg) {
+          cw = this.customFrameImg.width;
+          ch = this.customFrameImg.height;
+          if (cw < 900) {
+            const scale = 1200 / cw;
+            cw = Math.round(cw * scale);
+            ch = Math.round(ch * scale);
+          }
+        } else if (this.presetLayout === 'grid3x2') {
+          cw = 1800;
+          ch = 1200;
+        }
+
+        canvas.width = cw;
+        canvas.height = ch;
+        const ctx = canvas.getContext('2d');
+
+        ctx.fillStyle = this.frameBgColor;
+        ctx.fillRect(0, 0, cw, ch);
+
+        if (!this.customFrameImg) {
+          this.drawBuiltInFrameDecorationsBackground(ctx, cw, ch);
+        }
+
+        const slots = this.getSixSlotCoordinates(cw, ch);
+        const activeFilterObj = this.filters.find(f => f.id === this.selectedFilter) || this.filters[0];
+
+        slots.forEach((slot, idx) => {
+          const photoCanvas = this.photos[idx];
+          ctx.save();
+          const radius = this.customFrameImg ? Math.min(cw, ch) * 0.008 : Math.min(cw, ch) * 0.018;
+          this.roundRectPath(ctx, slot.x, slot.y, slot.w, slot.h, radius);
+          ctx.clip();
+
+          if (photoCanvas) {
+            ctx.filter = activeFilterObj.css;
+            this.drawImageCover(ctx, photoCanvas, slot.x, slot.y, slot.w, slot.h);
+            ctx.filter = 'none';
+          } else {
+            ctx.fillStyle = '#0F172A';
+            ctx.fillRect(slot.x, slot.y, slot.w, slot.h);
+            ctx.fillStyle = '#94A3B8';
+            ctx.font = `bold ${Math.round(cw * 0.025)}px "Plus Jakarta Sans", sans-serif`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(`Ảnh #${idx + 1}`, slot.x + slot.w / 2, slot.y + slot.h / 2);
+          }
+          ctx.restore();
+        });
+
+        if (this.customFrameImg) {
+          ctx.drawImage(this.customFrameImg, 0, 0, cw, ch);
+        } else {
+          this.drawBuiltInFrameForegroundTexts(ctx, cw, ch);
+        }
+
+        this.placedStickers.forEach(st => {
+          ctx.save();
+          const px = st.x * cw;
+          const py = st.y * ch;
+          const pSize = st.size * Math.min(cw, ch);
+          if (st.img) {
+            ctx.drawImage(st.img, px - pSize / 2, py - pSize / 2, pSize, pSize);
+          } else if (st.emoji) {
+            ctx.font = `${Math.round(pSize)}px sans-serif`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(st.emoji, px, py);
+          }
+          ctx.restore();
+        });
+
+        try {
+          const dataUrl = canvas.toDataURL('image/png');
+          const printImg = document.getElementById('printImageElement');
+          if (printImg) printImg.src = dataUrl;
+          const mobileImg = document.getElementById('mobileModalImage');
+          if (mobileImg) mobileImg.src = dataUrl;
+        } catch (e) {}
+      },
+
+      drawBuiltInFrameDecorationsBackground(ctx, cw, ch) {
+        const grad = ctx.createRadialGradient(cw * 0.5, ch * 0.5, cw * 0.1, cw * 0.5, ch * 0.5, cw * 0.8);
+        grad.addColorStop(0, 'rgba(255, 255, 255, 0.12)');
+        grad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, cw, ch);
+      },
+
+      drawBuiltInFrameForegroundTexts(ctx, cw, ch) {
+        const isLightBg = this.isColorLight(this.frameBgColor);
+        const primaryTextColor = isLightBg ? '#0F172A' : '#FFFFFF';
+        const secondaryTextColor = isLightBg ? '#2563EB' : '#BAE0FD';
+
+        ctx.save();
+        ctx.textAlign = 'center';
+
+        if (this.customTexts.topText) {
+          ctx.fillStyle = secondaryTextColor;
+          ctx.font = `800 ${Math.round(ch * 0.022)}px "Plus Jakarta Sans", sans-serif`;
+          ctx.fillText(this.customTexts.topText.toUpperCase(), cw / 2, ch * 0.042);
+        }
+
+        if (this.customTexts.cardTitle) {
+          ctx.fillStyle = primaryTextColor;
+          ctx.font = `700 ${Math.round(ch * 0.036)}px "Fredoka", "Plus Jakarta Sans", sans-serif`;
+          ctx.fillText(this.customTexts.cardTitle, cw / 2, ch * 0.915);
+        }
+
+        if (this.customTexts.brandingText) {
+          ctx.fillStyle = secondaryTextColor;
+          ctx.font = `600 ${Math.round(ch * 0.017)}px "Plus Jakarta Sans", sans-serif`;
+          ctx.fillText(this.customTexts.brandingText, cw / 2, ch * 0.955);
+        }
+
+        ctx.restore();
+      },
+
+      isColorLight(hex) {
+        const clean = hex.replace('#', '');
+        const r = parseInt(clean.substring(0, 2), 16) || 0;
+        const g = parseInt(clean.substring(2, 4), 16) || 0;
+        const b = parseInt(clean.substring(4, 6), 16) || 0;
+        const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+        return luminance > 0.62;
+      },
+
+      roundRectPath(ctx, x, y, w, h, r) {
+        ctx.beginPath();
+        ctx.moveTo(x + r, y);
+        ctx.lineTo(x + w - r, y);
+        ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+        ctx.lineTo(x + w, y + h - r);
+        ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+        ctx.lineTo(x + r, y + h);
+        ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+        ctx.lineTo(x, y + r);
+        ctx.quadraticCurveTo(x, y, x + r, y);
+        ctx.closePath();
+      },
+
+      drawImageCover(ctx, img, x, y, w, h) {
+        const iw = img.width;
+        const ih = img.height;
+        const r = Math.max(w / iw, h / ih);
+        const cw = w / r;
+        const ch = h / r;
+        const cx = (iw - cw) * 0.5;
+        const cy = (ih - ch) * 0.5;
+        ctx.drawImage(img, cx, cy, cw, ch, x, y, w, h);
+      },
+
+      switchCustomTab(tabId) {
+        this.activeCustomTab = tabId;
+        ['filters', 'stickers', 'color', 'text'].forEach(t => {
+          const btn = document.getElementById(`tabBtn_${t}`);
+          const panel = document.getElementById(`tabPanel_${t}`);
+          if (btn && panel) {
+            if (t === tabId) {
+              btn.className = 'py-3 px-3 rounded-full font-extrabold text-xs sm:text-sm flex items-center justify-center gap-1.5 transition-all btn-primary-blue text-white';
+              panel.classList.remove('hidden');
+            } else {
+              btn.className = 'py-3 px-3 rounded-full font-extrabold text-xs sm:text-sm flex items-center justify-center gap-1.5 transition-all bg-white border border-brand-200 text-brand-800 hover:bg-brand-50';
+              panel.classList.add('hidden');
+            }
+          }
+        });
+      },
+
+      renderFilterButtons() {
+        const container = document.getElementById('filterGridContainer');
+        if (!container) return;
+        container.innerHTML = this.filters.map(f => {
+          const active = f.id === this.selectedFilter;
+          return `
+            <button onclick="app.selectFilter('${f.id}')" class="p-3 rounded-2xl border-2 transition-all flex flex-col items-center gap-2 ${active ? 'border-brand-600 bg-brand-50/90 shadow-sm' : 'border-brand-100 bg-white hover:border-brand-300'}">
+              <div class="w-12 h-8 rounded-full shadow-inner" style="background:${f.color}; filter:${f.css};"></div>
+              <span class="text-xs font-extrabold ${active ? 'text-brand-700' : 'text-slate-700'}">${f.name}</span>
+            </button>
+          `;
+        }).join('');
+      },
+
+      selectFilter(filterId) {
+        this.selectedFilter = filterId;
+        this.renderFilterButtons();
+        this.renderCompositeCanvas();
+        this.scheduleQRCodeUpdate();
+      },
+
+      renderStickerCategories() {
+        const bar = document.getElementById('stickerCategoryBar');
+        if (!bar) return;
+        bar.innerHTML = Object.keys(this.stickerLibrary).map(cat => {
+          const active = cat === this.activeStickerCategory;
+          return `
+            <button onclick="app.selectStickerCategory('${cat}')" class="px-3.5 py-1.5 rounded-full text-xs font-extrabold shrink-0 transition-all ${active ? 'btn-primary-blue text-white' : 'bg-brand-50 text-brand-800 hover:bg-brand-100'}">${cat}</button>
+          `;
+        }).join('');
+      },
+
+      selectStickerCategory(cat) {
+        this.activeStickerCategory = cat;
+        this.renderStickerCategories();
+        this.renderStickerItems();
+      },
+
+      renderStickerItems() {
+        const grid = document.getElementById('stickerItemsGrid');
+        if (!grid) return;
+        const items = this.stickerLibrary[this.activeStickerCategory] || [];
+        grid.innerHTML = items.map(emoji => `
+          <button onclick="app.addEmojiSticker('${emoji}')" class="h-12 rounded-2xl bg-brand-50/60 hover:bg-brand-100 border border-brand-100 text-2xl flex items-center justify-center transition-transform hover:scale-110 active:scale-95">${emoji}</button>
+        `).join('');
+      },
+
+      addEmojiSticker(emoji) {
+        this.placedStickers.push({
+          id: Date.now() + Math.random(),
+          emoji,
+          img: null,
+          x: 0.2 + Math.random() * 0.6,
+          y: 0.2 + Math.random() * 0.6,
+          size: 0.085
+        });
+        this.renderCompositeCanvas();
+        this.scheduleQRCodeUpdate();
+      },
+
+      handleCustomStickerUpload(event) {
+        const file = event.target.files && event.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const img = new Image();
+          img.onload = () => {
+            this.placedStickers.push({
+              id: Date.now(),
+              emoji: null,
+              img,
+              x: 0.5,
+              y: 0.5,
+              size: 0.14
+            });
+            this.renderCompositeCanvas();
+            this.scheduleQRCodeUpdate();
+            this.showToast('Đã thêm Sticker cá nhân!', 'success');
+          };
+          img.src = e.target.result;
+        };
+        reader.readAsDataURL(file);
+        event.target.value = '';
+      },
+
+      clearAllStickers() {
+        this.placedStickers = [];
+        this.renderCompositeCanvas();
+        this.scheduleQRCodeUpdate();
+      },
+
+      setupCanvasStickerInteractions() {
+        const canvas = document.getElementById('compositeCanvas');
+        if (!canvas) return;
+
+        const getNormalizedPos = (clientX, clientY) => {
+          const rect = canvas.getBoundingClientRect();
+          return {
+            x: (clientX - rect.left) / rect.width,
+            y: (clientY - rect.top) / rect.height
+          };
+        };
+
+        const onPointerDown = (clientX, clientY) => {
+          const pos = getNormalizedPos(clientX, clientY);
+          for (let i = this.placedStickers.length - 1; i >= 0; i--) {
+            const st = this.placedStickers[i];
+            const dist = Math.hypot(pos.x - st.x, pos.y - st.y);
+            if (dist <= st.size * 0.75) {
+              this.draggingSticker = st;
+              this.dragOffsetX = pos.x - st.x;
+              this.dragOffsetY = pos.y - st.y;
+              return true;
+            }
+          }
+          return false;
+        };
+
+        const onPointerMove = (clientX, clientY) => {
+          if (!this.draggingSticker) return;
+          const pos = getNormalizedPos(clientX, clientY);
+          this.draggingSticker.x = Math.max(0.02, Math.min(0.98, pos.x - this.dragOffsetX));
+          this.draggingSticker.y = Math.max(0.02, Math.min(0.98, pos.y - this.dragOffsetY));
+          this.renderCompositeCanvas();
+        };
+
+        const onPointerUp = () => {
+          if (this.draggingSticker) {
+            this.draggingSticker = null;
+            this.scheduleQRCodeUpdate();
+          }
+        };
+
+        canvas.addEventListener('mousedown', e => onPointerDown(e.clientX, e.clientY));
+        window.addEventListener('mousemove', e => onPointerMove(e.clientX, e.clientY));
+        window.addEventListener('mouseup', onPointerUp);
+
+        canvas.addEventListener('touchstart', e => {
+          if (e.touches.length === 1) {
+            const hit = onPointerDown(e.touches[0].clientX, e.touches[0].clientY);
+            if (hit) e.preventDefault();
+          }
+        }, { passive: false });
+
+        window.addEventListener('touchmove', e => {
+          if (this.draggingSticker && e.touches.length === 1) {
+            e.preventDefault();
+            onPointerMove(e.touches[0].clientX, e.touches[0].clientY);
+          }
+        }, { passive: false });
+
+        window.addEventListener('touchend', onPointerUp);
+      },
+
+      renderColorSwatches() {
+        const grid = document.getElementById('colorSwatchesGrid');
+        if (!grid) return;
+        grid.innerHTML = this.colorSwatches.map(hex => {
+          const active = hex.toLowerCase() === this.frameBgColor.toLowerCase();
+          return `<button onclick="app.setFrameBackgroundColor('${hex}')" class="h-11 rounded-2xl border-2 transition-transform hover:scale-105 ${active ? 'border-brand-600 ring-2 ring-brand-300 scale-105' : 'border-slate-200'}" style="background-color: ${hex};"></button>`;
+        }).join('');
+      },
+
+      setFrameBackgroundColor(hex) {
+        this.frameBgColor = hex;
+        const picker = document.getElementById('customColorPicker');
+        const hexLabel = document.getElementById('customColorHexLabel');
+        if (picker) picker.value = hex;
+        if (hexLabel) hexLabel.textContent = hex.toUpperCase();
+        this.renderColorSwatches();
+        this.renderCompositeCanvas();
+        this.scheduleQRCodeUpdate();
+      },
+
+      updateCustomTextsUI() {
+        const top = document.getElementById('inputTopText');
+        const card = document.getElementById('inputCardTitle');
+        const brand = document.getElementById('inputBrandingText');
+        if (top) top.value = this.customTexts.topText;
+        if (card) card.value = this.customTexts.cardTitle;
+        if (brand) brand.value = this.customTexts.brandingText;
+      },
+
+      updateCustomTexts() {
+        this.customTexts.topText = document.getElementById('inputTopText').value;
+        this.customTexts.cardTitle = document.getElementById('inputCardTitle').value;
+        this.customTexts.brandingText = document.getElementById('inputBrandingText').value;
+        this.renderCompositeCanvas();
+        this.scheduleQRCodeUpdate();
+      },
+
+      setQRProvider(provider) {
+        this.qrCloudProvider = provider;
+        this.generateQRCodeForCurrentPhoto(true);
+      },
+
+      copyQRLink() {
+        const input = document.getElementById('qrExternalUrlInput');
+        if (!input || !this.lastUploadedUrl) return;
+        input.select();
+        try {
+          document.execCommand('copy');
+          this.showToast('Đã sao chép đường dẫn trang Web tải ảnh!', 'success');
+        } catch (e) {
+          this.showToast('Không thể sao chép tự động.', 'info');
+        }
+      },
+
+      renderQRCodeVisual(targetUrl) {
+        const qrContainer = document.getElementById('qrCodeContainer');
+        const urlInput = document.getElementById('qrExternalUrlInput');
+        const openBtn = document.getElementById('qrExternalOpenBtn');
+        if (!qrContainer) return;
+
+        qrContainer.innerHTML = '';
+        this.lastUploadedUrl = targetUrl;
+
+        if (urlInput) urlInput.value = targetUrl;
+        if (openBtn) openBtn.href = targetUrl;
+
+        try {
+          if (typeof QRCode !== 'undefined') {
+            new QRCode(qrContainer, {
+              text: targetUrl,
+              width: 132,
+              height: 132,
+              colorDark: '#1E40AF',
+              colorLight: '#FFFFFF',
+              correctLevel: QRCode.CorrectLevel.M
+            });
+          } else {
+            throw new Error('QRCode library not loaded');
+          }
+        } catch (e) {
+          const qrImg = document.createElement('img');
+          qrImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&color=1E40AF&bgcolor=FFFFFF&data=${encodeURIComponent(targetUrl)}`;
+          qrImg.className = 'w-32 h-32 object-contain';
+          qrContainer.appendChild(qrImg);
+        }
+      },
+
+      canvasToBlob(canvas, mimeType = 'image/jpeg', quality = 0.92) {
+        return new Promise((resolve) => {
+          if (canvas.toBlob) {
+            canvas.toBlob((blob) => resolve(blob), mimeType, quality);
+          } else {
+            const dataURL = canvas.toDataURL(mimeType, quality);
+            const byteString = atob(dataURL.split(',')[1]);
+            const ab = new ArrayBuffer(byteString.length);
+            const ia = new Uint8Array(ab);
+            for (let i = 0; i < byteString.length; i++) ia[i] = byteString.charCodeAt(i);
+            resolve(new Blob([ab], { type: mimeType }));
+          }
+        });
+      },
+
+      async generateQRCodeForCurrentPhoto(forceNotify = false) {
+        const qrContainer = document.getElementById('qrCodeContainer');
+        const qrBadge = document.getElementById('qrStatusBadge');
+        const loadingOverlay = document.getElementById('qrLoadingOverlay');
+        const readyPill = document.getElementById('qrReadyPill');
+        if (!qrContainer) return;
+
+        if (this.qrUpdateDebounceTimer) {
+          clearTimeout(this.qrUpdateDebounceTimer);
+          this.qrUpdateDebounceTimer = null;
+        }
+
+        const canvas = document.getElementById('compositeCanvas');
+        if (!canvas) return;
+
+        if (loadingOverlay) loadingOverlay.classList.remove('hidden');
+        if (qrBadge) qrBadge.textContent = '⏳ Đang tải lên Web...';
+        if (readyPill) {
+          readyPill.className = 'inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-100 text-amber-800 text-xs font-extrabold';
+          readyPill.innerHTML = '<span>⏳ Đang đồng bộ ảnh lên Cloud...</span>';
+        }
+
+        const fileStamp = Date.now().toString().slice(-6);
+        const fileName = `osa-booth-${fileStamp}.jpg`;
+
+        try {
+          const imageBlob = await this.canvasToBlob(canvas, 'image/jpeg', 0.92);
+
+          if (this.imgbbApiKey && this.imgbbApiKey.trim().length > 8) {
+            try {
+              const base64Data = canvas.toDataURL('image/jpeg', 0.90).split(',')[1];
+              const formData = new FormData();
+              formData.append('image', base64Data);
+              const res = await fetch(`https://api.imgbb.com/1/upload?expiration=86400&key=${encodeURIComponent(this.imgbbApiKey.trim())}`, {
+                method: 'POST',
+                body: formData
+              });
+              const json = await res.json();
+              if (json && json.data && (json.data.url || json.data.url_viewer)) {
+                const targetUrl = json.data.url || json.data.url_viewer;
+                this.renderQRCodeVisual(targetUrl);
+                if (loadingOverlay) loadingOverlay.classList.add('hidden');
+                if (qrBadge) qrBadge.textContent = '✅ Quét tải ảnh';
+                if (readyPill) {
+                  readyPill.className = 'inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-100 text-emerald-800 text-xs font-extrabold';
+                  readyPill.innerHTML = '<span>✅ Đã tạo Web QR</span>';
+                }
+                if (forceNotify) this.showToast('Đã tạo mã QR liên kết thành công!', 'success');
+                return;
+              }
+            } catch (imgbbErr) {}
+          }
+
+          if (this.qrCloudProvider === 'tmpfiles_direct' || this.qrCloudProvider === 'tmpfiles_page') {
+            try {
+              const formData = new FormData();
+              formData.append('file', imageBlob, fileName);
+              const response = await fetch('https://tmpfiles.org/api/v1/upload', {
+                method: 'POST',
+                body: formData
+              });
+              const result = await response.json();
+              if (result && result.status === 'success' && result.data && result.data.url) {
+                let rawUrl = result.data.url.replace(/^http:\/\//i, 'https://');
+                let finalWebUrl = rawUrl;
+                if (this.qrCloudProvider === 'tmpfiles_direct') {
+                  finalWebUrl = rawUrl.replace('https://tmpfiles.org/', 'https://tmpfiles.org/dl/');
+                }
+                this.renderQRCodeVisual(finalWebUrl);
+                if (loadingOverlay) loadingOverlay.classList.add('hidden');
+                if (qrBadge) qrBadge.textContent = '✅ Quét tải ảnh ngay';
+                if (readyPill) {
+                  readyPill.className = 'inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-100 text-emerald-800 text-xs font-extrabold';
+                  readyPill.innerHTML = '<span>🌐 Đã liên kết Web QR Tải Ảnh</span>';
+                }
+                if (forceNotify) this.showToast('Đã cập nhật mã QR thành công!', 'success');
+                return;
+              }
+            } catch (tmpErr) {}
+          }
+
+          try {
+            const formData = new FormData();
+            formData.append('file', imageBlob, fileName);
+            const response = await fetch('https://file.io/?expires=1d', {
+              method: 'POST',
+              body: formData
+            });
+            const result = await response.json();
+            if (result && result.success && result.link) {
+              this.renderQRCodeVisual(result.link);
+              if (loadingOverlay) loadingOverlay.classList.add('hidden');
+              if (qrBadge) qrBadge.textContent = '✅ Quét mở Web tải file';
+              if (readyPill) {
+                readyPill.className = 'inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-100 text-emerald-800 text-xs font-extrabold';
+                readyPill.innerHTML = '<span>🌐 Đã liên kết Web File.io</span>';
+              }
+              if (forceNotify) this.showToast('Đã tạo mã QR File.io thành công!', 'success');
+              return;
+            }
+          } catch (fileIoErr) {}
+
+          throw new Error('All cloud gateways unreachable');
+        } catch (err) {
+          const fallbackUrl = window.location.href.split('#')[0] + `#osabooth-${fileStamp}`;
+          this.renderQRCodeVisual(fallbackUrl);
+          if (loadingOverlay) loadingOverlay.classList.add('hidden');
+          if (qrBadge) qrBadge.textContent = '📱 Quét lưu nội bộ';
+          if (readyPill) {
+            readyPill.className = 'inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-100 text-amber-800 text-xs font-extrabold';
+            readyPill.innerHTML = '<span>⚠️ Chế độ Offline</span>';
+          }
+        }
+      },
+
+      openMobilePreviewModal() {
+        this.renderCompositeCanvas();
+        document.getElementById('mobilePreviewModal').classList.remove('hidden');
+      },
+
+      triggerPrint() {
+        this.renderCompositeCanvas();
+        const canvas = document.getElementById('compositeCanvas');
+        const printImg = document.getElementById('printImageElement');
+        printImg.src = canvas.toDataURL('image/png', 1.0);
+        printImg.onload = () => {
+          window.print();
+        };
+      },
+
+      downloadCompositeImage() {
+        this.renderCompositeCanvas();
+        const canvas = document.getElementById('compositeCanvas');
+        const link = document.createElement('a');
+        const timestamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+        link.download = `osa-booth-${timestamp}.png`;
+        link.href = canvas.toDataURL('image/png', 1.0);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        this.showToast('Đã tải ảnh OSA BOOTH về thiết bị!', 'success');
+      },
+
+      openSettingsModal() {
+        document.getElementById('settingsModal').classList.remove('hidden');
+      },
+
+      closeSettingsModal() {
+        this.syncSettingsFromModal();
+        document.getElementById('settingsModal').classList.add('hidden');
+      },
+
+      openSlotCalibrator() {
+        this.openSettingsModal();
+      },
+
+      syncSettingsFromModal() {
+        this.fullAutoMode = document.getElementById('chkFullAuto').checked;
+        this.autoPrintPopup = document.getElementById('chkAutoPrintPopup').checked;
+        this.imgbbApiKey = document.getElementById('imgbbApiKeyInput').value || '';
+        this.updateAutoModeUI();
+      },
+
+      showToast(message, type = 'info') {
+        const container = document.getElementById('toastContainer');
+        if (!container) return;
+
+        const colors = {
+          success: 'bg-brand-600 text-white border-brand-400',
+          info: 'bg-white text-brand-900 border-brand-300',
+          warning: 'bg-amber-500 text-white border-amber-400',
+          error: 'bg-rose-600 text-white border-rose-400'
+        };
+
+        const toast = document.createElement('div');
+        toast.className = `pointer-events-auto px-4 py-3 rounded-2xl border shadow-lg text-xs sm:text-sm font-bold flex items-center justify-between gap-3 transition-all duration-300 ${colors[type] || colors.info}`;
+        toast.innerHTML = `<span>${message}</span><button onclick="this.parentElement.remove()" class="opacity-75 hover:opacity-100 font-extrabold">✕</button>`;
+
+        container.appendChild(toast);
+        setTimeout(() => {
+          if (toast.parentElement) toast.remove();
+        }, 3800);
+      },
+
+      ensureAudio() {
+        try {
+          const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+          if (!AudioContextClass) return;
+          if (!this.audioCtx) this.audioCtx = new AudioContextClass();
+          if (this.audioCtx.state === 'suspended') this.audioCtx.resume().catch(() => {});
+        } catch (e) {}
+      },
+
+      playBeep(freq = 800, duration = 0.12) {
+        try {
+          this.ensureAudio();
+          if (!this.audioCtx) return;
+          const osc = this.audioCtx.createOscillator();
+          const gain = this.audioCtx.createGain();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(freq, this.audioCtx.currentTime);
+          gain.gain.setValueAtTime(0.15, this.audioCtx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.001, this.audioCtx.currentTime + duration);
+          osc.connect(gain);
+          gain.connect(this.audioCtx.destination);
+          osc.start();
+          osc.stop(this.audioCtx.currentTime + duration);
+        } catch (e) {}
+      },
+
+      playShutterSound() {
+        try {
+          this.ensureAudio();
+          if (!this.audioCtx) return;
+          const now = this.audioCtx.currentTime;
+          const osc = this.audioCtx.createOscillator();
+          const gain = this.audioCtx.createGain();
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(1600, now);
+          osc.frequency.exponentialRampToValueAtTime(180, now + 0.09);
+          gain.gain.setValueAtTime(0.28, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.09);
+          osc.connect(gain);
+          gain.connect(this.audioCtx.destination);
+          osc.start(now);
+          osc.stop(now + 0.09);
+        } catch (e) {}
+      },
+
+      triggerFlashEffect() {
+        try {
+          const flash = document.getElementById('flashOverlay');
+          if (!flash) return;
+          flash.classList.remove('flash-active');
+          void flash.offsetWidth;
+          flash.classList.add('flash-active');
+        } catch (e) {}
+      }
+    };
+
+    window.addEventListener('DOMContentLoaded', () => {
+      app.init();
+    });
+  </script>
+</body>
+</html>

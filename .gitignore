@@ -1,0 +1,15 @@
+node_modules/
+dist/
+dist-production/
+.tools/
+.env
+.env.*
+!.env.example
+runtime/
+guest-photos/
+*.sqlite*
+*.db
+*.log
+__pycache__/
+test-results/
+playwright-report/
