@@ -1,6 +1,6 @@
 /** Extracted from legacy; explicit app context supplied by bootstrap. */
 
-export function startOrContinueSequence(app) {
+export async function startOrContinueSequence(app) {
   app.ensureAudio();
   if (app.isCapturingSequence) {
     app.clearTimers();
@@ -8,9 +8,14 @@ export function startOrContinueSequence(app) {
     return;
   }
 
+  if (app.persistenceBusy || app.captureBusy || app.hasPendingWork()) return;
+
   if (app.photos.every(p => p !== null) && app.singleRetakeIndex === null) {
-    app.photos = [null, null, null, null, null, null];
+    if (!await app.resetSessionShots()) return;
   }
+
+  const epoch = app.captureEpoch;
+  if (!await app.prepareSession() || epoch !== app.captureEpoch) return;
 
   app.isCapturingSequence = true;
   app.updateCaptureScreenUI();
@@ -42,7 +47,7 @@ export function runNextShotCountdown(app) {
   if (labelEl) {
     labelEl.textContent = app.singleRetakeIndex !== null
       ? `Đang chụp lại tấm #${targetIndex + 1}...`
-      : `Chuẩn bị chụp tấm #${targetIndex + 1} / 6...`;
+      : `Chuẩn bị chụp tấm #${targetIndex + 1} / ${app.slotCount}...`;
   }
 
   const tick = () => {
@@ -55,20 +60,32 @@ export function runNextShotCountdown(app) {
     app.playBeep(remaining === 1 ? 1200 : 800, 0.12);
   };
 
+  app.transitionSession('COUNTDOWN');
   tick();
 
-  app.countdownTimerId = setInterval(() => {
+  app.countdownTimerId = setInterval(async () => {
     remaining--;
     if (remaining > 0) {
-      tick();
+      app.transitionSession('COUNTDOWN');
+  tick();
     } else {
       clearInterval(app.countdownTimerId);
       app.countdownTimerId = null;
       if (overlay) overlay.classList.add('hidden');
 
-      // Gửi tín hiệu phần cứng đóng màn trập máy ảnh cho frame này
-      app.triggerHardwareCameraShutter();
-      app.captureFrameIntoSlot(targetIndex);
+      const epoch = app.captureEpoch;
+      app.captureBusy = true;
+      app.transitionSession('CAPTURE');
+      let accepted = false;
+      try { accepted = (await app.capturePhoto(targetIndex)).accepted; }
+      catch (error) { app.reportSaveError(error); }
+      finally { app.captureBusy = false; app.syncPersistenceUI(); }
+      if (epoch !== app.captureEpoch) return;
+      if (!accepted) {
+        app.isCapturingSequence = false;
+        app.updateCaptureScreenUI();
+        return;
+      }
 
       if (app.singleRetakeIndex !== null) {
         app.singleRetakeIndex = null;

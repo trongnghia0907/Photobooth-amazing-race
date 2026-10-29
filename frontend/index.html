@@ -91,6 +91,13 @@
 
   <!-- ================= MAIN CONTENT AREA ================= -->
   <main class="flex-1 flex flex-col items-center justify-center p-4 sm:p-6 max-w-7xl w-full mx-auto">
+    <div id="sessionPersistencePanel" class="w-full max-w-6xl mb-4 p-4 rounded-2xl bg-white border border-brand-200 flex flex-wrap items-center justify-between gap-3">
+      <p id="sessionSaveStatus" role="status" aria-live="polite" class="text-xs font-bold text-brand-800">Backend: phiên mới sẽ được tạo khi bắt đầu chụp.</p>
+      <div class="flex gap-2">
+        <button id="retrySessionSaveBtn" onclick="app.retrySessionSave()" class="hidden px-4 py-2 rounded-xl bg-amber-100 text-amber-800 text-xs font-bold">Thử lưu lại</button>
+        <button id="confirmSessionBtn" onclick="app.confirmAndSaveSession()" class="hidden px-4 py-2 rounded-xl btn-primary-blue text-xs font-bold">Xác nhận &amp; Lưu ảnh trên laptop</button>
+      </div>
+    </div>
 
     <!-- =====================================================================
          SCREEN 1: HOME / WELCOME & SETUP
@@ -121,7 +128,7 @@
           <!-- Subtitle Pill -->
           <div class="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-brand-50 border border-brand-200 text-brand-800 text-xs sm:text-sm font-semibold mb-7">
             <span>✨</span>
-            <span>Osa first meeting • DEMO chụp 6 tấm</span>
+            <span data-shot-template="Osa first meeting • DEMO chụp {count} tấm">Osa first meeting • DEMO chụp 6 tấm</span>
             <span>✨</span>
           </div>
 
@@ -266,6 +273,7 @@
             </div>
           </div>
 
+          <button id="frameCardLandscape4" onclick="app.selectPresetLayout('landscape_4')" class="w-full mb-4 p-4 rounded-2xl border-2 border-brand-200 bg-white text-left font-bold text-brand-800">4 ảnh ngang — 2 Cột × 2 Hàng</button>
           <!-- Countdown Timer Selector -->
           <div>
             <div class="flex items-center justify-between mb-2.5">
@@ -383,7 +391,7 @@
           <div class="glass-card rounded-[2rem] p-5 flex-1 flex flex-col justify-between">
             <div>
               <div class="flex items-center justify-between mb-3">
-                <h3 class="font-display-title text-lg font-bold text-brand-900">Khung 6 Tấm Đã Chụp</h3>
+                <h3 data-shot-template="Khung {count} Tấm Đã Chụp" class="font-display-title text-lg font-bold text-brand-900">Khung 6 Tấm Đã Chụp</h3>
                 <span class="text-xs font-bold px-2.5 py-1 rounded-full bg-brand-100 text-brand-700" id="capturedCountBadge">0 / 6 hoàn tất</span>
               </div>
               <p class="text-xs text-slate-500 mb-4">Nhấn vào <strong>từng ô ảnh</strong> bên dưới nếu bạn muốn xoá hoặc chụp lại riêng tấm đó.</p>

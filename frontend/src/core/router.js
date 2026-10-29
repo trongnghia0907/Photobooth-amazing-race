@@ -3,6 +3,8 @@
 export function goToScreen(app, screenName) {
   app.clearTimers();
   app.currentScreen = screenName;
+  app.transitionSession(screenName === 'result' ? 'EDIT' : screenName === 'capture' ? 'PREVIEW' : 'RESET');
+  app.syncPersistenceUI();
 
   const homeSec = document.getElementById('screenHome');
   const capSec = document.getElementById('screenCapture');

@@ -60,7 +60,7 @@ export function detectSixTransparentRegions(app, img) {
       }
     }
 
-    if (boxes.length === 6) {
+    if (boxes.length === app.slotCount) {
       boxes.sort((a, b) => (Math.abs(a.y - b.y) > 0.08 ? a.y - b.y : a.x - b.x));
       return boxes;
     }
@@ -78,14 +78,14 @@ export function autoDetectTransparentHolesFromFrame(app) {
     return;
   }
   const detected = app.detectSixTransparentRegions(app.customFrameImg);
-  if (detected && detected.length === 6) {
+  if (detected && detected.length === app.slotCount) {
     app.detectedSlots = detected;
-    statusEl.textContent = '✅ Đã dò thấy chính xác 6 ô trong suốt!';
+    statusEl.textContent = `✅ Đã dò thấy chính xác ${app.slotCount} ô trong suốt!`;
     statusEl.className = 'text-xs font-semibold text-emerald-600';
     if (app.currentScreen === 'result') app.renderCompositeCanvas();
   } else {
     app.detectedSlots = null;
-    statusEl.textContent = 'Không thấy 6 ô tách biệt, đang dùng thông số lề chuẩn.';
+    statusEl.textContent = `Không thấy ${app.slotCount} ô tách biệt, đang dùng thông số lề chuẩn.`;
     statusEl.className = 'text-xs font-semibold text-brand-600';
   }
 }

@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { readFileSync, mkdirSync, readdirSync } from 'node:fs';
+import { readFileSync, mkdirSync, readdirSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const evidence = fileURLToPath(new URL('../../../docs/screenshots/', import.meta.url));
@@ -91,14 +91,18 @@ test('countdown six shots, pause/resume, dynamic slot retake/delete, reset and a
   await page.clock.fastForward(4000);
   expect(await page.evaluate(()=>app.photos.filter(Boolean).length)).toBe(0);
   await page.locator('#mainCaptureBtn').click();
-  for(let i=0;i<6;i++){await page.clock.runFor(3000);await page.clock.fastForward(950);}
+  for(let i=0;i<6;i++){
+    await page.clock.runFor(3000);
+    await expect.poll(()=>page.evaluate(()=>app.photos.filter(Boolean).length)).toBe(i+1);
+    await page.clock.fastForward(950);
+  }
   await expect(page.locator('#capturedCountBadge')).toHaveText('6 / 6 hoàn tất');
   await page.screenshot({path:evidence+'modular-capture.png'});
   for(const slot of [1,4]) {
     await page.locator('#sixSlotsGrid > div').nth(slot).click();
     expect(await page.evaluate(()=>app.singleRetakeIndex)).toBe(slot);
     await page.clock.runFor(3000);
-    expect(await page.evaluate(()=>app.singleRetakeIndex)).toBe(null);
+    await expect.poll(()=>page.evaluate(()=>app.singleRetakeIndex)).toBe(null);
   }
   await page.locator('#sixSlotsGrid > div').nth(1).locator('button').dispatchEvent('click');
   await expect(page.locator('#goToResultBtn')).toBeDisabled();
@@ -108,8 +112,11 @@ test('countdown six shots, pause/resume, dynamic slot retake/delete, reset and a
   await expect(page.locator('#screenResult')).toBeVisible();
   await expect(page.locator('#qrStatusBadge')).toContainText('DEMO');
   await expect(page.locator('#qrExternalOpenBtn')).not.toHaveAttribute('href');
-  await page.evaluate(()=>{app.goToScreen('capture');app.resetSessionShots();app.fullAutoMode=true;});
-  for(let i=0;i<6;i++) await page.locator('#manualInstantSnapBtn').click();
+  await page.evaluate(async()=>{app.goToScreen('capture');await app.resetSessionShots();app.fullAutoMode=true;});
+  for(let i=0;i<6;i++) {
+    await page.locator('#manualInstantSnapBtn').click();
+    await expect.poll(()=>page.evaluate(()=>app.photos.filter(Boolean).length)).toBe(i+1);
+  }
   await page.clock.runFor(4000);
   await expect(page.locator('#screenResult')).toBeVisible();
   expect(await page.evaluate(()=>window.printCalls)).toBe(0);
@@ -242,5 +249,165 @@ test('production artifact refuses simulated and video-frame capture',async({page
   expect(result.messages).toHaveLength(3);
   expect(result.photos).toBe(0);
   expect(result.stream).toBe(null);
+  expect(log).toEqual({errors:[],externalWrites:[],missing:[]});
+});
+
+test('real backend: explicit composite confirmation, retake metadata, private files and repeat confirmation',async({page})=>{
+  const log=await setup(page);
+  await page.evaluate(async()=>{app.fullAutoMode=false;await app.startAutomaticSession();app.clearTimers();});
+  const sid=await page.evaluate(()=>app.sessionContext.id);
+  expect(sid).toMatch(/^[a-f0-9-]{36}$/);
+  const photo=await fixture(page);
+  await page.locator('input[multiple]').setInputFiles(Array.from({length:6},(_,i)=>({...photo,name:`saved-${i}.png`})));
+  await expect(page.locator('#goToResultBtn')).toBeEnabled();
+  await page.locator('#goToResultBtn').click();
+  expect(await page.evaluate(()=>app.serverSession.composite)).toBe(null);
+  await page.locator('#filterGridContainer button').nth(3).click();
+  expect(await page.evaluate(()=>app.serverSession.composite)).toBe(null);
+  await page.locator('#confirmSessionBtn').click();
+  await expect(page.locator('#sessionSaveStatus')).toHaveAttribute('data-state','saved');
+  let state=await page.evaluate(()=>app.serverSession);
+  expect(state.status).toBe('completed');
+  expect(state.photos.map(p=>p.source)).toEqual(Array(6).fill('manual_upload'));
+  const firstComposite=state.composite.id;
+  const storage=new URL('../../../.tools/e2e-backend/',import.meta.url);
+  expect(existsSync(new URL('photobooth.sqlite3',storage))).toBe(true);
+  expect(readdirSync(new URL(`originals/${sid}/`,storage))).toHaveLength(6);
+  expect(readdirSync(new URL(`composites/${sid}/`,storage))).toHaveLength(1);
+  await page.locator('#confirmSessionBtn').click();
+  await expect.poll(()=>page.evaluate(()=>app.persistenceBusy)).toBe(false);
+  expect(readdirSync(new URL(`composites/${sid}/`,storage))).toHaveLength(1);
+  await page.locator('#filterGridContainer button').nth(5).click();
+  await expect(page.locator('#sessionSaveStatus')).toHaveAttribute('data-state','editing');
+  expect(readdirSync(new URL(`composites/${sid}/`,storage))).toHaveLength(1);
+  await page.evaluate(()=>{app.goToScreen('capture');app.singleRetakeIndex=1;});
+  await page.locator('#manualInstantSnapBtn').click();
+  await expect.poll(()=>page.evaluate(()=>app.serverSession.photos[1].revision)).toBe(2);
+  expect(await page.evaluate(()=>app.serverSession.photos[1].source)).toBe('demo');
+  expect(await page.evaluate(()=>app.serverSession.composite)).toBe(null);
+  await page.locator('#goToResultBtn').click();
+  await page.locator('#confirmSessionBtn').click();
+  await expect(page.locator('#sessionSaveStatus')).toHaveAttribute('data-state','saved');
+  state=await page.evaluate(()=>app.serverSession);
+  expect(state.composite.id).not.toBe(firstComposite);
+  expect(state.composite.revision).toBe(2);
+  expect(readdirSync(new URL(`originals/${sid}/`,storage))).toHaveLength(7);
+  const access=await page.evaluate(async()=>{
+    const s=app.serverSession,c=app.sessionContext;
+    const path=`/api/sessions/${c.id}/composites/${s.composite.id}/image`;
+    const unauthorized=await fetch(path);
+    const authorized=await fetch(path,{headers:{Authorization:`Bearer ${c.token}`}});
+    return {unauthorized:unauthorized.status,authorized:authorized.status,size:(await authorized.blob()).size};
+  });
+  expect(access.unauthorized).toBe(401);
+  expect(access.authorized).toBe(200);
+  expect(access.size).toBeGreaterThan(1000);
+  // The deliberately unauthorized GET emits a browser HTTP error; it is tested above.
+  expect(log.externalWrites).toEqual([]);
+  expect(log.missing).toEqual([]);
+});
+
+test('backend failures: pending shots survive, retry reuses keys, final upload and complete responses may be lost',async({page})=>{
+  const log=await setup(page);
+  await page.evaluate(()=>{app.fullAutoMode=false;app.goToScreen('capture');});
+  let failPhotos=true;
+  await page.route('**/api/sessions/*/photos',async route=>{
+    if(failPhotos) return route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({error:{message:'Backend đang mất kết nối (test)'}})});
+    return route.fallback();
+  });
+  const photo=await fixture(page);
+  await page.locator('input[multiple]').setInputFiles(Array.from({length:6},(_,i)=>({...photo,name:`pending-${i}.png`})));
+  await expect(page.locator('#sessionSaveStatus')).toHaveAttribute('data-state','error');
+  expect(await page.evaluate(()=>app.photos.filter(Boolean).length)).toBe(0);
+  expect(await page.evaluate(()=>app.pendingPhotos.filter(Boolean).length)).toBe(6);
+  const keys=await page.evaluate(()=>app.pendingPhotos.map(p=>p.key));
+  failPhotos=false;
+  await page.locator('#retrySessionSaveBtn').click();
+  await expect(page.locator('#goToResultBtn')).toBeEnabled();
+  expect(await page.evaluate(()=>app.pendingPhotos.every(p=>p===null))).toBe(true);
+  expect(await page.evaluate(()=>app.serverSession.photos.every(p=>p.revision===1))).toBe(true);
+  const sid=await page.evaluate(()=>app.sessionContext.id);
+  const storage=new URL('../../../.tools/e2e-backend/',import.meta.url);
+  expect(readdirSync(new URL(`originals/${sid}/`,storage))).toHaveLength(6);
+  expect(keys.every(Boolean)).toBe(true);
+  await page.locator('#goToResultBtn').click();
+  let loseComposite=true,loseComplete=true;
+  await page.route('**/api/sessions/*/composite',async route=>{
+    const response=await route.fetch();
+    if(loseComposite){loseComposite=false;return route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({error:{message:'Mất phản hồi sau lưu composite (test)'}})});}
+    return route.fulfill({response});
+  });
+  await page.route('**/api/sessions/*/complete',async route=>{
+    const response=await route.fetch();
+    if(loseComplete){loseComplete=false;return route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({error:{message:'Mất phản hồi sau complete (test)'}})});}
+    return route.fulfill({response});
+  });
+  await page.locator('#confirmSessionBtn').click();
+  await expect(page.locator('#sessionSaveStatus')).toHaveAttribute('data-state','error');
+  expect(readdirSync(new URL(`composites/${sid}/`,storage))).toHaveLength(1);
+  await page.locator('#retrySessionSaveBtn').click();
+  await expect(page.locator('#sessionSaveStatus')).toContainText('Mất phản hồi sau complete');
+  expect(await page.evaluate(()=>app.saveState)).not.toBe('saved');
+  await page.locator('#retrySessionSaveBtn').click();
+  await expect(page.locator('#sessionSaveStatus')).toHaveAttribute('data-state','saved');
+  expect(await page.evaluate(()=>app.serverSession.status)).toBe('completed');
+  expect(readdirSync(new URL(`composites/${sid}/`,storage))).toHaveLength(1);
+  expect(log.externalWrites).toEqual([]);
+  expect(log.missing).toEqual([]);
+  await page.screenshot({path:evidence+'phase2-saved-result.png'});
+});
+
+test('failed retake and delete keep old slot until backend acknowledges retry',async({page})=>{
+  await setup(page);
+  await page.evaluate(()=>{app.fullAutoMode=false;app.goToScreen('capture');});
+  const photo=await fixture(page);
+  await page.locator('input[multiple]').setInputFiles(Array.from({length:6},(_,i)=>({...photo,name:`retake-${i}.png`})));
+  await expect(page.locator('#goToResultBtn')).toBeEnabled();
+  const old=await page.evaluate(()=>app.photos[1].toDataURL());
+  let fail=true;
+  await page.route('**/api/sessions/*/photos',async route=> fail
+    ? route.fulfill({status:503,contentType:'application/json',body:'{"error":{"message":"Retake chưa lưu (test)"}}'})
+    : route.fallback());
+  await page.evaluate(()=>{app.singleRetakeIndex=1;});
+  await page.locator('#manualInstantSnapBtn').click();
+  await expect(page.locator('#sessionSaveStatus')).toHaveAttribute('data-state','error');
+  expect(await page.evaluate(()=>app.photos[1].toDataURL())).toBe(old);
+  expect(await page.evaluate(()=>!!app.pendingPhotos[1])).toBe(true);
+  fail=false;
+  await page.locator('#retrySessionSaveBtn').click();
+  await expect.poll(()=>page.evaluate(()=>app.serverSession.photos[1].revision)).toBe(2);
+  expect(await page.evaluate(()=>app.photos[1].toDataURL())).not.toBe(old);
+  let failDelete=true;
+  await page.route('**/api/sessions/*/photos/1',async route=>failDelete
+    ? route.fulfill({status:503,contentType:'application/json',body:'{"error":{"message":"Delete chưa lưu (test)"}}'})
+    : route.fallback());
+  await page.evaluate(()=>app.deleteSingleSlot(1));
+  expect(await page.evaluate(()=>!!app.photos[1])).toBe(true);
+  failDelete=false;
+  await page.locator('#retrySessionSaveBtn').click();
+  await expect.poll(()=>page.evaluate(()=>app.photos[1])).toBe(null);
+  expect(await page.evaluate(()=>app.serverSession.photos.length)).toBe(5);
+});
+
+test('four-shot landscape mock session captures, retakes, composites and persists',async({page})=>{
+  const log=await setup(page);
+  await page.locator('#frameCardLandscape4').click();
+  expect(await page.evaluate(()=>app.slotCount)).toBe(4);
+  await page.evaluate(async()=>{app.fullAutoMode=false;await app.startAutomaticSession();app.clearTimers();});
+  for(let i=0;i<4;i++) {
+    await page.locator('#manualInstantSnapBtn').click();
+    await expect.poll(()=>page.evaluate(()=>app.photos.filter(Boolean).length)).toBe(i+1);
+  }
+  await expect(page.locator('#capturedCountBadge')).toHaveText('4 / 4 hoàn tất');
+  await page.evaluate(()=>{app.singleRetakeIndex=2;});
+  await page.locator('#manualInstantSnapBtn').click();
+  await expect.poll(()=>page.evaluate(()=>app.serverSession.photos[2].revision)).toBe(2);
+  await page.locator('#goToResultBtn').click();
+  expect(await page.locator('#compositeCanvas').evaluate(c=>[c.width,c.height])).toEqual([1800,1200]);
+  expect(await page.evaluate(()=>app.getSixSlotCoordinates(1800,1200).length)).toBe(4);
+  await page.locator('#confirmSessionBtn').click();
+  await expect(page.locator('#sessionSaveStatus')).toHaveAttribute('data-state','saved');
+  expect(await page.evaluate(()=>app.serverSession.slot_count)).toBe(4);
+  expect(await page.evaluate(()=>app.sessionPhase)).toBe('READY');
   expect(log).toEqual({errors:[],externalWrites:[],missing:[]});
 });

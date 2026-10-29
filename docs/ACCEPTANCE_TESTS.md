@@ -1,5 +1,11 @@
 # Acceptance tests — Phase 0 / Phase 1
 
+Checkpoint hoàn thiện Phase 2: **13/13 backend, 7/7 Node, 10/10 Playwright**, demo/production builds PASS. Bổ sung luồng bốn ảnh ngang, state machine/MockCameraAdapter và MockPrinterAdapter dry-run; kiểm tra sáu ảnh/editor/baseline tiếp tục PASS.
+
+**Cập nhật Phase 2:** backend 12/12 pytest, frontend 6/6 Node, full 9/9 Playwright với FastAPI thật và cả hai build PASS. Xem [PHASE2_REPORT.md](PHASE2_REPORT.md). Các kết quả Phase 1 bên dưới là lịch sử, không thay cho scope Phase 2 mới.
+
+Kiểm tra lại sau khi cài Node/npm Windows: **Node v26.13.0 / npm 11.20.0**, `npm ci`, cả hai build, 6/6 Node tests và 6/6 Playwright tests đều PASS. Xem [PHASE1_RECHECK.md](PHASE1_RECHECK.md) cho kết quả mới nhất; thông tin bên dưới ghi nhận lượt refactor ban đầu.
+
 Ngày chạy: 30/10/2026 (Asia/Saigon). Windows, Node portable 24.22.2, Vite 7.3.7, Tailwind 3.4.17, PostCSS 8.5.32, Playwright 1.64.1 và Chrome headless đã cài. Không chạm camera/máy in thật hoặc upload ảnh khách.
 
 | Kiểm tra | Kết quả | Bằng chứng/phạm vi |

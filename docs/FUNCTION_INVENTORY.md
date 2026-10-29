@@ -1,5 +1,22 @@
 # FUNCTION_INVENTORY — Phase 0 / Phase 1
 
+## Bổ sung Phase 2
+
+Mapping 80 method gốc bên dưới vẫn giữ; các method capture/retake nay chờ backend ACK qua `services/photo-repository.js`. Không đổi compositor/layout/filter/sticker algorithms.
+
+| Điểm cũ | Tích hợp mới |
+|---|---|
+| startAutomaticSession / startOrContinueSequence | prepareSession → ensureSession → POST /api/sessions; create key/token giữ ổn định khi retry |
+| captureFrameIntoSlot | Giữ canvas crop/mirror; acceptPhoto → POST photos; lưu pending canvas khi lỗi, chỉ thay slot sau ACK |
+| handleManualPhotoFilesUpload | Decode sáu canvases, acceptPhotoBatch; giữ cả pending batch và source manual_upload |
+| triggerSingleRetake / deleteSingleSlot / resetSessionShots | Async retake cùng slot; DELETE slot/all; file revision cũ private, current composite bị invalidated |
+| renderCompositeCanvas | Thêm onCompositeRendered callback dirty/saved, không tự upload |
+| Result | confirmAndSaveSession → PUT composite → POST complete; kiểm tra ACK session/composite trước saved |
+| New UI retry | retrySessionSave → retry cùng key/blob của pending shots/delete/final |
+| core/store/bootstrap/router/events | Thêm persistence state/wiring/status, giữ window.app facade và cleanup timers |
+
+Các module mới: `api-client.js` (same-origin HTTP), `session-client.js` (contract), `photo-repository.js` (pending/retry/confirm orchestration). API và frontend thay đổi chi tiết ở PHASE2_REPORT/API_CONTRACT. Chưa đổi sang Phase 3 finalize/share.
+
 80/80 methods của `app` được mapping. Source locations tính từ HTML gốc 2.493 dòng. Mỗi function mới nhận `app` làm đối số đầu: context truy cập state do `core/store.js` sở hữu và các dependencies được wiring tại `core/bootstrap.js`. Không còn method-binding `this`.
 
 | old_function | old_source_location | behavior | new_module | new_symbol | reuse/refactor/replace-later | status | notes |

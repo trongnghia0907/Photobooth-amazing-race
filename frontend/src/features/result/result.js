@@ -1,8 +1,14 @@
 /** Extracted from legacy; explicit app context supplied by bootstrap. */
 
 export async function finishCaptureAndGoToResult(app, isAutoTriggered = false) {
+  if (!app.photos.every(Boolean) || app.persistenceBusy || app.hasPendingWork()) {
+    app.showToast(`Cần lưu đủ ${app.slotCount} ảnh chụp trước khi sang Result.`, 'info');
+    return;
+  }
   app.clearTimers();
   app.currentScreen = 'result';
+  app.transitionSession('EDIT');
+  app.syncPersistenceUI();
 
   document.getElementById('screenHome').classList.add('hidden');
   document.getElementById('screenCapture').classList.add('hidden');

@@ -1,18 +1,19 @@
 /** Extracted from legacy; explicit app context supplied by bootstrap. */
 
 export function triggerSingleRetake(app, slotIndex) {
+  if (app.persistenceBusy || app.captureBusy || app.hasPendingWork()) return;
   app.clearTimers();
   app.singleRetakeIndex = slotIndex;
   app.updateCaptureScreenUI();
   app.startOrContinueSequence();
 }
 
-export function deleteSingleSlot(app, slotIndex) {
+export async function deleteSingleSlot(app, slotIndex) {
+  if (app.persistenceBusy || app.captureBusy || app.hasPendingWork()) return;
   app.clearTimers();
-  app.photos[slotIndex] = null;
-  app.singleRetakeIndex = slotIndex;
-  app.updateCaptureScreenUI();
-  app.showToast(`Đã xoá ô #${slotIndex + 1}. Nhấn Bắt đầu để chụp lại ô này!`, 'info');
+  if (await app.removeStoredPhotos(slotIndex)) {
+    app.showToast(`Đã xoá ô #${slotIndex + 1}. Nhấn Bắt đầu để chụp lại ô này!`, 'info');
+  }
 }
 
 export function cancelSingleRetake(app) {
@@ -21,10 +22,10 @@ export function cancelSingleRetake(app) {
   app.updateCaptureScreenUI();
 }
 
-export function resetSessionShots(app) {
+export async function resetSessionShots(app) {
+  if (app.persistenceBusy || app.captureBusy || app.hasPendingWork()) return false;
   app.clearTimers();
-  app.photos = [null, null, null, null, null, null];
-  app.singleRetakeIndex = null;
-  app.updateCaptureScreenUI();
-  app.showToast('Đã làm mới toàn bộ 6 ô ảnh.', 'info');
+  if (!await app.removeStoredPhotos()) return false;
+  app.showToast(`Đã làm mới toàn bộ ${app.slotCount} ô ảnh.`, 'info');
+  return true;
 }

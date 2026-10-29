@@ -1,5 +1,9 @@
 # Migration log — 30/10/2026, Asia/Saigon
 
+## Phase 2 — Backend Foundation (bổ sung sau Phase 1)
+
+Đã triển khai theo yêu cầu Phase 2 mới: FastAPI/sqlite3/Pillow, migration SQL version 1, local file revisions, owner token hash, idempotency, APIs /api và frontend persistence/retry/confirm. Giữ nguyên editor và source/legacy. Không commit/push. Chi tiết file/behavior/test ở [PHASE2_REPORT](PHASE2_REPORT.md); API ở [API_CONTRACT](API_CONTRACT.md). Backend 12/12, Node 6/6, full Playwright 9/9 và builds PASS. Những dòng “dừng trước Phase 2” bên dưới ghi nhận mốc lịch sử Phase 1, đã được yêu cầu Phase 2 hiện tại thay thế.
+
 ## Phase 0 — DONE
 
 Đọc technical spec, refactor prompt và toàn bộ HTML 2.493 dòng. Thư mục ban đầu chỉ có ba file đầu vào, không có assets/config/tests/AGENTS.md hoặc Git repository. `git status --short` trả “not a git repository”; không có thay đổi tracked để ghi đè, không tạo branch/commit. Node/npm chưa có PATH: dùng runtime portable trong `.tools/` (ignored).

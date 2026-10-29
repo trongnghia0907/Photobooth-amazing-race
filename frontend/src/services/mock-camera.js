@@ -84,7 +84,7 @@ export function startSimulatedCamera(app, toastMsg = '') {
 
     ctx.fillStyle = 'rgba(224, 242, 254, 0.95)';
     ctx.font = '600 17px "Plus Jakarta Sans", sans-serif';
-    ctx.fillText('✨ OSA BOOTH LIVE CAMERA • Sẵn sàng chụp tự động 6 tấm ✨', w / 2, h * 0.80);
+    ctx.fillText(`✨ OSA BOOTH DEMO • Sẵn sàng chụp ${app.slotCount} tấm ✨`, w / 2, h * 0.80);
 
     app.simAnimId = requestAnimationFrame(renderSimFrame);
   };
@@ -95,36 +95,40 @@ export function startSimulatedCamera(app, toastMsg = '') {
 
 export function handleManualPhotoFilesUpload(app, event) {
   requireDemo();
+  if (app.persistenceBusy || app.captureBusy || app.hasPendingWork()) return;
   const files = Array.from(event.target.files || []);
   if (!files.length) return;
 
   app.clearTimers();
-  files.slice(0, 6).forEach((file, idx) => {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const img = new Image();
-      img.onload = () => {
+  event.target.value = '';
+  app.captureBusy = true;
+  return (async () => {
+    const epoch = app.captureEpoch;
+    try {
+      const canvases = [];
+      for (const [idx, file] of files.slice(0, app.slotCount).entries()) {
+        if (epoch !== app.captureEpoch) return;
+        const img = await new Promise((resolve, reject) => {
+          const image = new Image();
+          const url = URL.createObjectURL(file);
+          image.onload = () => { URL.revokeObjectURL(url); resolve(image); };
+          image.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Không thể đọc file ảnh. Hãy chọn PNG/JPEG/WebP hợp lệ.')); };
+          image.src = url;
+        });
         const snapCanvas = document.createElement('canvas');
         snapCanvas.width = 960;
         snapCanvas.height = 720;
         const ctx = snapCanvas.getContext('2d');
         app.drawImageCover(ctx, img, 0, 0, snapCanvas.width, snapCanvas.height);
 
-        const targetSlot = idx < 6 ? idx : 0;
-        app.photos[targetSlot] = snapCanvas;
-        app.updateCaptureScreenUI();
-
-        if (app.photos.every(p => p !== null)) {
-          app.onAllSixShotsCompleted();
-        }
-      };
-      img.src = e.target.result;
-    };
-    reader.readAsDataURL(file);
-  });
-
-  app.showToast(`Đã tải lên ${Math.min(6, files.length)} ảnh vào khung chụp!`, 'success');
-  event.target.value = '';
+        canvases.push(snapCanvas);
+      }
+      if (epoch !== app.captureEpoch || !await app.acceptPhotoBatch(canvases)) return;
+      app.showToast(`Backend đã lưu ${Math.min(app.slotCount, files.length)} ảnh chụp.`, 'success');
+      if (app.photos.every(Boolean)) app.onAllSixShotsCompleted();
+    } catch (error) { app.reportSaveError(error); }
+    finally { app.captureBusy = false; app.syncPersistenceUI(); }
+  })();
 }
 
 export function captureFrameIntoSlot(app, slotIndex) {
@@ -171,7 +175,6 @@ export function captureFrameIntoSlot(app, slotIndex) {
 
   app.playShutterSound();
   app.triggerFlashEffect();
-  app.photos[slotIndex] = snapCanvas;
-  app.renderCaptureDots();
-  app.renderSixSlotsGrid();
+  const source = app.isUsingSimulatedCamera || !videoEl || videoEl.readyState < 2 ? 'demo' : 'webcam_frame';
+  return app.acceptPhoto(slotIndex, snapCanvas, source);
 }

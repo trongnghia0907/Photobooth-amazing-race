@@ -1,7 +1,7 @@
 /** Extracted from legacy; explicit app context supplied by bootstrap. */
 
 export function getSixSlotCoordinates(app, canvasW, canvasH) {
-  if (app.customFrameImg && app.detectedSlots && app.detectedSlots.length === 6) {
+  if (app.customFrameImg && app.detectedSlots && app.detectedSlots.length === app.slotCount) {
     return app.detectedSlots.map(s => ({
       x: Math.max(0, (s.x - 0.005) * canvasW),
       y: Math.max(0, (s.y - 0.005) * canvasH),
@@ -11,8 +11,8 @@ export function getSixSlotCoordinates(app, canvasW, canvasH) {
   }
 
   const isLandscape = canvasW > canvasH;
-  const cols = isLandscape ? 3 : 2;
-  const rows = isLandscape ? 2 : 3;
+  const cols = app.slotCount === 4 ? 2 : (isLandscape ? 3 : 2);
+  const rows = app.slotCount === 4 ? 2 : (isLandscape ? 2 : 3);
 
   const padX = (app.slotMetrics.padX / 100) * canvasW;
   const padTop = (app.slotMetrics.padTop / 100) * canvasH;
@@ -55,7 +55,7 @@ export function renderCompositeCanvas(app) {
       cw = Math.round(cw * scale);
       ch = Math.round(ch * scale);
     }
-  } else if (app.presetLayout === 'grid3x2') {
+  } else if (app.presetLayout === 'grid3x2' || app.presetLayout === 'landscape_4') {
     cw = 1800;
     ch = 1200;
   }
@@ -121,6 +121,7 @@ export function renderCompositeCanvas(app) {
 
   try {
     const dataUrl = canvas.toDataURL('image/png');
+    app.onCompositeRendered?.(dataUrl);
     const printImg = document.getElementById('printImageElement');
     if (printImg) printImg.src = dataUrl;
     const mobileImg = document.getElementById('mobileModalImage');

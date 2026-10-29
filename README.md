@@ -1,10 +1,29 @@
-# OSA BOOTH — Phase 0 + Phase 1
+# OSA BOOTH — Phase 2 Backend Foundation
 
-Frontend Vanilla JavaScript ES Modules + Vite, tách trực tiếp từ HTML gốc. Giữ Home → Capture → Result, CSS/theme, mock preview, 6 shots, countdown/retake, frame detection, 9 filters, stickers, text, download và in trình duyệt legacy. **Chỉ DEMO; chưa có backend, camera shutter thật, lưu ảnh tự động, QR public hay print queue.** Dừng trước Phase 2.
+Frontend ES Modules + Vite, tái sử dụng HTML/CSS/editor Phase 1. Backend FastAPI + SQLite lưu từng ảnh demo/webcam/manual và composite trên laptop. Luồng: **Home → tạo session → Capture 6 ảnh → Result/editor → Xác nhận & Lưu ảnh trên laptop**.
 
-## Chạy trên Windows 11
+Hoàn thiện Phase 2 trước checkpoint: Home có thêm **4 ảnh ngang (2×2)**, slotCount 4/6 xuyên suốt capture/retake/composite/backend; state machine và adapter camera mock trả metadata, printer adapter chỉ dry-run (không in). Sáu ảnh và mọi chức năng editor cũ được giữ. Kiểm tra checkpoint: backend **13/13**, Node **7/7**, Playwright **10/10**, cả hai build PASS.
 
-Cần Node.js 22.12+ (đã kiểm tra bằng Node 24.22.2), npm và trình duyệt hiện đại. PowerShell:
+Chưa có physical shutter/SDK, QR public, Guest Photo Page, Host Dashboard, print worker hoặc deployment. Dừng ở Phase 2; không commit/push tự động.
+
+## Windows 11: chạy backend
+
+Cần Python 3.11+, Node.js 22.12+, npm. Đã test Python 3.12.10, Node 26.13.0 và npm 11.20.0. Không cần Docker. PowerShell tại thư mục gốc:
+
+```powershell
+cd backend
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.lock.txt
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+```
+
+`requirements.lock.txt` khóa phiên bản đã test; `requirements.txt` ghi dependencies trực tiếp. Không cần activate venv hoặc đổi Execution Policy.
+
+Health: http://127.0.0.1:8000/api/health. OpenAPI: http://127.0.0.1:8000/docs.
+
+## Chạy frontend
+
+PowerShell thứ hai tại thư mục gốc:
 
 ```powershell
 cd frontend
@@ -12,68 +31,66 @@ npm ci
 npm run dev
 ```
 
-Mở http://127.0.0.1:5173. Khi trình duyệt từ chối camera, ứng dụng chuyển sang camera mô phỏng có nhãn DEMO. Selector cho phép chọn video preview hoặc mô phỏng. Ảnh chỉ ở RAM đến khi tải PNG; reload sẽ mất phiên. Webcam là nguồn preview/video frame, chưa phải ảnh gốc DSLR/mirrorless.
+Mở **http://127.0.0.1:5173**. Nếu npm.ps1 bị chặn, dùng `npm.cmd` thay npm. Vite proxy `/api` đến backend. Biến shell `OSA_BACKEND_URL` đổi target; mặc định `http://127.0.0.1:8000`. Không hardcode URL backend trong logic frontend.
 
-```powershell
-npm run build
-npm run preview
+Chọn mock hoặc webcam preview, chụp sáu ảnh hoặc upload file thử nghiệm. Từng slot chỉ được thay sau ACK lưu của backend. Retake thất bại giữ ảnh cũ và canvas mới đang chờ. **Thử lưu lại** giữ nguyên payload/idempotency key; mất phản hồi sau khi đã ghi không tạo file trùng. Lỗi batch upload giữ cả những canvas chưa upload xong.
+
+Đi Result/chỉnh filter, frame, sticker hoặc text chưa upload composite. Chỉ nút **Xác nhận & Lưu ảnh trên laptop** render snapshot, lưu composite và complete; editor tạm khóa khi lưu. UI chỉ báo thành công sau ACK đúng session/composite. Chỉnh sửa sau khi lưu làm snapshot chưa xác nhận; xác nhận lại tạo composite revision mới. Retake/xóa/reset cập nhật active slots và vô hiệu composite cũ; files revision cũ vẫn private.
+
+**Không reload trình duyệt khi còn dữ liệu chưa lưu:** canvas/credential/pending retry chỉ ở RAM; chưa có resume UI. Backend restart không mất file/metadata đã commit. Bấm khách mới tạo session mới; không xóa file cũ.
+
+## Storage
+
+Mặc định dưới thư mục gốc repository, không phụ thuộc working directory:
+
+```text
+runtime/photobooth.sqlite3
+runtime/originals/<session_id>/<photo_id>.png
+runtime/composites/<session_id>/<composite_id>.png
 ```
 
-Mở http://127.0.0.1:4173 để kiểm tra bản build. **`build` chủ động dùng Vite mode `demo`**, artifact hiện badge DEMO và vẫn cho mock/video capture để review Phase 1. Không triển khai artifact này cho sự kiện. `npm run build:production` dùng mode production và chặn mock/video capture; chưa phải ứng dụng production hoàn chỉnh.
+Mở bằng Explorer để xem ảnh trên laptop. SQLite chỉ giữ metadata/path tương đối, không chứa binary. SQLite WAL có thể tạo thêm `-wal`/`-shm`. `originals` ở Phase 2 là ảnh canvas/manual normalize PNG, **chưa phải file shutter DSLR**. Source ghi đúng `demo`, `webcam_frame`, `manual_upload`.
 
-## Kiểm thử
+Không public runtime/gallery. API xem ảnh yêu cầu credential đúng session; metadata không lộ filesystem paths. Các thư mục runtime, venv, ảnh khách, DB, .env và logs được ignore.
+
+Tùy chọn set biến môi trường trong shell backend:
 
 ```powershell
-cd frontend
+$env:OSA_STORAGE_ROOT = 'D:\OSA_Runtime'
+$env:OSA_MAX_UPLOAD_BYTES = '10485760'
+$env:OSA_MAX_IMAGE_PIXELS = '24000000'
+```
+
+`backend/.env.example` là mẫu tham chiếu, không tự được đọc. Đường dẫn cấu hình tương đối resolve theo working directory. macOS có thể dùng `.venv/bin/python`; code core dùng pathlib/sqlite3, chưa test macOS thực tế.
+
+## Build và test
+
+Từ backend:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest -q
+```
+
+Từ frontend:
+
+```powershell
 npm test
 npm run build
 npm run build:production -- --outDir dist-production
-npx playwright install chromium
-npm run test:e2e
-```
-
-Nếu dùng Chrome đã cài thay Chromium của Playwright:
-
-```powershell
 $env:CHROME_PATH = 'C:\Program Files\Google\Chrome\Application\chrome.exe'
 npm run test:e2e
 ```
 
-E2E tự mở/dọn servers ở 5173, 5174 (baseline), 4173 (demo artifact), 4273 (production guard artifact); cần các port này trống. Phải build hai artifact trước E2E. Tests chỉ dùng ảnh canvas fixture, chặn dịch vụ ngoài, stub `window.print()`, mô phỏng từ chối camera. Google Fonts/QRCode CDN không được kiểm chứng online trong tests. Screenshot fixture nằm ở `docs/screenshots/`; không chứa ảnh khách.
+Hoặc bỏ CHROME_PATH và `npx playwright install chromium`. E2E tự mở/dọn các port **8001, 5173, 5174, 4173, 4273**; cần port trống, backend venv/dependencies và hai frontend builds. Storage test riêng `.tools/e2e-backend/`, không dùng runtime của người vận hành.
 
-Môi trường lần refactor chưa có Node trên PATH. Helper tùy chọn từ thư mục gốc, không cài phần mềm toàn hệ thống:
-
-```powershell
-python scripts/setup_test_tools.py
-python scripts/frontend_command.py ci --offline=false --cache=../.tools/npm-cache
-python scripts/frontend_command.py test
-python scripts/frontend_command.py run build
-python scripts/frontend_command.py run build:production -- --outDir dist-production
-python scripts/frontend_command.py run test:e2e
-```
-
-Helper ưu tiên Node portable tại `.tools/`, dùng Chrome ở đường dẫn trên. Máy có Node/npm bình thường nên dùng các lệnh npm chuẩn. `.tools/`, dependencies, build output và test traces được ignore.
+`npm run build` là **DEMO** để review; `npm run preview` mở http://127.0.0.1:4173 với API proxy. `build:production` chỉ chặn mock/video capture, chưa phải event-ready deployment. Tests dùng fixture, stub window.print và tài nguyên CDN, không upload ra ngoài/in giấy. Google Fonts/QRCode CDN chưa được kiểm chứng online; Tailwind build local giữ theme gốc.
 
 ## Cấu trúc và tài liệu
 
-- `frontend/index.html`: markup gốc, giữ nguyên IDs và classes; thêm nhãn demo và inputs calibrator bị thiếu.
-- `frontend/src/`: `config`, `core`, `services`, `features`, `components`, `styles`, `utils`. State ở `core/store.js`; wiring ở `core/bootstrap.js`; startup ở `main.js`.
-- Tailwind 3.4.17 build cục bộ, giữ nguyên theme. Google Fonts và QRCode.js CDN tạm giữ; cần local assets trước sự kiện.
-- `legacy/osa_booth_photobooth.original.html`: bản sao byte-for-byte; HTML gốc ở root không sửa.
-- [FUNCTION_INVENTORY](docs/FUNCTION_INVENTORY.md): mapping 80/80 method, behavior, call sites, dependencies và module mới.
-- [MIGRATION_LOG](docs/MIGRATION_LOG.md): baseline, ngoại lệ refactor, bug cũ và giới hạn.
-- [ACCEPTANCE_TESTS](docs/ACCEPTANCE_TESTS.md): kết quả và những phần chưa verify.
-- [FILES_CREATED](docs/FILES_CREATED.md): danh sách file bàn giao.
+- `backend/app/`: app factory, config/pathlib, sqlite3 database/migration, schemas, routers và services file/metadata.
+- `frontend/src/services/{api-client,session-client,photo-repository}.js`: HTTP/session/pending/retry/confirm.
+- Giữ nguyên editor/layout algorithms; compositor chỉ thêm hook báo dirty. Giữ facade window.app cho handlers cũ.
+- SQLite schema nằm trong `migrations/001_initial.sql`; không tạo ORM models/folder rỗng. Browser camera/mock tiếp tục dùng service Phase 1; backend không giả lập shutter thật.
+- [API_CONTRACT](docs/API_CONTRACT.md), [PHASE2_REPORT](docs/PHASE2_REPORT.md), [FUNCTION_INVENTORY](docs/FUNCTION_INVENTORY.md), [MIGRATION_LOG](docs/MIGRATION_LOG.md), [ACCEPTANCE_TESTS](docs/ACCEPTANCE_TESTS.md).
 
-`window.app` là facade tương thích **tạm thời** cho inline handlers tĩnh/động; không có bản logic thứ hai. Khi chuyển sang delegation, phải sửa cả HTML và template strings trong modules cùng tests.
-
-## QR / in / camera legacy
-
-QR mặc định hiển thị unavailable, không upload và không tạo link fragment giả. Nút tải PNG và mobile preview vẫn dùng được. In chỉ mở hộp thoại trình duyệt khi bấm hoặc khi người vận hành chủ động bật checkbox auto print; mặc định checkbox **tắt**. Không có bằng chứng giấy đã in.
-
-Chỉ để đối chiếu legacy trong development, copy `frontend/.env.example` thành `.env.local`, bật flag tương ứng rồi restart dev server:
-
-- `VITE_ENABLE_LEGACY_UPLOAD=true`: cho phép lại ImgBB/TmpFiles/File.io; có thể gửi ảnh tới dịch vụ ngoài. Mã nằm trong `services/legacy-qr.js`; không dùng cho sự kiện.
-- `VITE_ENABLE_LEGACY_SHUTTER=true`: cho phép signal ImageCapture/loopback 5513 cũ; không xác nhận physical shutter hoặc file camera gốc.
-
-Hai flags chỉ hiệu lực khi Vite DEV; không bật trong tests. Backend/QR/print/camera SDK sẽ làm theo từng phase sau khi người dùng review Phase 1. Session machine/API/admin/share/storage chưa được triển khai. Repository ban đầu không có `.git`, nên không có branch/commit baseline hoặc refactor; không khởi tạo Git thay người dùng.
+HTML root và legacy giữ nguyên. QR/shutter legacy opt-in DEV mặc định tắt. Nút in legacy vẫn là browser print, không có print worker hoặc bằng chứng giấy đã in. Chưa làm Phase 3.

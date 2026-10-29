@@ -1,6 +1,7 @@
 /** Extracted from legacy; explicit app context supplied by bootstrap. */
 
 export function clearTimers(app) {
+  app.captureEpoch++;
   for (const key of ['sessionStartTimerId', 'sequenceTimerId', 'autoPrintTimerId', 'qrUpdateDebounceTimer']) {
     if (app[key]) clearTimeout(app[key]);
     app[key] = null;

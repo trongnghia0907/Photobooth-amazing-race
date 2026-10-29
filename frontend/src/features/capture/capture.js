@@ -1,10 +1,14 @@
 /** Extracted from legacy; explicit app context supplied by bootstrap. */
 
 export async function startAutomaticSession(app) {
+  if (app.persistenceBusy || app.captureBusy || app.hasPendingWork()) return;
   app.ensureAudio();
+  app.clearTimers();
   if (app.photos.every(p => p !== null)) {
-    app.photos = [null, null, null, null, null, null];
+    if (!await app.resetSessionShots()) return;
   }
+  const epoch = app.captureEpoch;
+  if (!await app.prepareSession() || epoch !== app.captureEpoch) return;
   app.goToScreen('capture');
   app.sessionStartTimerId = setTimeout(() => {
     app.sessionStartTimerId = null;
@@ -14,8 +18,9 @@ export async function startAutomaticSession(app) {
 }
 
 export function startNewGuestSession(app) {
+  if (!app.forgetSession()) return;
   app.clearTimers();
-  app.photos = [null, null, null, null, null, null];
+  app.photos = Array(app.slotCount).fill(null);
   app.placedStickers = [];
   app.singleRetakeIndex = null;
   app.lastUploadedUrl = '';
@@ -67,11 +72,11 @@ export function renderSixSlotsGrid(app) {
 
   const takenCount = app.photos.filter(p => p !== null).length;
   const badge = document.getElementById('capturedCountBadge');
-  if (badge) badge.textContent = `${takenCount} / 6 hoàn tất`;
+  if (badge) badge.textContent = `${takenCount} / ${app.slotCount} hoàn tất`;
 
   const goBtn = document.getElementById('goToResultBtn');
   if (goBtn) {
-    if (takenCount === 6) {
+    if (takenCount === app.slotCount) {
       goBtn.disabled = false;
       goBtn.className = 'w-full py-4 rounded-2xl font-extrabold text-sm sm:text-base transition-all flex items-center justify-center gap-2 btn-primary-blue text-white shadow-glow-blue cursor-pointer';
     } else {
@@ -85,13 +90,13 @@ export function updateCaptureScreenUI(app) {
   const nextEmpty = app.photos.findIndex(p => p === null);
   const currentShotIndex = app.singleRetakeIndex !== null
     ? app.singleRetakeIndex
-    : (nextEmpty !== -1 ? nextEmpty : 5);
+    : (nextEmpty !== -1 ? nextEmpty : app.slotCount - 1);
 
   const titleEl = document.getElementById('captureProgressTitle');
   if (titleEl) {
     titleEl.textContent = nextEmpty === -1 && app.singleRetakeIndex === null
-      ? 'Đã hoàn thành 6 / 6 tấm! 🎉'
-      : `Tấm ${currentShotIndex + 1} / 6`;
+      ? `Đã hoàn thành ${app.slotCount} / ${app.slotCount} tấm! 🎉`
+      : `Tấm ${currentShotIndex + 1} / ${app.slotCount}`;
   }
 
   const retakeBanner = document.getElementById('retakeBanner');
@@ -111,9 +116,9 @@ export function updateCaptureScreenUI(app) {
     } else if (app.singleRetakeIndex !== null) {
       mainBtnText.textContent = `Chụp Lại Ô #${app.singleRetakeIndex + 1} (${app.countdownSeconds}s)`;
     } else if (nextEmpty === -1) {
-      mainBtnText.textContent = 'Chụp Lại Toàn Bộ 6 Tấm';
+      mainBtnText.textContent = `Chụp Lại Toàn Bộ ${app.slotCount} Tấm`;
     } else {
-      mainBtnText.textContent = 'Bắt Đầu Chụp Tự Động (6 Tấm)';
+      mainBtnText.textContent = `Bắt Đầu Chụp Tự Động (${app.slotCount} Tấm)`;
     }
   }
 
@@ -121,30 +126,34 @@ export function updateCaptureScreenUI(app) {
   app.renderSixSlotsGrid();
 }
 
-export function captureCurrentFrameImmediately(app) {
+export async function captureCurrentFrameImmediately(app) {
+  if (app.persistenceBusy || app.captureBusy || app.hasPendingWork()) return;
   app.clearTimers();
+  const epoch = app.captureEpoch;
   const targetIndex = app.singleRetakeIndex !== null
     ? app.singleRetakeIndex
     : app.photos.findIndex(p => p === null);
 
   if (targetIndex === -1) {
-    app.showToast('Đã đủ 6 tấm ảnh! Nhấn vào ô bất kỳ nếu bạn muốn chụp lại ô đó.', 'info');
+    app.showToast(`Đã đủ ${app.slotCount} tấm ảnh! Nhấn vào ô bất kỳ nếu bạn muốn chụp lại ô đó.`, 'info');
     return;
   }
 
-  app.triggerHardwareCameraShutter();
-  app.captureFrameIntoSlot(targetIndex);
-  app.singleRetakeIndex = null;
-  app.updateCaptureScreenUI();
-
-  if (app.photos.every(p => p !== null)) {
-    app.onAllSixShotsCompleted();
-  }
+  app.captureBusy = true;
+  app.transitionSession('CAPTURE');
+  try {
+    if (!(await app.capturePhoto(targetIndex)).accepted || epoch !== app.captureEpoch) return;
+    app.singleRetakeIndex = null;
+    app.updateCaptureScreenUI();
+    if (app.photos.every(p => p !== null)) app.onAllSixShotsCompleted();
+  } catch (error) { app.reportSaveError(error); }
+  finally { app.captureBusy = false; app.syncPersistenceUI(); }
 }
 
 export function onAllSixShotsCompleted(app) {
+  app.transitionSession('REVIEW');
   if (!app.fullAutoMode) {
-    app.showToast('Đã chụp đủ 6 tấm! Nhấn "Hoàn Tất & Xuất Ảnh In" để tiếp tục.', 'success');
+    app.showToast(`Đã chụp đủ ${app.slotCount} tấm! Nhấn "Hoàn Tất & Xuất Ảnh In" để tiếp tục.`, 'success');
     return;
   }
 

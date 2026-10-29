@@ -5,6 +5,20 @@ import { createEmptyPhotos } from '../config/layouts.js';
 /** Single state owner, no DOM access. A fresh store per app/test. */
 export function createStore() {
   return {
+slotCount: 6,
+sessionPhase: 'IDLE',
+cameraAdapter: null,
+sessionContext: null,
+serverSession: null,
+pendingPhotos: Array(6).fill(null),
+pendingDeletion: null,
+finalOperation: null,
+lastSavedImage: '',
+persistenceBusy: false,
+persistenceError: '',
+saveState: 'idle',
+captureBusy: false,
+captureEpoch: 0,
 currentScreen: 'home',
 stream: null,
 selectedDeviceId: '',

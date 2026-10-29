@@ -1,6 +1,7 @@
 /** Extracted from legacy; explicit app context supplied by bootstrap. */
 
 export async function init(app) {
+  app.updateSlotLabels();
   app.renderCaptureDots();
   app.renderSixSlotsGrid();
   app.renderFilterButtons();
@@ -10,6 +11,13 @@ export async function init(app) {
   app.setupCanvasStickerInteractions();
   app.updateCustomTextsUI();
   await app.initCameraDevices();
+}
+
+export function updateSlotLabels(app) {
+  for (const element of document.querySelectorAll('[data-shot-template]')) {
+    element.textContent = element.dataset.shotTemplate.replaceAll('{count}', app.slotCount);
+  }
+  document.getElementById('stepNavCapture').textContent = `2. Chụp ${app.slotCount} Tấm`;
 }
 
 export function setCountdownSeconds(app, sec) {

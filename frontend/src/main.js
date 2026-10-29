@@ -14,7 +14,7 @@ const badge = document.createElement('div');
 badge.id = 'demoModeBadge';
 badge.className = 'bg-amber-100 text-amber-800 text-center text-xs font-bold p-2';
 badge.textContent = defaults.demoEnabled
-  ? 'DEMO • Ảnh mô phỏng / video frame • QR chia sẻ chưa triển khai • In thủ công qua trình duyệt'
+  ? 'DEMO • Backend lưu ảnh trên laptop • Chưa có camera shutter thật / QR public / print queue'
   : 'Chưa hỗ trợ production: camera thật, lưu trữ và QR đang chờ triển khai.';
 document.body.insertBefore(badge, document.querySelector('header'));
 if (defaults.demoEnabled) {

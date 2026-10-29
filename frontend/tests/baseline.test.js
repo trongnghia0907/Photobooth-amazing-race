@@ -35,7 +35,7 @@ test('state is isolated, all 9 filters and sticker library retained; auto print 
   assert.equal(JSON.stringify(a.filters), JSON.stringify(baseline.filters));
   assert.equal(JSON.stringify(a.stickerLibrary), JSON.stringify(baseline.stickerLibrary));
   assert.equal(createEmptyPhotos('landscape_4').length, 4);
-  assert.equal(layouts.landscape_4.enabled, false);
+  assert.equal(layouts.landscape_4.enabled, true);
 });
 
 test('legacy slot coordinates unchanged for portrait, landscape and detected custom frame', () => {
