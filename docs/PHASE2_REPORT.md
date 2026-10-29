@@ -1,5 +1,7 @@
 # Phase 2 — Backend Foundation, 30/10/2026
 
+**Checkpoint theo yêu cầu tiếp tục mới:** đã tạo local commit **dad43d0** trên `checkpoint/phase2-foundation`, sau khi 13/13 backend, 7/7 Node, 10/10 Playwright và hai builds PASS. Nhánh `feat/phase3-qr-guest-page` tạo từ checkpoint đó. Không push/merge main. Ghi chú “không commit” trong báo cáo ban đầu bên dưới phản ánh lệnh Phase 2 trước, đã được lệnh checkpoint mới thay thế. Kết quả Phase 3 nằm riêng tại PHASE3_REPORT.md.
+
 ## Hoàn thiện trước checkpoint (yêu cầu tiếp tục Phase 3)
 
 Đã bật layout 4 ảnh ngang ở Home và tổng quát slotCount, capture/retake/composite/detection/persistence 4/6. Tọa độ sáu ảnh và editor cũ giữ nguyên. Bổ sung state machine event-driven (`core/session-machine.js`), MockCameraAdapter browser trả accepted shot metadata, MockPrinterAdapter dry-run không in vật lý/không worker. Kiểm thử mới: backend 13/13, Node 7/7; Playwright có thêm luồng 4 ảnh (10 bài tổng), được chạy trước checkpoint. Mục “UI vẫn sáu ảnh” trong báo cáo cũ bên dưới là lịch sử, đã được hoàn thiện.

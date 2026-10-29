@@ -39,6 +39,8 @@ class Repository:
     def __init__(self, settings: Settings):
         self.settings = settings
         self.db = Database(settings.storage_root)
+        from .sharing import SharingService
+        self.sharing = SharingService(self)
 
     def authorize(self, db, session_id, token):
         row = db.execute('SELECT * FROM sessions WHERE id=?', (session_id,)).fetchone()
@@ -81,12 +83,16 @@ class Repository:
         row = db.execute('SELECT * FROM sessions WHERE id=?', (sid,)).fetchone()
         photos = db.execute('SELECT p.* FROM slots s JOIN photos p ON p.id=s.photo_id WHERE s.session_id=? ORDER BY s.slot_index', (sid,)).fetchall()
         composite = db.execute('SELECT * FROM composites WHERE id=?', (row['composite_id'],)).fetchone()
-        return {
+        result = {
             'session_id': sid, 'status': row['status'], 'layout': row['layout'], 'slot_count': row['slot_count'],
             'shots_revision': row['shots_revision'], 'created_at': row['created_at'], 'updated_at': row['updated_at'],
             'photos': [self.photo_metadata(photo) for photo in photos],
             'composite': self.composite_metadata(composite) if composite else None,
         }
+        share = self.sharing.metadata(db, row['composite_id']) if row['composite_id'] else None
+        if share:
+            result['share'] = share
+        return result
 
     def get(self, sid, token):
         with self.db.connect() as db:
@@ -108,10 +114,19 @@ class Repository:
                     if previous['payload_hash'] != fingerprint:
                         raise HTTPException(409, 'Idempotency-Key đã dùng cho dữ liệu khác')
                     result = json.loads(previous['result_json'])
+                    shared_composite = result.pop('_share_composite', None)
+                    if shared_composite:
+                        share = self.sharing.metadata(db, shared_composite)
+                        if share:
+                            result['share'] = share
                 else:
                     mutate(db, session, created_paths)
                     result = self.snapshot(db, sid)
-                    db.execute('INSERT INTO operations VALUES (?,?,?,?)', (sid, key, fingerprint, canonical(result)))
+                    cached = dict(result)
+                    share = cached.pop('share', None)
+                    if share:
+                        cached['_share_composite'] = share['composite_id']
+                    db.execute('INSERT INTO operations VALUES (?,?,?,?)', (sid, key, fingerprint, canonical(cached)))
                 db.commit()
                 return result
             except Exception:

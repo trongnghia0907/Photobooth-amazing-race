@@ -207,17 +207,20 @@ export async function confirmAndSaveSession(app) {
     app.saveState = 'saved';
     app.transitionSession('SAVED');
     app.persistenceError = '';
+    await app.generateQRCodeForCurrentPhoto(true);
     app.showToast('Backend đã lưu ảnh ghép và hoàn tất phiên trên laptop.', 'success');
   } catch (error) { failed(app, error); }
   finally { resultScreen.inert = false; busy(app, false); }
 }
 
 export function forgetSession(app) {
-  if (app.persistenceBusy || app.captureBusy || pending(app) || app.persistenceError) {
+  if (app.persistenceBusy || app.captureBusy || app.shareBusy || pending(app) || app.persistenceError) {
     app.showToast('Phiên còn dữ liệu chưa lưu. Hãy thử lưu lại trước khi đổi khách.', 'info');
     return false;
   }
   app.sessionContext = null;
+  app.activeShare = null;
+  app.shareError = '';
   app.serverSession = null;
   app.pendingPhotos = Array(app.slotCount).fill(null);
   app.pendingDeletion = null;

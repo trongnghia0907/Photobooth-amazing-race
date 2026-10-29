@@ -9,6 +9,8 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .config import Settings
 from .routers import router
+from .guest import router as guest_router
+from .logging_filters import install_log_filter
 from .services.repository import Repository
 
 logger = logging.getLogger(__name__)
@@ -54,13 +56,15 @@ def create_app(settings: Settings | None = None):
 
     @asynccontextmanager
     async def lifespan(app):
+        install_log_filter()
         app.state.settings = settings
         app.state.repository = Repository(settings)
         yield
 
-    app = FastAPI(title='OSA Photobooth — Phase 2', lifespan=lifespan)
+    app = FastAPI(title='OSA Photobooth — Phase 3', lifespan=lifespan)
     app.add_middleware(BodyLimit, limit=settings.max_upload_bytes + 64 * 1024)
     app.include_router(router)
+    app.include_router(guest_router)
 
     @app.exception_handler(StarletteHTTPException)
     async def http_error(request: Request, exc):

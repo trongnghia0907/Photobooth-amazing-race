@@ -2,6 +2,9 @@ fastapi>=0.115,<1
 uvicorn>=0.30,<1
 pydantic>=2.10,<3
 Pillow>=11,<13
+qrcode>=8,<9
 python-multipart>=0.0.20,<1
 httpx>=0.27,<1
 pytest>=8,<10
+# Automated QR PNG round-trip validation only; not a camera driver.
+zxing-cpp==2.3.0

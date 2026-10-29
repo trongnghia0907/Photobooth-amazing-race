@@ -7,7 +7,7 @@
   <!-- Tailwind CSS CDN -->
   <!-- Tailwind built locally with the unchanged legacy theme/classes. -->
   <!-- QRCode.js CDN for instant client-side QR generation -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <!-- QR PNG is generated locally by FastAPI after confirmation. -->
   <!-- Google Fonts: Plus Jakarta Sans & Fredoka for cute modern photobooth headings -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -471,13 +471,11 @@
                     <span>🌐 Đã liên kết Web QR Tải Ảnh</span>
                   </span>
                   <select disabled id="qrProviderSelect" onchange="app.setQRProvider(this.value)" class="px-2.5 py-1 rounded-full bg-white border border-brand-200 text-[11px] font-bold text-brand-800 focus:outline-none">
-                    <option value="tmpfiles_direct">⚡ Web Ảnh Trực Tiếp (Khuyên dùng)</option>
-                    <option value="tmpfiles_page">🌐 Trang Web Tải File (TmpFiles)</option>
-                    <option value="fileio">📦 Trang Tải Nhanh (File.io)</option>
+                    <option value="self_hosted">Backend trên laptop • QR riêng</option>
                   </select>
                 </div>
 
-                <h3 class="font-display-title text-xl sm:text-2xl font-bold text-brand-900 mb-1">Chia Sẻ QR — Chờ Tích Hợp Backend</h3>
+                <h3 class="font-display-title text-xl sm:text-2xl font-bold text-brand-900 mb-1">QR Riêng Cho Ảnh Của Bạn</h3>
                 <p id="qrDescriptionText" class="text-xs text-slate-600 font-medium mb-3">Quét mã QR bằng Camera hoặc Zalo trên điện thoại để mở trang web và lưu ảnh về máy!</p>
 
                 <div class="flex items-center gap-2 p-2 rounded-xl bg-white border border-brand-200 mb-3 shadow-2xs">
@@ -600,8 +598,8 @@
         </div>
 
         <div class="p-4 rounded-2xl bg-brand-50/50 border border-brand-100 space-y-2">
-          <div class="font-extrabold text-brand-900 text-sm">3. Lưu trữ Đám mây cho Mã QR (Tuỳ chọn)</div>
-          <input type="text" disabled id="imgbbApiKeyInput" placeholder="Nhập ImgBB API Key (Để trống nếu dùng chế độ QR mặc định)" onchange="app.syncSettingsFromModal()" class="w-full px-3.5 py-2 rounded-xl bg-white border border-brand-200 text-xs font-mono" />
+          <div class="font-extrabold text-brand-900 text-sm">3. QR nội bộ từ Backend</div>
+          <input type="text" disabled id="imgbbApiKeyInput" placeholder="Không dùng API key dịch vụ ngoài; cấu hình PUBLIC_BASE_URL ở backend" onchange="app.syncSettingsFromModal()" class="w-full px-3.5 py-2 rounded-xl bg-white border border-brand-200 text-xs font-mono" />
         </div>
       </div>
 

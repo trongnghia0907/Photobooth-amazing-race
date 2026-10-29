@@ -88,7 +88,7 @@ def test_complete_workflow_retake_files_sqlite_and_restart(client, settings):
     assert response.json()['status'] == 'completed'
     assert client.post(f'/api/sessions/{sid}/complete', headers=headers(complete_key), json={'composite_id': final['id']}).json() == response.json()
     with sqlite3.connect(settings.storage_root/'photobooth.sqlite3') as db:
-        assert db.execute('PRAGMA user_version').fetchone()[0] == 1
+        assert db.execute('PRAGMA user_version').fetchone()[0] == 3
         assert db.execute('SELECT COUNT(*) FROM photos').fetchone()[0] == 7
         paths = [r[0] for r in db.execute('SELECT path FROM photos UNION ALL SELECT path FROM composites')]
         assert all((settings.storage_root/p).is_file() for p in paths)

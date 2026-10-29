@@ -2,6 +2,7 @@ import { defineConfig } from '@playwright/test';
 import { fileURLToPath } from 'node:url';
 
 const backendEnv = {
+  PUBLIC_BASE_URL: 'https://photos.osa.test', // synthetic test origin; never a deployed public URL
   OSA_BACKEND_URL: 'http://127.0.0.1:8001',
   OSA_STORAGE_ROOT: fileURLToPath(new URL('../.tools/e2e-backend/', import.meta.url)),
 };

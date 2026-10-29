@@ -1,10 +1,38 @@
-# OSA BOOTH — Phase 2 Backend Foundation
+# OSA BOOTH — Phase 3 QR & Guest Photo Page
 
 Frontend ES Modules + Vite, tái sử dụng HTML/CSS/editor Phase 1. Backend FastAPI + SQLite lưu từng ảnh demo/webcam/manual và composite trên laptop. Luồng: **Home → tạo session → Capture 6 ảnh → Result/editor → Xác nhận & Lưu ảnh trên laptop**.
 
 Hoàn thiện Phase 2 trước checkpoint: Home có thêm **4 ảnh ngang (2×2)**, slotCount 4/6 xuyên suốt capture/retake/composite/backend; state machine và adapter camera mock trả metadata, printer adapter chỉ dry-run (không in). Sáu ảnh và mọi chức năng editor cũ được giữ. Kiểm tra checkpoint: backend **13/13**, Node **7/7**, Playwright **10/10**, cả hai build PASS.
 
-Chưa có physical shutter/SDK, QR public, Guest Photo Page, Host Dashboard, print worker hoặc deployment. Dừng ở Phase 2; không commit/push tự động.
+Đã có QR riêng và Guest Photo Page sau khi xác nhận composite, nếu PUBLIC_BASE_URL được cấu hình đúng. Chưa có physical shutter/SDK, Host Dashboard, print worker hoặc public deployment. Dừng ở Phase 3; có local checkpoints theo yêu cầu, không push/merge main.
+
+## Phase 3: QR và trang khách
+
+Luồng **Capture → Customize → Confirm → Save Composite → Complete → Finalize share → QR**. QR/ảnh phục vụ từ backend/laptop, không dùng ImgBB/TmpFiles/File.io hoặc QR server ngoài. Thay filter/sticker/render không upload lại composite và không tạo token; xác nhận revision mới mới có link mới. Link cũ vẫn xem đúng file cũ.
+
+`/p/{token}` chỉ có một ảnh và nút Download Image, có loading/error. Image/download/QR đều kiểm tra token; không gallery hoặc runtime listing. Token là bearer link: ai có link đó có thể xem ảnh tương ứng, không phải xác thực danh tính người chụp.
+
+**QR chưa chèn vào ảnh** (`qr_embedded=false`) theo yêu cầu mới: Phase 3 chuẩn bị asset PNG/link, Phase 4 mới dùng cho bản in. Không có print worker/in vật lý.
+
+### Cấu hình và thử trên điện thoại
+
+Trong shell backend, trước khi chạy Uvicorn:
+
+```powershell
+$env:PUBLIC_BASE_URL = 'https://<ten-mien-public-thuc-te-cua-ban>'
+```
+
+Thay toàn bộ placeholder bằng origin HTTPS thực tế, không path/query/credentials. Không dùng localhost/private IP/example.com. Mặc định trống: vẫn lưu ảnh, nhưng QR báo chưa cấu hình, không tạo link giả. Đổi cấu hình cần restart backend. Migration tự nâng DB Phase 2 lên schema 3, không xóa dữ liệu.
+
+Điện thoại mạng ngoài cần **domain/DNS ổn định + HTTPS hợp lệ + public proxy/tunnel trỏ /p/* tới backend**. Vite localhost:5173 không phải share origin. Chưa tự cài/deploy Cloudflare hoặc tunnel; deployment thuộc phase sau. Laptop/backend/storage và Internet phải còn chạy để link hoạt động.
+
+Sau khi có origin thực: chụp/upload → chỉnh → Xác nhận → chờ “QR sẵn sàng” → quét điện thoại, thử xem/tải trên Wi-Fi và 4G/5G. Trạng thái QR sẵn sàng xác nhận file/URL/PNG đã tạo, không tự chứng minh DNS/Internet online. **Chưa kiểm chứng điện thoại/Internet thực tế trong lượt này.**
+
+Tests dùng `https://photos.osa.test` và proxy nội bộ chỉ trong Playwright; không dùng origin đó cho điện thoại/sự kiện.
+
+Storage bổ sung: `runtime/qrcodes/<session>/<final>.png`, table shares và **runtime/.share-key**. DB lưu hash token + nonce, ACK cache chỉ giữ composite reference; key 32 byte riêng không gửi frontend/commit/log. Backup nhất quán toàn runtime (DB, ảnh, QR, key); mất key không được tự sinh key thay thế link cũ. Chưa có backup worker.
+
+Xem [PHASE3_REPORT](docs/PHASE3_REPORT.md), [API_CONTRACT](docs/API_CONTRACT.md), [SECURITY_PRIVACY](docs/SECURITY_PRIVACY.md). Checkpoint Phase 2 `dad43d0`, nhánh Phase 3 `feat/phase3-qr-guest-page`.
 
 ## Windows 11: chạy backend
 
@@ -93,4 +121,4 @@ Hoặc bỏ CHROME_PATH và `npx playwright install chromium`. E2E tự mở/d�
 - SQLite schema nằm trong `migrations/001_initial.sql`; không tạo ORM models/folder rỗng. Browser camera/mock tiếp tục dùng service Phase 1; backend không giả lập shutter thật.
 - [API_CONTRACT](docs/API_CONTRACT.md), [PHASE2_REPORT](docs/PHASE2_REPORT.md), [FUNCTION_INVENTORY](docs/FUNCTION_INVENTORY.md), [MIGRATION_LOG](docs/MIGRATION_LOG.md), [ACCEPTANCE_TESTS](docs/ACCEPTANCE_TESTS.md).
 
-HTML root và legacy giữ nguyên. QR/shutter legacy opt-in DEV mặc định tắt. Nút in legacy vẫn là browser print, không có print worker hoặc bằng chứng giấy đã in. Chưa làm Phase 3.
+HTML root và legacy giữ nguyên. Upload QR legacy đã ngắt khỏi frontend; handler names/UI vẫn tái sử dụng. Nút in legacy là browser print demo, chưa có QR embedded/print worker hay bằng chứng giấy đã in. Không triển khai Phase 4.

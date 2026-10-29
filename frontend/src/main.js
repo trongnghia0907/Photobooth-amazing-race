@@ -8,14 +8,14 @@ import { defaults } from './config/defaults.js';
 const app = createApp();
 bindEvents(app);
 for (const id of ['qrProviderSelect', 'imgbbApiKeyInput']) {
-  document.getElementById(id).disabled = !defaults.enableLegacyUpload;
+  document.getElementById(id).disabled = true;
 }
 const badge = document.createElement('div');
 badge.id = 'demoModeBadge';
 badge.className = 'bg-amber-100 text-amber-800 text-center text-xs font-bold p-2';
 badge.textContent = defaults.demoEnabled
-  ? 'DEMO • Backend lưu ảnh trên laptop • Chưa có camera shutter thật / QR public / print queue'
-  : 'Chưa hỗ trợ production: camera thật, lưu trữ và QR đang chờ triển khai.';
+  ? 'DEMO • Lưu ảnh & QR riêng qua backend • Chưa có camera shutter thật / print queue'
+  : 'Chưa hỗ trợ production: camera thật/in thật chưa tích hợp; demo capture bị tắt.';
 document.body.insertBefore(badge, document.querySelector('header'));
 if (defaults.demoEnabled) {
   app.init().catch(error => {

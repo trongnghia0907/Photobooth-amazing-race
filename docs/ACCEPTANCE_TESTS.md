@@ -1,5 +1,7 @@
 # Acceptance tests — Phase 0 / Phase 1
 
+**Phase 3 mới nhất:** backend **31/31**, Node **7/7**, toàn bộ Playwright **14/14**, build demo/production guard PASS. QR PNG được decode; mobile guest A/B/download/error và token/retry/restart được kiểm chứng tự động. **Chưa test điện thoại/Internet/QR giấy thật**. Xem [PHASE3_REPORT](PHASE3_REPORT.md); các mốc bên dưới là lịch sử.
+
 Checkpoint hoàn thiện Phase 2: **13/13 backend, 7/7 Node, 10/10 Playwright**, demo/production builds PASS. Bổ sung luồng bốn ảnh ngang, state machine/MockCameraAdapter và MockPrinterAdapter dry-run; kiểm tra sáu ảnh/editor/baseline tiếp tục PASS.
 
 **Cập nhật Phase 2:** backend 12/12 pytest, frontend 6/6 Node, full 9/9 Playwright với FastAPI thật và cả hai build PASS. Xem [PHASE2_REPORT.md](PHASE2_REPORT.md). Các kết quả Phase 1 bên dưới là lịch sử, không thay cho scope Phase 2 mới.

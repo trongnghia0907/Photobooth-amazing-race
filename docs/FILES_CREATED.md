@@ -1,5 +1,7 @@
 # Files created — Phase 0 / Phase 1
 
+File mới/sửa Phase 3 được kiểm kê trong [PHASE3_REPORT](PHASE3_REPORT.md); checkpoint Phase 2 và nhánh Phase 3 được ghi rõ. Danh sách dưới là baseline Phase 1.
+
 File mới/sửa của Phase 2 được kiểm kê riêng trong [PHASE2_REPORT.md](PHASE2_REPORT.md), gồm backend, ba frontend services, backend test server và API contract. Danh sách bên dưới là baseline Phase 1.
 
 Bổ sung sau khi kiểm tra lại bằng Node/npm Windows: `docs/PHASE1_RECHECK.md`.

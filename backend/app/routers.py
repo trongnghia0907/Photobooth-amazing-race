@@ -33,7 +33,7 @@ Key = Annotated[str, Depends(operation_key)]
 def health(request: Request):
     with request.app.state.repository.db.connect() as db:
         db.execute('SELECT 1').fetchone()
-    return {'status': 'ok', 'phase': 2, 'capture_mode': 'demo/webcam_frame/manual_upload'}
+    return {'status': 'ok', 'phase': 3, 'capture_mode': 'demo/webcam_frame/manual_upload'}
 
 
 @router.post('/sessions')
@@ -89,6 +89,11 @@ async def upload_composite(request: Request, session_id: UUID, owner: Auth, key:
 @router.post('/sessions/{session_id}/complete')
 def complete(request: Request, session_id: UUID, payload: CompleteSession, owner: Auth, key: Key):
     return request.app.state.repository.complete(str(session_id), owner, key, payload.composite_id)
+
+
+@router.post('/sessions/{session_id}/finalize')
+def finalize(request: Request, session_id: UUID, payload: CompleteSession, owner: Auth, key: Key):
+    return request.app.state.repository.sharing.finalize(str(session_id), owner, key, payload.composite_id)
 
 
 @router.get('/sessions/{session_id}/{kind}/{image_id}/image')

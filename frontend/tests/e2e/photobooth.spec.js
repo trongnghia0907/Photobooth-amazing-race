@@ -411,3 +411,133 @@ test('four-shot landscape mock session captures, retakes, composites and persist
   expect(await page.evaluate(()=>app.sessionPhase)).toBe('READY');
   expect(log).toEqual({errors:[],externalWrites:[],missing:[]});
 });
+
+async function confirmGuest(page,title) {
+  await setup(page);
+  await page.evaluate(()=>{app.fullAutoMode=false;app.goToScreen('capture');});
+  const photo=await fixture(page);
+  await page.locator('input[multiple]').setInputFiles(Array.from({length:6},(_,i)=>({...photo,name:`guest-${i}.png`})));
+  await expect(page.locator('#goToResultBtn')).toBeEnabled();
+  await page.locator('#goToResultBtn').click();
+  await page.evaluate(title=>{app.customTexts.cardTitle=title;app.renderCompositeCanvas();},title);
+  await page.locator('#confirmSessionBtn').click();
+  await expect(page.locator('#qrStatusBadge')).toContainText('QR sẵn sàng');
+  return page.evaluate(()=>({share:app.activeShare,session:app.serverSession}));
+}
+
+async function proxyPublicGuest(page) {
+  // Exercise the real guest router at a synthetic HTTPS origin. This does not
+  // prove Internet/DNS/TLS/phone reachability of a deployed public hostname.
+  await page.route('https://photos.osa.test/**',async route=>{
+    const path=new URL(route.request().url()).pathname;
+    const response=await route.fetch({url:`http://127.0.0.1:8001${path}`});
+    return route.fulfill({response});
+  });
+}
+
+test('guest A/B pages display and download only their own confirmed photo',async({page,context})=>{
+  const a=await confirmGuest(page,'Guest A fixture');
+  const ownerB=await context.newPage();
+  const b=await confirmGuest(ownerB,'Guest B fixture');
+  expect(a.share.share_url).not.toBe(b.share.share_url);
+  const guest=await context.newPage();
+  await guest.setViewportSize({width:390,height:844});
+  await proxyPublicGuest(guest);
+  for(const state of [a,b]) {
+    await guest.goto(state.share.share_url);
+    await expect(guest.locator('#guestPhoto')).toBeVisible();
+    expect(await guest.locator('img').count()).toBe(1);
+    expect(await guest.locator('a').count()).toBe(1);
+    expect(await guest.locator('body').innerText()).not.toContain('Gallery');
+    expect(await guest.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+    const event=guest.waitForEvent('download');
+    await guest.locator('#guestDownload').click();
+    const download=await event;
+    const {createHash}=await import('node:crypto');
+    expect(createHash('sha256').update(readFileSync(await download.path())).digest('hex')).toBe(state.session.composite.sha256);
+  }
+  await guest.screenshot({path:evidence+'phase3-guest-mobile.png'});
+  await guest.goto('https://photos.osa.test/p/'+('z'.repeat(43)));
+  await expect(guest.getByRole('alert')).toBeVisible();
+  expect(await guest.locator('img').count()).toBe(0);
+  expect(await guest.locator('a').count()).toBe(0);
+});
+
+test('QR renders do not upload or rotate tokens; edits get a new link only after confirm',async({page,context})=>{
+  let finalizes=0, composites=0;
+  page.on('request',request=>{
+    if(request.url().endsWith('/finalize')) finalizes++;
+    if(request.url().endsWith('/composite')&&request.method()==='PUT') composites++;
+  });
+  const original=await confirmGuest(page,'Stable QR fixture');
+  expect(finalizes).toBe(1);
+  expect(composites).toBe(1);
+  await page.evaluate(()=>{for(let i=0;i<5;i++)app.renderCompositeCanvas();});
+  await page.locator('#filterGridContainer button').nth(1).click();
+  await expect(page.locator('#qrStatusBadge')).not.toContainText('QR sẵn sàng');
+  expect(finalizes).toBe(1);
+  expect(composites).toBe(1);
+  await page.locator('#filterGridContainer button').nth(0).click();
+  await expect(page.locator('#qrStatusBadge')).toContainText('QR sẵn sàng');
+  expect(await page.locator('#qrExternalUrlInput').inputValue()).toBe(original.share.share_url);
+  await page.locator('#filterGridContainer button').nth(1).click();
+  await page.locator('#confirmSessionBtn').click();
+  await expect.poll(()=>finalizes).toBe(2);
+  await expect(page.locator('#qrStatusBadge')).toContainText('QR sẵn sàng');
+  expect(await page.locator('#qrExternalUrlInput').inputValue()).not.toBe(original.share.share_url);
+  expect(composites).toBe(2);
+  const oldGuest=await context.newPage();
+  await proxyPublicGuest(oldGuest);
+  await oldGuest.goto(original.share.share_url);
+  await expect(oldGuest.locator('#guestPhoto')).toBeVisible();
+  expect(original.share.share_url).not.toContain('localhost');
+});
+
+test('lost finalize response keeps saved photo, QR retries reuse the same final/token',async({page})=>{
+  await setup(page);
+  let loseResponse=true;
+  await page.route('**/api/sessions/*/finalize',async route=>{
+    const response=await route.fetch();
+    if(loseResponse) {
+      loseResponse=false;
+      return route.fulfill({status:503,contentType:'application/json',body:'{"error":{"message":"Mất phản hồi QR (test)"}}'});
+    }
+    return route.fulfill({response});
+  });
+  await page.evaluate(()=>{app.fullAutoMode=false;app.goToScreen('capture');});
+  const photo=await fixture(page);
+  await page.locator('input[multiple]').setInputFiles(Array.from({length:6},(_,i)=>({...photo,name:`qr-${i}.png`})));
+  await expect(page.locator('#goToResultBtn')).toBeEnabled();
+  await page.locator('#goToResultBtn').click();
+  await page.locator('#confirmSessionBtn').click();
+  await expect(page.locator('#sessionSaveStatus')).toHaveAttribute('data-state','saved');
+  await expect(page.locator('#qrDescriptionText')).toContainText('Mất phản hồi QR');
+  await expect(page.locator('#qrExternalOpenBtn')).not.toHaveAttribute('href');
+  const sid=await page.evaluate(()=>app.sessionContext.id);
+  const qrDir=new URL(`../../../.tools/e2e-backend/qrcodes/${sid}/`,import.meta.url);
+  expect(readdirSync(qrDir)).toHaveLength(1);
+  await page.evaluate(()=>app.generateQRCodeForCurrentPhoto(true));
+  await expect(page.locator('#qrStatusBadge')).toContainText('QR sẵn sàng');
+  expect(readdirSync(qrDir)).toHaveLength(1);
+});
+
+test('guest page shows loading and network error, then recovers after reload',async({page,context})=>{
+  const owner=await confirmGuest(page,'Loading fixture');
+  const guest=await context.newPage();
+  await proxyPublicGuest(guest);
+  let release;
+  const gate=new Promise(resolve=>{release=resolve;});
+  const imagePattern='https://photos.osa.test/p/*/image';
+  await guest.route(imagePattern,async route=>{await gate;await route.abort('failed');});
+  await guest.goto(owner.share.share_url,{waitUntil:'domcontentloaded'});
+  await expect(guest.locator('#loading')).toBeVisible();
+  await expect(guest.locator('#guestDownload')).toBeHidden();
+  release();
+  await expect(guest.locator('#error')).toBeVisible();
+  await expect(guest.locator('#loading')).toBeHidden();
+  await expect(guest.locator('#guestDownload')).toBeHidden();
+  await guest.unroute(imagePattern);
+  await guest.reload();
+  await expect(guest.locator('#guestPhoto')).toBeVisible();
+  await expect(guest.locator('#guestDownload')).toBeVisible();
+});

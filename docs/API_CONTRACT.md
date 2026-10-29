@@ -1,5 +1,24 @@
 # API contract — Phase 2
 
+## Bổ sung Phase 3 — schema 3
+
+`POST /api/sessions/{session_id}/finalize`: JSON `{"composite_id":"UUID"}`, cùng owner Authorization/Idempotency-Key. Chỉ nhận current composite đã complete (chưa xác nhận → 409). PUBLIC_BASE_URL phải origin HTTPS public hợp lệ; trống/local/private/placeholder/path/query/credentials → 503, ảnh đã lưu vẫn giữ.
+
+Response là owner snapshot kèm `share`: final_id, composite_id, share_url, qr_image_url, image_url, download_url, qr_embedded=false. Unique composite_id đảm bảo key mới cũng không tạo token/PNG trùng. Không upload composite ở finalize. URL/QR pin theo final; đổi cấu hình không tự đổi link đã cấp.
+
+| Method | Public path | Kết quả |
+|---|---|---|
+| GET | `/p/{token}` | Mobile HTML một ảnh + Download; invalid/missing file → HTML 404 |
+| GET | `/p/{token}/image` | Đúng confirmed composite PNG |
+| GET | `/p/{token}/download` | Cùng PNG, attachment filename server-generated |
+| GET | `/p/{token}/qr.png` | PNG QR chứa chính share_url |
+
+Tất cả verify token hash/revocation/expiry; không nhận ID ảnh khác từ query/listing. Headers no-store/noindex/no-referrer/nosniff; page CSP nonce. Chỉ phục vụ immutable composite, không raw. Chưa overlay QR, theo yêu cầu mới defer Phase 4.
+
+Migration 002 tạo shares; 003 loại bearer URL khỏi ACK cache, giữ composite reference và tái dựng metadata cho owner khi replay. Token derive HMAC(secret 32 byte runtime/.share-key, random nonce + composite UUID); DB chỉ lưu hash/nonce. Link giữ qua restart, không rotate. Key mất/sai → 503 cho owner reconstruction, không tự sinh key thay thế. Backup key, không commit.
+
+Endpoints Phase 2 bên dưới vẫn giữ contract; health hiện phase=3, snapshots có thể thêm share. Các ghi chú “chưa có share” bên dưới ghi nhận baseline Phase 2.
+
 Prefix `/api` theo yêu cầu mới, thay `/api/v1` dự kiến trong technical spec. JSON thành công trả HTTP **200**, kể cả replay. Không có public gallery/share/admin/printer/camera SDK API.
 
 ## Auth và idempotency

@@ -4,11 +4,11 @@ export function showQRUnavailable(app, message) {
   app.qrUpdateDebounceTimer = null;
   app.lastUploadedUrl = '';
   const container = document.getElementById('qrCodeContainer');
-  if (container) container.textContent = 'DEMO • QR chưa sẵn sàng';
+  if (container) container.textContent = 'QR chưa sẵn sàng';
   const badge = document.getElementById('qrStatusBadge');
-  if (badge) badge.textContent = 'DEMO • Chưa có link tải ảnh';
+  if (badge) badge.textContent = 'DEMO / Chưa xác nhận QR';
   const pill = document.getElementById('qrReadyPill');
-  if (pill) { pill.textContent = 'Chia sẻ: TODO'; pill.className = 'text-amber-800 text-xs font-bold'; }
+  if (pill) { pill.textContent = 'Chờ xác nhận & cấu hình URL'; pill.className = 'text-amber-800 text-xs font-bold'; }
   const description = document.getElementById('qrDescriptionText');
   if (description) description.textContent = message;
   const input = document.getElementById('qrExternalUrlInput');

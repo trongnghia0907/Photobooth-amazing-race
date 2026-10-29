@@ -1,46 +1,31 @@
-/** Extracted from legacy; explicit app context supplied by bootstrap. */
-
+/** Preserve legacy QR presentation, using only the backend's local QR artifact. */
 export function copyQRLink(app) {
-  const input = document.getElementById('qrExternalUrlInput');
-  if (!input || !app.lastUploadedUrl) return;
+  const input=document.getElementById('qrExternalUrlInput');
+  if(!input || !app.lastUploadedUrl) return;
   input.select();
-  try {
-    document.execCommand('copy');
-    app.showToast('Đã sao chép đường dẫn trang Web tải ảnh!', 'success');
-  } catch (e) {
-    app.showToast('Không thể sao chép tự động.', 'info');
-  }
+  try { document.execCommand('copy'); app.showToast('Đã sao chép link ảnh riêng.', 'success'); }
+  catch { app.showToast('Không thể sao chép tự động.', 'info'); }
 }
 
-export function renderQRCodeVisual(app, targetUrl) {
-  const qrContainer = document.getElementById('qrCodeContainer');
-  const urlInput = document.getElementById('qrExternalUrlInput');
-  const openBtn = document.getElementById('qrExternalOpenBtn');
-  if (!qrContainer) return;
-
-  qrContainer.innerHTML = '';
-  app.lastUploadedUrl = targetUrl;
-
-  if (urlInput) urlInput.value = targetUrl;
-  if (openBtn) openBtn.href = targetUrl;
-
-  try {
-    if (typeof QRCode !== 'undefined') {
-      new QRCode(qrContainer, {
-        text: targetUrl,
-        width: 132,
-        height: 132,
-        colorDark: '#1E40AF',
-        colorLight: '#FFFFFF',
-        correctLevel: QRCode.CorrectLevel.M
-      });
-    } else {
-      throw new Error('QRCode library not loaded');
-    }
-  } catch (e) {
-    const qrImg = document.createElement('img');
-    qrImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&color=1E40AF&bgcolor=FFFFFF&data=${encodeURIComponent(targetUrl)}`;
-    qrImg.className = 'w-32 h-32 object-contain';
-    qrContainer.appendChild(qrImg);
-  }
+export function renderQRCodeVisual(app,targetUrl) {
+  const container=document.getElementById('qrCodeContainer');
+  const share=app.activeShare;
+  if(!container || !share || targetUrl!==share.share_url) return;
+  container.replaceChildren();
+  app.lastUploadedUrl=targetUrl;
+  const image=document.createElement('img');
+  image.src=share.qr_image_url;
+  image.alt='QR mở đúng ảnh Photobooth đã xác nhận';
+  image.className='w-32 h-32 object-contain';
+  image.onerror=()=>{document.getElementById('qrStatusBadge').textContent='Không tải được ảnh QR — hãy thử lại';};
+  container.appendChild(image);
+  const input=document.getElementById('qrExternalUrlInput');
+  if(input) input.value=targetUrl;
+  const open=document.getElementById('qrExternalOpenBtn');
+  if(open){open.href=targetUrl;open.removeAttribute('aria-disabled');}
+  document.getElementById('qrStatusBadge').textContent='QR sẵn sàng • Ảnh riêng';
+  const pill=document.getElementById('qrReadyPill');
+  pill.textContent='Đã lưu & tạo link ảnh riêng';
+  pill.className='text-emerald-800 text-xs font-bold';
+  document.getElementById('qrDescriptionText').textContent='Quét QR để xem/tải đúng ảnh này. Laptop và public URL phải đang hoạt động.';
 }

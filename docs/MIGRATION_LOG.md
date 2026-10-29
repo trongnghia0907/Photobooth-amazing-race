@@ -1,5 +1,9 @@
 # Migration log — 30/10/2026, Asia/Saigon
 
+## Phase 3 — QR & Guest Photo Page
+
+Phase 2 hoàn thiện/checkpoint dad43d0, sau đó nhánh feat/phase3-qr-guest-page. Schema 002 thêm shares, 003 redacts bearer URL khỏi ACK cache; token hash/nonce + private .share-key giữ link qua restart. Owner finalize chỉ sau complete; guest routes check token, chỉ immutable composite. QR UI reuse, module upload ngoài archive dưới legacy, không active. QR overlay defer Phase 4 theo yêu cầu mới. Backend31/31, Node7/7, Playwright14/14 và builds PASS. Không deploy/push/merge; chi tiết tại PHASE3_REPORT/API_CONTRACT/SECURITY_PRIVACY.
+
 ## Phase 2 — Backend Foundation (bổ sung sau Phase 1)
 
 Đã triển khai theo yêu cầu Phase 2 mới: FastAPI/sqlite3/Pillow, migration SQL version 1, local file revisions, owner token hash, idempotency, APIs /api và frontend persistence/retry/confirm. Giữ nguyên editor và source/legacy. Không commit/push. Chi tiết file/behavior/test ở [PHASE2_REPORT](PHASE2_REPORT.md); API ở [API_CONTRACT](API_CONTRACT.md). Backend 12/12, Node 6/6, full Playwright 9/9 và builds PASS. Những dòng “dừng trước Phase 2” bên dưới ghi nhận mốc lịch sử Phase 1, đã được yêu cầu Phase 2 hiện tại thay thế.

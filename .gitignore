@@ -6,6 +6,11 @@ dist-production/
 .env.*
 !.env.example
 runtime/
+.share-key
+originals/
+composites/
+qrcodes/
+uploads/
 guest-photos/
 *.sqlite*
 *.db

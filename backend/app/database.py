@@ -10,10 +10,18 @@ class Database:
         with self.connect() as db:
             db.execute('PRAGMA journal_mode=WAL')
             version = db.execute('PRAGMA user_version').fetchone()[0]
-            if version > 1:
+            if version > 3:
                 raise RuntimeError('Database schema newer than this backend')
             if version == 0:
                 migration = Path(__file__).parent / 'migrations/001_initial.sql'
+                db.executescript('BEGIN IMMEDIATE;\n' + migration.read_text() + '\nCOMMIT;')
+                version = 1
+            if version == 1:
+                migration = Path(__file__).parent / 'migrations/002_sharing.sql'
+                db.executescript('BEGIN IMMEDIATE;\n' + migration.read_text() + '\nCOMMIT;')
+                version = 2
+            if version == 2:
+                migration = Path(__file__).parent / 'migrations/003_share_ack_redaction.sql'
                 db.executescript('BEGIN IMMEDIATE;\n' + migration.read_text() + '\nCOMMIT;')
 
     @contextmanager

@@ -1,5 +1,9 @@
 # FUNCTION_INVENTORY — Phase 0 / Phase 1
 
+## Bổ sung Phase 3
+
+`generateQRCodeForCurrentPhoto` nay gọi owner finalize sau complete, không upload ảnh. `scheduleQRCodeUpdate` chỉ cập nhật visibility/cached QR khi editor dirty, không gửi request/tạo token. `renderQRCodeVisual` giữ DOM cũ nhưng đọc local backend PNG. `copyQRLink` giữ URL riêng. External upload implementation chuyển archive `legacy/qr-upload.phase1.js`, không import/chạy trong frontend. `confirmAndSaveSession` thêm complete → finalize, lỗi QR giữ file đã lưu và cho thử lại. Các ghi chú legacy upload opt-in ở bảng Phase 1 bên dưới là lịch sử, đã bị retire trong Phase 3.
+
 ## Bổ sung Phase 2
 
 Mapping 80 method gốc bên dưới vẫn giữ; các method capture/retake nay chờ backend ACK qua `services/photo-repository.js`. Không đổi compositor/layout/filter/sticker algorithms.

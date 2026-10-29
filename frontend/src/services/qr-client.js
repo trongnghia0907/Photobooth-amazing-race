@@ -1,34 +1,58 @@
-import { defaults } from '../config/defaults.js';
-import { generateLegacyQRCodeForCurrentPhoto } from './legacy-qr.js';
+import { request } from './api-client.js';
 import { showQRUnavailable } from '../components/qr-status.js';
 
-/** Extracted from legacy; explicit app context supplied by bootstrap. */
+function currentShare(app) {
+  const canvas=document.getElementById('compositeCanvas');
+  return app.activeShare && app.lastSavedImage && canvas?.toDataURL('image/png') === app.lastSavedImage
+    && app.activeShare.composite_id === app.finalOperation?.compositeId
+    && app.serverSession?.status === 'completed'
+    && !app.pendingPhotos.some(Boolean) && !app.pendingDeletion;
+}
 
 export function scheduleQRCodeUpdate(app) {
-  if (app.currentScreen !== 'result') return;
-  if (!defaults.enableLegacyUpload) {
-    showQRUnavailable(app, 'DEMO: QR chia sẻ chưa triển khai. Dùng Tải ảnh về.');
-    return;
-  }
-  if (app.qrUpdateDebounceTimer) clearTimeout(app.qrUpdateDebounceTimer);
-  const badge = document.getElementById('qrStatusBadge');
-  if (badge) badge.textContent = '✏️ Đang chờ cập nhật QR...';
-
-  app.qrUpdateDebounceTimer = setTimeout(() => {
-    app.generateQRCodeForCurrentPhoto(false);
-  }, 1400);
+  // Editing only updates visibility. It NEVER uploads, finalizes or rotates a token.
+  if(app.currentScreen !== 'result') return;
+  if(currentShare(app)) app.renderQRCodeVisual(app.activeShare.share_url);
+  else showQRUnavailable(app,'Hãy xác nhận bản chỉnh sửa cuối cùng để tạo QR riêng.');
 }
 
-export function setQRProvider(app, provider) {
-  app.qrCloudProvider = provider;
-  app.generateQRCodeForCurrentPhoto(true);
+export function setQRProvider(app) {
+  // Preserve the old handler name; external providers cannot be re-enabled.
+  app.showToast('QR được tạo nội bộ từ backend và ảnh lưu trên laptop.', 'info');
 }
 
-export async function generateQRCodeForCurrentPhoto(app, forceNotify = false) {
-  if (!defaults.enableLegacyUpload) {
-    showQRUnavailable(app, 'DEMO: QR chia sẻ chưa triển khai. Dùng Tải ảnh về.');
-    if (forceNotify) app.showToast('DEMO: Không upload ảnh. QR riêng sẽ có ở phase sau.', 'info');
+export async function generateQRCodeForCurrentPhoto(app, forceNotify=false) {
+  if(currentShare(app)) {
+    app.renderQRCodeVisual(app.activeShare.share_url);
     return;
   }
-  return generateLegacyQRCodeForCurrentPhoto(app, forceNotify);
+  const canvas=document.getElementById('compositeCanvas');
+  const operation=app.finalOperation;
+  if(!forceNotify || !operation?.compositeId || app.serverSession?.status!=='completed'
+      || !app.lastSavedImage || canvas?.toDataURL('image/png')!==app.lastSavedImage) {
+    showQRUnavailable(app,'Xác nhận và lưu composite trước khi tạo QR riêng.');
+    return;
+  }
+  if(app.shareBusy) return;
+  app.shareBusy=true;
+  operation.finalizeKey ||= crypto.randomUUID();
+  document.getElementById('qrLoadingOverlay')?.classList.remove('hidden');
+  try {
+    const result=await request(`/sessions/${app.sessionContext.id}/finalize`,{
+      method:'POST',token:app.sessionContext.token,key:operation.finalizeKey,
+      body:{composite_id:operation.compositeId},
+    });
+    const share=result.share;
+    if(!share || share.composite_id!==operation.compositeId || new URL(share.share_url).protocol!=='https:'
+        || !share.qr_image_url?.startsWith('/p/')) throw new Error('Backend chưa xác nhận share URL hợp lệ.');
+    app.activeShare=share;
+    app.shareError='';
+    app.renderQRCodeVisual(share.share_url);
+  } catch(error) {
+    app.shareError=error.message;
+    showQRUnavailable(app,`Ảnh đã lưu. ${error.message}`);
+  } finally {
+    app.shareBusy=false;
+    document.getElementById('qrLoadingOverlay')?.classList.add('hidden');
+  }
 }
