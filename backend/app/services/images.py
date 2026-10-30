@@ -29,6 +29,14 @@ async def read_image(file: UploadFile, settings: Settings) -> ValidatedImage:
         data.extend(chunk)
         if len(data) > settings.max_upload_bytes:
             raise HTTPException(413, 'File ảnh vượt giới hạn dung lượng')
+    return validate_image(bytes(data), file.content_type, settings)
+
+
+def validate_image(data: bytes, content_type: str, settings: Settings) -> ValidatedImage:
+    if content_type not in {'image/png', 'image/jpeg', 'image/webp'}:
+        raise HTTPException(415, 'Chỉ hỗ trợ PNG, JPEG hoặc WebP')
+    if not data or len(data) > settings.max_upload_bytes:
+        raise HTTPException(413, 'File ảnh rỗng hoặc vượt giới hạn dung lượng')
     try:
         with warnings.catch_warnings():
             warnings.simplefilter('error', Image.DecompressionBombWarning)

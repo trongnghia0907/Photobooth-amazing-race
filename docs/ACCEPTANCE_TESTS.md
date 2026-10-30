@@ -1,4 +1,34 @@
+# Event Live Gallery acceptance — Phase 6 extension
+
+Verify private defaults, Host consent/basis requirement, only official final PNGs, 4/6 aspect ratios, one item/session, latest prominence, approval/hide polling without reload, slideshow/fullscreen, isolated display credentials, revoked/expired access, migration preserving old photos, and actual backend restart. Browser test: playwright.event-display.config.js; backend: tests/test_event_display.py. Existing Phase 1–6 regressions must remain green.
+
+Results: [EVENT_LIVE_GALLERY_VERIFICATION](EVENT_LIVE_GALLERY_VERIFICATION.md). Physical projector/LED and venue LAN checks are separate NOT TESTED items; see [operator guide](EVENT_LIVE_GALLERY.md).
+
+---
+
+# Phase 6 acceptance additions
+
+Current acceptance and results: [Phase 0–6 audit](PHASE0_6_VERIFICATION.md), [Windows commands](WINDOWS_EVENT_GUIDE.md), [physical-device/event checklist](EVENT_DAY_CHECKLIST.md). Browser production scenario uses built assets without Vite and tests six shots plus retake, one final, automatic QR, Guest/download, two-copy Mock printing, Host, a second four-shot guest, actual process restart and offline backup hashes. Backend deployment tests cover paired station/owner isolation, CSRF/logout/rates, remote Host denial, public route boundaries, migration preservation and LAN QR decoding; real loopback TLS verifies Secure cookies and launcher leases. Physical camera/printer/iPad/network assertions remain NOT TESTED.
+
+---
+
 # Acceptance tests — Phase 0 / Phase 1
+
+## Current photo storage lifecycle — schema 6
+
+Final localhost QR smoke **3/3 PASS** after the lifecycle changes; QR still generates/retries/downloads correctly after working originals have been removed.
+
+Backend **79/79 PASS**, Node **9/9 PASS**, full Phase 1–5 browser suite **21/21 PASS**, demo/production/host builds **PASS**. Tests now require one official composite/token per session, retake before confirmation, working assets retained after failed upload/commit, retry after locked deletion/restart, protected cleanup paths/final hash, final-only Host media/counts, released working files/canvases after ACK and stable QR without originals. The delete/retake E2E explicitly waits for the deletion ACK before shooting again. New lifecycle tests: backend/tests/test_storage_lifecycle.py; updated backend camera/share/restart tests and frontend E2E. See [PHOTO_STORAGE_LIFECYCLE](PHOTO_STORAGE_LIFECYCLE.md) for policy and legacy compatibility. Earlier phase counts below are checkpoints.
+
+## Phase 5 (current software verification)
+
+Backend **73 PASS**, Node **9 PASS**, full Phase 1–5 E2E **20 PASS**, build demo/production/host **PASS**, QR localhost **3 PASS**. Details and hardware limitations are recorded in [PHASE5_REPORT](PHASE5_REPORT.md). Tests use forced Mock camera/printer and isolated storage. Host tests cover 4/6 countdown, landscape iPad-sized viewport, retake, preview-to-shot substitution guard, timeout/transfer/lost ACK recovery, stale frames, cancelling a delayed connection and camera/session release. Vendor SDK, real shutter/native transfer, physical webcam/printer/phone/iPad device remain **NOT TESTED / BLOCKED BY HARDWARE**; no HARDWARE READY claim.
+
+## Phase 4 checkpoint
+
+Trước thay đổi: backend 42 PASS, E2E 14 PASS, hai build PASS. Sau Phase 4: backend 59 PASS; Node 8 PASS; E2E đầy đủ 15 PASS (bao gồm Host/Mock/lost print ACK), chạy lại riêng Phase 4 sau hardening copies lock/polling 1 PASS; QR localhost 3 PASS; demo và production builds PASS. Chi tiết ở [PHASE4_REPORT](PHASE4_REPORT.md). Không có lệnh in vật lý trong tests. Các assertion download được nâng từ checksum composite gốc sang print-ready vì Guest phải tải đúng bản in có QR; vẫn có kiểm tra checksum/crop nguyên bản riêng.
+
+**Lượt sửa QR localhost:** backend **42/42**, Node **7/7**, localhost E2E **3/3**, full Phase 1–3 E2E **14/14** và hai build PASS. Local test dùng HTTP localhost thật, mở Guest Page và download so checksum. Chi tiết/các file sửa ở [QR_LOCAL_FIX](QR_LOCAL_FIX.md). Không test QR trên điện thoại khác vì localhost chỉ cùng máy.
 
 **Phase 3 mới nhất:** backend **31/31**, Node **7/7**, toàn bộ Playwright **14/14**, build demo/production guard PASS. QR PNG được decode; mobile guest A/B/download/error và token/retry/restart được kiểm chứng tự động. **Chưa test điện thoại/Internet/QR giấy thật**. Xem [PHASE3_REPORT](PHASE3_REPORT.md); các mốc bên dưới là lịch sử.
 

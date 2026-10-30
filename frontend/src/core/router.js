@@ -1,8 +1,12 @@
 /** Extracted from legacy; explicit app context supplied by bootstrap. */
 
 export function goToScreen(app, screenName) {
+  if(screenName!=='result' && (app.serverSession?.finalized||app.finalOperation?.confirmationStarted)){
+    app.showToast('Phiên đã chốt hoặc đang chờ xác nhận lưu. Thử lưu lại nếu có lỗi; bắt đầu Khách mới để chụp/chỉnh ảnh khác.','info');return;
+  }
   app.clearTimers();
   app.currentScreen = screenName;
+  if (screenName !== 'capture') app.releaseHostCamera();
   app.transitionSession(screenName === 'result' ? 'EDIT' : screenName === 'capture' ? 'PREVIEW' : 'RESET');
   app.syncPersistenceUI();
 
@@ -32,4 +36,5 @@ export function goToScreen(app, screenName) {
     app.renderCompositeCanvas();
     app.generateQRCodeForCurrentPhoto(false);
   }
+  app.syncSetupLayout();
 }

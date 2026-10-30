@@ -1,4 +1,6 @@
 /** Extracted from legacy; explicit app context supplied by bootstrap. */
+import {createStore} from '../../core/store.js';
+import {showQRUnavailable} from '../../components/qr-status.js';
 
 export async function startAutomaticSession(app) {
   if (app.persistenceBusy || app.captureBusy || app.hasPendingWork()) return;
@@ -22,15 +24,18 @@ export function startNewGuestSession(app) {
   app.clearTimers();
   app.photos = Array(app.slotCount).fill(null);
   app.placedStickers = [];
+  app.draggingSticker = null;
+  app.customTexts = {...createStore().customTexts};
+  app.selectedFilter = 'normal';
+  app.updateCustomTextsUI();
+  app.renderFilterButtons();
   app.singleRetakeIndex = null;
   app.lastUploadedUrl = '';
   app.renderSixSlotsGrid();
   app.renderCaptureDots();
-  if (app.fullAutoMode) {
-    app.startAutomaticSession();
-  } else {
-    app.goToScreen('home');
-  }
+  app.renderCompositeCanvas();
+  showQRUnavailable(app,'Bắt đầu phiên mới, chụp và xác nhận ảnh để tạo QR.');
+  app.goToScreen('home');
 }
 
 export function renderCaptureDots(app) {
@@ -43,6 +48,7 @@ export function renderCaptureDots(app) {
 }
 
 export function renderSixSlotsGrid(app) {
+  app.renderRecentPhotos?.();
   const grid = document.getElementById('sixSlotsGrid');
   if (!grid) return;
 
@@ -87,6 +93,7 @@ export function renderSixSlotsGrid(app) {
 }
 
 export function updateCaptureScreenUI(app) {
+  app.syncHostCaptureUI();
   const nextEmpty = app.photos.findIndex(p => p === null);
   const currentShotIndex = app.singleRetakeIndex !== null
     ? app.singleRetakeIndex
@@ -129,6 +136,7 @@ export function updateCaptureScreenUI(app) {
 export async function captureCurrentFrameImmediately(app) {
   if (app.persistenceBusy || app.captureBusy || app.hasPendingWork()) return;
   app.clearTimers();
+  if (app.cameraSource === 'host' && !await app.prepareSession()) return;
   const epoch = app.captureEpoch;
   const targetIndex = app.singleRetakeIndex !== null
     ? app.singleRetakeIndex

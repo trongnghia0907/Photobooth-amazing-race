@@ -33,14 +33,18 @@ Key = Annotated[str, Depends(operation_key)]
 def health(request: Request):
     with request.app.state.repository.db.connect() as db:
         db.execute('SELECT 1').fetchone()
-    return {'status': 'ok', 'phase': 3, 'capture_mode': 'demo/webcam_frame/manual_upload'}
+    return {'status': 'ok', 'phase': 6, 'capture_mode': 'demo/webcam_frame/manual_upload/host_adapter',
+            'sharing': request.app.state.repository.sharing.configuration()}
 
 
 @router.post('/sessions')
 def create(request: Request, payload: CreateSession, owner: Auth, key: Key):
     if (payload.layout == 'landscape_4') != (payload.slot_count == 4):
         raise HTTPException(422, 'Layout không khớp slot_count')
-    return request.app.state.repository.create(owner, key, payload.model_dump())
+    result=request.app.state.repository.create(owner, key, payload.model_dump())
+    if request.app.state.booth_access.enabled:
+        request.app.state.booth_access.bind(result['session_id'],request.state.station_hash)
+    return result
 
 
 @router.get('/sessions/{session_id}')

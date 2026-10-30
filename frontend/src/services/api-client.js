@@ -1,4 +1,5 @@
 /** Same-origin only; Vite proxies /api. Never send session credentials to CDN/upload services. */
+import { boothFetch } from './booth-access.js';
 export async function request(path, { token, key, body, method = 'GET' } = {}) {
   const headers = {};
   if (token) headers.Authorization = `Bearer ${token}`;
@@ -9,7 +10,7 @@ export async function request(path, { token, key, body, method = 'GET' } = {}) {
   }
   let response;
   try {
-    response = await fetch(`/api${path}`, { method, headers, body, signal: AbortSignal.timeout(20000) });
+    response = await boothFetch(`/api${path}`, { method, headers, body, signal: AbortSignal.timeout(20000) });
   } catch {
     throw new Error('Không kết nối được backend. Ảnh đang có vẫn giữ trong bộ nhớ; hãy thử lưu lại.');
   }

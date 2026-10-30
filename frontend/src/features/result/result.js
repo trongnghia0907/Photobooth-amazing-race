@@ -7,6 +7,7 @@ export async function finishCaptureAndGoToResult(app, isAutoTriggered = false) {
   }
   app.clearTimers();
   app.currentScreen = 'result';
+  app.releaseHostCamera();
   app.transitionSession('EDIT');
   app.syncPersistenceUI();
 
@@ -30,11 +31,7 @@ export async function finishCaptureAndGoToResult(app, isAutoTriggered = false) {
   await app.generateQRCodeForCurrentPhoto(false);
 
   if (isAutoTriggered && app.fullAutoMode && app.autoPrintPopup) {
-    app.showToast('DEMO: mở hộp thoại in trình duyệt theo cài đặt đã bật.', 'info');
-    app.autoPrintTimerId = setTimeout(() => {
-      app.autoPrintTimerId = null;
-      app.triggerPrint();
-    }, 600);
+    app.showToast('Hãy xác nhận & tạo QR, rồi bấm In ảnh để gửi yêu cầu tới host.', 'info');
   }
 }
 

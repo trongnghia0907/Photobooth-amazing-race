@@ -2,7 +2,7 @@
 
 Files are immutable revisions. The slots table identifies current photos; old
 revisions stay private for a later retention policy. A completed Phase 2 session
-can be edited again (Phase 3 public-final immutability is not implemented).
+is sealed after confirmation. Originals are temporary; final/print-ready stay immutable.
 """
 import hashlib
 import hmac
@@ -41,6 +41,16 @@ class Repository:
         self.db = Database(settings.storage_root)
         from .sharing import SharingService
         self.sharing = SharingService(self)
+        from .print_ready import PrintReadyService
+        self.print_ready = PrintReadyService(self)
+        from .temporary_assets import TemporaryAssets
+        self.temporary_assets = TemporaryAssets(self)
+
+    def require_working(self, session):
+        with self.db.connect() as db:
+            pinned=db.execute('SELECT 1 FROM session_finals WHERE session_id=?',(session['id'],)).fetchone()
+        if pinned or session['status']=='completed':
+            raise HTTPException(409, 'Phiên đã chốt một ảnh cuối. Hãy bắt đầu khách mới để chụp/chỉnh ảnh khác.')
 
     def authorize(self, db, session_id, token):
         row = db.execute('SELECT * FROM sessions WHERE id=?', (session_id,)).fetchone()
@@ -89,6 +99,9 @@ class Repository:
             'photos': [self.photo_metadata(photo) for photo in photos],
             'composite': self.composite_metadata(composite) if composite else None,
         }
+        final = db.execute('SELECT cleanup_status FROM session_finals WHERE session_id=?',(sid,)).fetchone()
+        result['finalized'] = bool(final)
+        result['cleanup_status'] = final['cleanup_status'] if final else 'working'
         share = self.sharing.metadata(db, row['composite_id']) if row['composite_id'] else None
         if share:
             result['share'] = share
@@ -142,8 +155,11 @@ class Repository:
         created_paths.append(path)
         return relative
 
-    def upload_photo(self, sid, token, key, slot, source, image: ValidatedImage):
+    def upload_photo(self, sid, token, key, slot, source, image: ValidatedImage, expected_revision=None, capture_id=None):
         def mutate(db, session, paths):
+            self.require_working(session)
+            if expected_revision is not None and session['shots_revision'] != expected_revision:
+                raise HTTPException(409, 'Session đã thay đổi khi camera truyền ảnh. File camera được giữ riêng; không ghi đè slot mới.')
             if not 0 <= slot < session['slot_count']:
                 raise HTTPException(422, 'Slot nằm ngoài session')
             photo_id = str(uuid.uuid4())
@@ -151,6 +167,8 @@ class Repository:
             path = self.write_image('originals', sid, photo_id, image, paths)
             db.execute('INSERT INTO photos VALUES (?,?,?,?,?,?,?,?,?,?)',
                        (photo_id, sid, slot, revision, source, path, image.sha256, image.width, image.height, now()))
+            if capture_id:
+                db.execute("UPDATE camera_captures SET status='captured',photo_id=?,error_code=NULL,error_message=NULL,updated_at=? WHERE id=? AND session_id=?",(photo_id,now(),capture_id,sid))
             db.execute('INSERT INTO slots VALUES (?,?,?) ON CONFLICT(session_id,slot_index) DO UPDATE SET photo_id=excluded.photo_id', (sid, slot, photo_id))
             count = db.execute('SELECT COUNT(*) FROM slots WHERE session_id=?', (sid,)).fetchone()[0]
             db.execute('UPDATE sessions SET status=?,shots_revision=shots_revision+1,composite_id=NULL,updated_at=? WHERE id=?',
@@ -159,6 +177,7 @@ class Repository:
 
     def delete_photos(self, sid, token, key, slot=None):
         def mutate(db, session, paths):
+            self.require_working(session)
             if slot is not None and not 0 <= slot < session['slot_count']:
                 raise HTTPException(422, 'Slot nằm ngoài session')
             if slot is None:
@@ -170,6 +189,7 @@ class Repository:
 
     def upload_composite(self, sid, token, key, shots_revision, editor, image):
         def mutate(db, session, paths):
+            self.require_working(session)
             count = db.execute('SELECT COUNT(*) FROM slots WHERE session_id=?', (sid,)).fetchone()[0]
             if count != session['slot_count'] or session['shots_revision'] != shots_revision:
                 raise HTTPException(409, 'Ảnh chụp đã thay đổi hoặc chưa đủ ảnh; hãy lưu lại các slot')
@@ -182,7 +202,20 @@ class Repository:
         return self.operation(sid, token, key, {'action': 'composite', 'shots_revision': shots_revision, 'editor': editor, 'input_hash': image.input_hash}, mutate)
 
     def complete(self, sid, token, key, composite_id):
+        with self.db.connect() as db:
+            self.authorize(db,sid,token)
+            official=db.execute('SELECT composite_id FROM session_finals WHERE session_id=?',(sid,)).fetchone()
+            if official and official['composite_id']!=composite_id:
+                raise HTTPException(409,'Phiên đã có composite cuối khác; không thay đổi ảnh đã chốt.')
         def mutate(db, session, paths):
+            pinned = db.execute('SELECT composite_id FROM session_finals WHERE session_id=?',(sid,)).fetchone()
+            if pinned:
+                if pinned['composite_id']!=composite_id:raise HTTPException(409,'Phiên đã có ảnh cuối khác.')
+                try:self.temporary_assets.check_final(db,sid)
+                except ValueError:raise HTTPException(503,'File composite cuối bị mất/thay đổi; cần khôi phục storage.') from None
+                return
+            if db.execute("SELECT 1 FROM camera_captures WHERE session_id=? AND (status IN ('capturing','transferring') OR (status='failed' AND uncertain=1))",(sid,)).fetchone():
+                raise HTTPException(409,'Camera còn yêu cầu chụp/truyền chưa xác định. Hoàn tất xử lý trước khi chốt ảnh.')
             if session['composite_id'] != composite_id:
                 raise HTTPException(409, 'Ảnh ghép chưa lưu hoặc đã thay đổi')
             composite = db.execute('SELECT * FROM composites WHERE id=? AND session_id=?', (composite_id, sid)).fetchone()
@@ -193,9 +226,20 @@ class Repository:
                     raise StoredFileMissing()
             if not (self.settings.storage_root / composite['path']).is_file():
                 raise StoredFileMissing()
+            final_path = (self.settings.storage_root/composite['path']).resolve()
+            if not final_path.is_relative_to(self.settings.storage_root.resolve()) or hashlib.sha256(final_path.read_bytes()).hexdigest()!=composite['sha256']:
+                raise StoredFileMissing()
             db.execute("UPDATE sessions SET status='completed',updated_at=? WHERE id=?", (now(), sid))
+            db.execute('INSERT INTO session_finals(session_id,composite_id,confirmed_at) VALUES (?,?,?)',(sid,composite_id,now()))
+            self.temporary_assets.queue(db,sid,composite_id)
         try:
-            return self.operation(sid, token, key, {'action': 'complete', 'composite_id': composite_id}, mutate)
+            result = self.operation(sid, token, key, {'action': 'complete', 'composite_id': composite_id}, mutate)
+            try:self.temporary_assets.process_session(sid)
+            except (OSError,sqlite3.Error):pass
+            with self.db.connect() as db:
+                result['cleanup_status'] = db.execute('SELECT cleanup_status FROM session_finals WHERE session_id=?',(sid,)).fetchone()[0]
+            result['finalized'] = True
+            return result
         except StoredFileMissing:
             # A missing previously committed file is an integrity failure, unlike
             # a retryable upload error. Do not mark transient network errors failed.
@@ -208,7 +252,9 @@ class Repository:
     def image_path(self, sid, token, kind, image_id):
         table = 'photos' if kind == 'photos' else 'composites'
         with self.db.connect() as db:
-            self.authorize(db, sid, token)
+            session = self.authorize(db, sid, token)
+            if session['status']=='completed' and (kind=='photos' or session['composite_id']!=image_id):
+                raise HTTPException(410,'Phiên đã chốt. Chỉ ảnh composite cuối được giữ để xem/tải.')
             row = db.execute(f'SELECT path FROM {table} WHERE id=? AND session_id=?', (image_id, sid)).fetchone()
             if not row:
                 raise HTTPException(404, 'Không tìm thấy ảnh')

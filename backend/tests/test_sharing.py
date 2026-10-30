@@ -49,7 +49,7 @@ def test_two_guests_only_their_immutable_composite_and_no_public_gallery(shared_
         assert image_a.status_code==image_b.status_code==200
         assert Image.open(BytesIO(image_a.content)).getpixel((0,0))[:3]==(255,0,0)
         assert Image.open(BytesIO(image_b.content)).getpixel((0,0))[:3]==(0,0,255)
-        assert hashlib.sha256(image_a.content).hexdigest()==first['composite']['sha256']
+        assert hashlib.sha256(image_a.content).hexdigest()==first['share']['print_ready']['sha256']
         assert client.get(pa+'/download').content==image_a.content
         assert 'attachment;' in client.get(pa+'/download').headers['content-disposition']
         html=client.get(pa)
@@ -67,12 +67,10 @@ def test_two_guests_only_their_immutable_composite_and_no_public_gallery(shared_
         assert client.get(f'/api/sessions/{b}').status_code==401
         # A share token is not a session credential.
         assert client.get(f'/api/sessions/{b}',headers=headers(token=pa.rsplit('/',1)[1])).status_code==404
-        # A newer revision must not modify the already-shared bytes.
-        state=composite(client,a,first['shots_revision'],payload=image('green')).json()
-        cid=state['composite']['id']
-        client.post(f'/api/sessions/{a}/complete',headers=headers(key()),json={'composite_id':cid})
-        new=client.post(f'/api/sessions/{a}/finalize',headers=headers(key()),json={'composite_id':cid}).json()
-        assert new['share']['share_url']!=first['share']['share_url']
+        # Confirmation seals one official composite and one share per session.
+        assert composite(client,a,first['shots_revision'],payload=image('green')).status_code==409
+        new=client.post(f'/api/sessions/{a}/finalize',headers=headers(key()),json={'composite_id':first['composite']['id']}).json()
+        assert new['share']['share_url']==first['share']['share_url']
         assert client.get(pa+'/image').content==image_a.content
 
 
@@ -147,7 +145,7 @@ def test_upgrade_v1_database_is_non_destructive(tmp_path):
     with TestClient(create_app(settings)) as client:
         assert client.get(f'/api/sessions/{sid}',headers=headers()).status_code==200
         with sqlite3.connect(settings.storage_root/'photobooth.sqlite3') as db:
-            assert db.execute('PRAGMA user_version').fetchone()[0]==3
+            assert db.execute('PRAGMA user_version').fetchone()[0]==8
 
 
 def test_access_log_redacts_share_token():
@@ -183,3 +181,56 @@ def test_missing_secret_does_not_silently_rotate_old_links(shared_settings):
         assert client.get(path+'/image').status_code==200
         assert client.get(f'/api/sessions/{sid}',headers=headers()).status_code==503
         assert not (shared_settings.storage_root/'.share-key').exists()
+
+
+@pytest.mark.parametrize('origin',['http://localhost:8000','http://127.0.0.1:8000','http://[::1]:8000'])
+def test_development_localhost_uses_real_saved_share_with_warning(tmp_path,origin):
+    settings=Settings(tmp_path/'local-dev',public_base_url=origin,app_env='development')
+    with TestClient(create_app(settings)) as client:
+        config=client.get('/api/health').json()['sharing']
+        assert config['configured'] is True
+        assert config['local_only'] is True
+        assert config['app_env']=='development'
+        assert 'điện thoại khác' in config['message']
+        sid,operation,state=finalized(client)
+        assert state['share']['local_only'] is True
+        assert state['share']['share_url'].startswith(origin+'/p/')
+        path=urlsplit(state['share']['share_url']).path
+        downloaded=client.get(path+'/download')
+        assert downloaded.status_code==200
+        assert hashlib.sha256(downloaded.content).hexdigest()==state['share']['print_ready']['sha256']
+        qr=Image.open(BytesIO(client.get(path+'/qr.png').content))
+        assert zxingcpp.read_barcode(qr).text==state['share']['share_url']
+        assert client.post(f'/api/sessions/{sid}/finalize',headers=headers(operation),json={'composite_id':state['composite']['id']}).json()==state
+
+
+@pytest.mark.parametrize('origin',['http://192.168.1.2:8000','http://0.0.0.0:8000','http://localhost.evil.test','http://127.0.0.1@evil.test','http://localhost:bad','http://[','http://127.1'])
+def test_development_does_not_allow_arbitrary_http_or_malformed_base(tmp_path,origin):
+    settings=Settings(tmp_path/'invalid-local',public_base_url=origin,app_env='development')
+    with TestClient(create_app(settings)) as client:
+        config=client.get('/api/health').json()['sharing']
+        assert config['configured'] is False
+        assert 'PUBLIC_BASE_URL' in config['message']
+        sid=create(client)
+        state=six_photos(client,sid)
+        state=composite(client,sid,state['shots_revision']).json()
+        cid=state['composite']['id']
+        client.post(f'/api/sessions/{sid}/complete',headers=headers(key()),json={'composite_id':cid})
+        assert client.post(f'/api/sessions/{sid}/finalize',headers=headers(key()),json={'composite_id':cid}).status_code==503
+        with sqlite3.connect(settings.storage_root/'photobooth.sqlite3') as db:
+            assert db.execute('SELECT COUNT(*) FROM shares').fetchone()[0]==0
+
+
+def test_health_explains_missing_base_and_production_localhost(tmp_path,monkeypatch):
+    from app.config import Settings
+    monkeypatch.delenv('APP_ENV',raising=False)
+    monkeypatch.delenv('PUBLIC_BASE_URL',raising=False)
+    assert Settings.from_environment().app_env=='production'
+    for value in ['', 'http://localhost:8000']:
+        with TestClient(create_app(Settings(tmp_path/('unset' if not value else 'production'),public_base_url=value))) as client:
+            config=client.get('/api/health').json()['sharing']
+            assert config['configured'] is False
+            assert config['app_env']=='production'
+            assert 'PUBLIC_BASE_URL' in config['message']
+            if value:
+                assert 'APP_ENV' in config['message']

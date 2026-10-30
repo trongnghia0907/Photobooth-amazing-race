@@ -1,0 +1,14 @@
+<!doctype html><html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>OSA Host Dashboard</title><link rel="stylesheet" href="/admin/assets/dashboard.css"></head><body>
+<main><h1>OSA • Host Dashboard</h1><p id="message" role="status"></p>
+<form id="login"><h2>Đăng nhập Host</h2><label>Tài khoản <input name="username" autocomplete="username" required></label><label>Mật khẩu <input name="password" type="password" autocomplete="current-password" required></label><button>Đăng nhập</button><p>Cấu hình ADMIN_USERNAME / ADMIN_PASSWORD trên backend. Không có mật khẩu mặc định.</p></form>
+<section id="dashboard" hidden><button id="logout">Đăng xuất</button><h2>Hệ thống</h2><p id="system"></p><p id="printerStatus"></p><label>Máy in <select id="printers"></select></label><button id="selectPrinter">Chọn máy in</button>
+<h2>Camera host</h2><p id="cameraDiagnostics"></p><label>Adapter <select id="cameraAdapter"><option value="mock">Host Mock — DEMO</option><option value="uvc_demo">Host webcam frame — DEMO (OpenCV tùy chọn)</option><option value="vendor">Vendor SDK — BLOCKED BY HARDWARE</option></select></label><label><input id="cameraGuestEnabled" type="checkbox"> Cho phiên chụp điều khiển camera host</label><button id="saveCamera">Áp dụng camera</button><button id="disconnectCamera">Ngắt camera / giải phóng phiên</button>
+<section aria-labelledby="eventDisplayHeading"><h2 id="eventDisplayHeading">Màn hình sự kiện</h2>
+<p>Mặc định ảnh chưa được trình chiếu. Duyệt từng ảnh trong “Xem phiên / In lại” sau khi có đồng ý hoặc ủy quyền.</p>
+<p id="eventDisplayStatus" role="status"></p><button id="createDisplayCode">Tạo / đổi mã màn hình</button>
+<button id="revokeDisplayCode">Tắt truy cập màn hình</button>
+<p id="eventDisplayCode" role="status"></p><a href="/event-display" target="_blank" rel="noopener noreferrer">Mở Event Live Gallery</a></section>
+<h2>Các phiên chụp</h2><div id="gallery" class="grid"></div><button id="previous">Trang trước</button><span id="pagination"></span><button id="next">Trang sau</button>
+<section id="detail" hidden><h2>Chi tiết phiên</h2><p id="sessionInfo"></p><div id="eventDisplayApproval"></div><div id="composites" class="grid"></div></section>
+<h2>Hàng đợi in</h2><p>submitted = đã gửi hệ thống in. Mock không in giấy; trạng thái này không xác nhận bản giấy hoàn tất.</p><div id="jobs"></div><button id="olderJobs">Job cũ hơn</button><button id="latestJobs">Job mới nhất</button></section></main>
+<script type="module" src="/admin/assets/dashboard.js"></script></body></html>

@@ -5,6 +5,8 @@ export function bindEvents(app) {
   window.app = app;
   const cleanup = () => {
     app.clearTimers();
+    app.stopPrintPolling();
+    app.releaseHostCamera();
     app.stopCurrentStreams();
   };
   window.addEventListener('pagehide', cleanup);

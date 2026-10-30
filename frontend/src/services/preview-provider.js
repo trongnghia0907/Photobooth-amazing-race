@@ -70,6 +70,7 @@ export function toggleMirror(app) {
   app.mirrorVideo = !app.mirrorVideo;
   const videoEl = document.getElementById('liveVideo');
   if (videoEl) videoEl.classList.toggle('mirror-video', app.mirrorVideo);
+  document.getElementById('hostCameraPreview')?.classList.toggle('mirror-video', app.mirrorVideo);
   const homeMirrorBtn = document.getElementById('homeMirrorBtn');
   if (homeMirrorBtn) {
     homeMirrorBtn.textContent = `🪞 Lật gương: ${app.mirrorVideo ? 'BẬT' : 'TẮT'}`;

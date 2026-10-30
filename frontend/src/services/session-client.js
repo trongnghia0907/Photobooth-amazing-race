@@ -1,5 +1,7 @@
 import { request } from './api-client.js';
 
+export const getSession = context => request(`/sessions/${context.id}`, { token: context.token });
+
 export const createSession = (context, layout) => request('/sessions', {
   method: 'POST', token: context.token, key: context.createKey,
   body: { layout, slot_count: context.slotCount },

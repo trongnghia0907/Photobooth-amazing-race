@@ -1,3 +1,9 @@
+# Phase 6 mapping addition
+
+The 80 legacy methods keep their existing mapped modules and callable facade names (Node verification). Existing home/capture/editor/QR/print methods are reused; no new Frame Editor. Added facade functions in `frontend/src/features/home/kiosk.js`: initializeKioskUI, syncSetupLayout, syncKioskStatus, renderRecentPhotos, confirmNewGuestSession and confirmResetShots. `frontend/src/services/booth-access.js` supplies boothFetch and initializeBoothAccess; these are service imports rather than legacy replacements. Existing startNewGuestSession resets private editor/QR state before Setup. See [Phase 0–6 audit](PHASE0_6_VERIFICATION.md) for behavior evidence.
+
+---
+
 # FUNCTION_INVENTORY — Phase 0 / Phase 1
 
 ## Bổ sung Phase 3
@@ -94,7 +100,7 @@ Các module mới: `api-client.js` (same-origin HTTP), `session-client.js` (cont
 | `canvasToBlob` | `osa_booth_photobooth.html:2233` | Xuất Blob qua canvas.toBlob hoặc dataURL fallback | `frontend/src/utils/canvas.js` | `canvasToBlob(app, …)` | refactor | DONE | Di chuyển thuật toán/DOM/classes/callbacks, truyền context tường minh. Call sites: 2274. State/dependencies: . |
 | `generateQRCodeForCurrentPhoto` | `osa_booth_photobooth.html:2248` | Upload legacy ImgBB/TmpFiles/File.io, cập nhật QR UI | `frontend/src/services/qr-client.js` | `generateQRCodeForCurrentPhoto(app, …)` | replace-later | DEMO / TODO integration | Wrapper mặc định không upload; implementation gốc ở services/legacy-qr.js, opt-in dev. Bỏ QR fragment giả, failure báo unavailable. Call sites: 635, 1119, 1135, 1363, 1766, 2185. State/dependencies: canvasToBlob, imgbbApiKey, qrCloudProvider, qrUpdateDebounceTimer, renderQRCodeVisual, showToast. |
 | `openMobilePreviewModal` | `osa_booth_photobooth.html:2363` | Render và mở modal preview ảnh trên thiết bị hiện tại | `frontend/src/features/result/result.js` | `openMobilePreviewModal(app, …)` | refactor | DONE | Di chuyển thuật toán/DOM/classes/callbacks, truyền context tường minh. Call sites: 636. State/dependencies: renderCompositeCanvas. |
-| `triggerPrint` | `osa_booth_photobooth.html:2368` | Chuẩn bị PNG rồi mở window.print thủ công | `frontend/src/services/print-client.js` | `triggerPrint(app, …)` | replace-later | DEMO / TODO integration | Đăng ký onload trước src và xóa handler sau khi in, tránh render sau đó kích hoạt in lại. Call sites: 585, 1771. State/dependencies: renderCompositeCanvas. |
+| `triggerPrint` | `osa_booth_photobooth.html:2368` | Phase 4: gửi print-ready đã xác nhận vào backend queue | `frontend/src/services/print-client.js` | `triggerPrint(app, …)` | integrated | DONE / Mock tested | Giữ facade; API owner + idempotency, copies, polling status; không window.print. Auto mode yêu cầu confirm/in rõ ràng. Canvas/editor gốc giữ nguyên. |
 | `downloadCompositeImage` | `osa_booth_photobooth.html:2378` | Xuất PNG qua anchor download với timestamp | `frontend/src/features/result/result.js` | `downloadCompositeImage(app, …)` | refactor | DONE | Di chuyển thuật toán/DOM/classes/callbacks, truyền context tường minh. Call sites: 591, 758. State/dependencies: renderCompositeCanvas, showToast. |
 | `openSettingsModal` | `osa_booth_photobooth.html:2391` | Mở settings modal | `frontend/src/components/modal.js` | `openSettingsModal(app, …)` | refactor | DONE | Di chuyển thuật toán/DOM/classes/callbacks, truyền context tường minh. Call sites: 235, 2401. State/dependencies: . |
 | `closeSettingsModal` | `osa_booth_photobooth.html:2395` | Đồng bộ settings và đóng modal | `frontend/src/components/modal.js` | `closeSettingsModal(app, …)` | refactor | DONE | Di chuyển thuật toán/DOM/classes/callbacks, truyền context tường minh. Call sites: 712, 743. State/dependencies: syncSettingsFromModal. |

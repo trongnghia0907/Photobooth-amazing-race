@@ -41,6 +41,7 @@ export function getSixSlotCoordinates(app, canvasW, canvasH) {
 }
 
 export function renderCompositeCanvas(app) {
+  if(app.serverSession?.finalized || app.finalOperation?.confirmationStarted)return;
   const canvas = document.getElementById('compositeCanvas');
   if (!canvas) return;
 

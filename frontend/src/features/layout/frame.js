@@ -56,6 +56,10 @@ export function clearCustomFrame(app) {
 export function selectPresetLayout(app, layout) {
   const definition = layouts[layout];
   if (!definition) return;
+  if (app.cameraSource === 'host' && app.currentScreen === 'home' && !app.photos.some(Boolean)
+      && app.sessionContext?.id && app.sessionContext.layout !== layout) {
+    if (!app.forgetSession()) return;
+  }
   if (definition.slotCount !== app.slotCount) {
     if (app.currentScreen !== 'home' || app.photos.some(Boolean) || app.hasPendingWork() || app.persistenceBusy || app.captureBusy) {
       app.showToast('Hãy bắt đầu khách mới ở Home trước khi đổi số ảnh.', 'info');

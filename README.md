@@ -1,10 +1,118 @@
-# OSA BOOTH — Phase 3 QR & Guest Photo Page
+# Phase 6 addition — Event Live Gallery
+
+Màn hình máy chiếu/LED riêng tại **http://localhost:8000/event-display**. Host đăng nhập **/admin**, tạo mã màn hình riêng và duyệt từng composite đã chốt sau khi xác nhận đồng ý/ủy quyền. Mặc định mọi ảnh chưa được duyệt; Host có thể ẩn ảnh mà không xóa composite/QR. Màn hình có tường ảnh, slideshow/fullscreen và tự cập nhật/kết nối lại.
+
+[Hướng dẫn màn hình, duyệt ảnh và máy chiếu](docs/EVENT_LIVE_GALLERY.md) · [Kiểm thử và file thay đổi](docs/EVENT_LIVE_GALLERY_VERIFICATION.md). Đây là gallery sự kiện có giới hạn truy cập, không phải Host Gallery hay gallery public. Cổng Cloudflare/public-photo hiện tại không mở route này.
+
+---
+
+# OSA BOOTH — Phase 6 integration
+
+Current instructions: [Windows setup, local/LAN/HTTPS and operator guide](docs/WINDOWS_EVENT_GUIDE.md), [Phase 0–6 audit](docs/PHASE0_6_VERIFICATION.md), [hardware/event acceptance](docs/EVENT_DAY_CHECKLIST.md).
+
+Built kiosk and API now run together without Vite: build `frontend` with `npm.cmd run build:host`, then from repository root run `& backend/.venv/Scripts/python.exe scripts/run_host.py`. Enter Host credentials and a separate kiosk pairing code when prompted. Open **http://localhost:8000/booth**, Host **http://localhost:8000/admin**. Default camera/printer are Mock. Confirm/save composite to get QR automatically. Localhost QR is laptop-only; use the documented explicit LAN or HTTPS profile for phones.
+
+Phase 6 adds 75/25 Setup, fullscreen capture, current-session-only sidebar, complete New Session privacy reset, station pairing/CSRF, Host restricted to laptop, separate public-photo app, migration preserving old files, supervised Windows launch/stop, offline backup and deployment examples. No public tunnel, physical print or real camera operation was enabled. Actual iPad/camera/printer/LAN/public Internet tests remain pending. See the current report before interpreting historical readiness statements below.
+
+---
+
+# OSA BOOTH — Phase 5 Host Camera Integration
+
+## Vòng đời ảnh hiện tại
+
+**Một phiên → một composite cuối → một QR ổn định.** Ảnh chụp riêng chỉ là dữ liệu làm việc để retake/chỉnh ảnh trước khi xác nhận. Sau khi composite được lưu và chốt thành công, backend dọn ảnh tạm an toàn; Dashboard/Guest chỉ xem ảnh cuối và bản in có QR. Lỗi lưu/confirm giữ dữ liệu để phục hồi; lỗi dọn được thử lại. Sau khi chốt, dùng **Khách tiếp theo** để tạo ảnh khác.
+
+Chi tiết và chính sách dữ liệu cũ: [PHOTO_STORAGE_LIFECYCLE](docs/PHOTO_STORAGE_LIFECYCLE.md). Mục này thay thế các mô tả lịch sử về sửa ảnh/tạo token mới trong cùng phiên sau khi xác nhận.
+
+## Chạy thử camera trên laptop host (Mock)
+
+Terminal 1 tại thư mục gốc:
+
+```powershell
+python scripts/run_local_backend.py --admin
+```
+
+Nhập tài khoản/mật khẩu Host tự chọn. Helper dùng **Host Mock Camera + Mock Printer**, không điều khiển máy ảnh thật/in giấy.
+
+Terminal 2:
+
+```powershell
+cd frontend
+npm.cmd ci
+npm.cmd run dev:host
+```
+
+Mở http://localhost:5173 → chọn layout 4/6 ảnh và timer → Bắt đầu. Preview/capture đi qua backend trên laptop; không dùng camera iPad hoặc ảnh chụp preview làm file chụp thật. Capture Mode phủ màn hình, có countdown/progress và nút dừng xem ảnh. Retake, editor, QR, download và hàng đợi in giữ nguyên. Dashboard: http://localhost:8000/admin; xem trạng thái/capabilities của camera và bật guest control nếu trước đó Host đã tắt.
+
+**Mock workflow là software test; chưa HARDWARE READY.** Chưa có model/SDK để xác minh shutter DSLR/file gốc/Live View trên thiết bị thật. UVC tùy chọn chỉ là webcam-frame DEMO. Xem [báo cáo Phase 5](docs/PHASE5_REPORT.md), [camera capability matrix](docs/HARDWARE_COMPATIBILITY.md), [Phase 4 audit gate](docs/PHASE4_VERIFICATION.md). Không triển khai Phase 6, không commit/push.
+
+iPad cùng mạng test: dùng `npm.cmd run dev:host -- --host 0.0.0.0`, mở `http://<IP-LAN-của-laptop>:5173`; Vite chuyển API tới backend laptop. Chỉ dùng mạng tin cậy; không tự mở firewall/tunnel. Hướng dẫn và giới hạn mạng/HTTPS trong báo cáo. **QR localhost từ helper vẫn chỉ mở trên laptop**, cần origin public thật ở bước triển khai sau để khách quét bằng điện thoại.
+
+## Chạy thử Phase 4 (Mock, không in giấy)
+
+Từ thư mục gốc, terminal 1:
+
+```powershell
+python scripts/run_local_backend.py --admin
+```
+
+Nhập tài khoản và mật khẩu Host bạn tự chọn (mật khẩu ít nhất 12 ký tự, nhập không hiện trên màn hình). Script chạy backend localhost:8000, QR localhost và **ép Mock Printer**, không mở tunnel. Nếu đã đặt ADMIN_USERNAME/ADMIN_PASSWORD trong environment, script dùng các giá trị đó. Không có tài khoản/mật khẩu mặc định.
+
+Terminal 2:
+
+```powershell
+cd frontend
+npm.cmd ci
+npm.cmd run dev
+```
+
+1. Mở http://localhost:5173 → chụp/upload đủ 4 hoặc 6 ảnh → Result → **Xác nhận & Tạo QR**.
+2. QR tự xuất hiện. Mở **Xem bản in có QR** để xem/tải phiên bản sẽ in. Chọn số bản → **In ảnh**; trạng thái Mock đã nhận nghĩa là mô phỏng, không có giấy in.
+3. Mở http://localhost:8000/admin (hoặc http://localhost:5173/admin), đăng nhập bằng tài khoản vừa nhập. Xem gallery → chi tiết phiên → composite gốc/bản có QR → tải/in lại. Dashboard có hàng đợi, lỗi, chọn máy in và logout.
+4. Guest mở QR chỉ xem/tải đúng bản print-ready của mình, không có gallery. **QR localhost chỉ dùng trên laptop này, không mở được từ điện thoại khác.**
+
+Ảnh gốc và bản có QR được lưu riêng; QR nằm ở footer thêm bên dưới, không che ô ảnh. Hàng đợi SQLite chống request trùng. `submitted` chỉ xác nhận gửi hệ thống in; không khẳng định giấy đã in. Job lỗi không tự in lại. Host phải xác nhận khi job có kết quả chưa rõ.
+
+Xem [báo cáo Phase 4](docs/PHASE4_REPORT.md) cho file thay đổi, kiểm thử, API, giới hạn và hướng dẫn in Windows. Chưa triển khai Phase 5/camera SDK/tunnel production. Không commit/push trong lượt này.
+
+Các mục Phase 2–3 bên dưới ghi lại luồng nền; mô tả “chưa có print worker/Host Dashboard/QR embedding” chỉ áp dụng checkpoint cũ. Phase 4 thay thế luồng in trình duyệt bằng backend queue.
+
+## Chạy thử QR trên localhost — không cần domain
+
+Dừng backend cũ bằng Ctrl+C. Tại **thư mục gốc dự án**, chạy:
+
+```powershell
+python scripts/run_local_backend.py
+```
+
+Terminal thứ hai, cũng từ thư mục gốc:
+
+```powershell
+cd frontend
+npm.cmd run dev
+```
+
+Mở http://localhost:5173, chụp/upload đủ ảnh → Result → bấm **“Xác nhận & Tạo QR”** ngay trong ô QR (hoặc nút xác nhận/lưu ở đầu màn hình). Backend lưu composite, complete và finalize; **QR tự hiện**, không cần nhấn Refresh. Bấm **Mở Web** rồi **Download Image** để thử đúng ảnh đó.
+
+Script chỉ đặt `APP_ENV=development`, `PUBLIC_BASE_URL=http://localhost:8000` cho process con, bind backend 127.0.0.1. Không sửa environment toàn hệ thống, không mở tunnel hoặc gallery. Dùng `--port 8002` nếu cần đổi port; khi đổi port, Vite cần OSA_BACKEND_URL tương ứng.
+
+**QR localhost là QR thật trỏ tới file đã lưu nhưng chỉ mở trên máy này, không dùng được trên điện thoại khác.** UI có cảnh báo rõ. Production vẫn yêu cầu URL HTTPS công khai. Nếu không dùng script, từ backend/ đặt hai biến rồi chạy Uvicorn:
+
+```powershell
+$env:APP_ENV = 'development'
+$env:PUBLIC_BASE_URL = 'http://localhost:8000'
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+```
+
+`GET /api/health` có phần `sharing` để xem mode/cấu hình/lỗi cụ thể. `.env` không tự được đọc; script giúp tránh thiếu biến. Không tự rotate link đã phát hành: tạo phiên/revision mới sau khi chuyển từ localhost sang domain thật.
+
+Xem [QR_LOCAL_FIX](docs/QR_LOCAL_FIX.md) cho nguyên nhân, file sửa và kết quả kiểm thử. Không commit/push trong lượt sửa này.
 
 Frontend ES Modules + Vite, tái sử dụng HTML/CSS/editor Phase 1. Backend FastAPI + SQLite lưu từng ảnh demo/webcam/manual và composite trên laptop. Luồng: **Home → tạo session → Capture 6 ảnh → Result/editor → Xác nhận & Lưu ảnh trên laptop**.
 
 Hoàn thiện Phase 2 trước checkpoint: Home có thêm **4 ảnh ngang (2×2)**, slotCount 4/6 xuyên suốt capture/retake/composite/backend; state machine và adapter camera mock trả metadata, printer adapter chỉ dry-run (không in). Sáu ảnh và mọi chức năng editor cũ được giữ. Kiểm tra checkpoint: backend **13/13**, Node **7/7**, Playwright **10/10**, cả hai build PASS.
 
-Đã có QR riêng và Guest Photo Page sau khi xác nhận composite, nếu PUBLIC_BASE_URL được cấu hình đúng. Chưa có physical shutter/SDK, Host Dashboard, print worker hoặc public deployment. Dừng ở Phase 3; có local checkpoints theo yêu cầu, không push/merge main.
+Đã có QR riêng và Guest Photo Page sau khi xác nhận composite: URL localhost trong development hoặc HTTPS public trong production. Chưa có physical shutter/SDK, Host Dashboard, print worker hoặc public deployment. Dừng ở Phase 3; các checkpoint cũ giữ nguyên, lượt sửa QR local không commit/push.
 
 ## Phase 3: QR và trang khách
 
@@ -22,7 +130,7 @@ Trong shell backend, trước khi chạy Uvicorn:
 $env:PUBLIC_BASE_URL = 'https://<ten-mien-public-thuc-te-cua-ban>'
 ```
 
-Thay toàn bộ placeholder bằng origin HTTPS thực tế, không path/query/credentials. Không dùng localhost/private IP/example.com. Mặc định trống: vẫn lưu ảnh, nhưng QR báo chưa cấu hình, không tạo link giả. Đổi cấu hình cần restart backend. Migration tự nâng DB Phase 2 lên schema 3, không xóa dữ liệu.
+Phần này dành cho điện thoại/public deployment: thay placeholder bằng origin HTTPS thực tế, không path/query/credentials; production không dùng localhost/private IP/example.com. Mặc định production + URL trống: vẫn lưu ảnh nhưng QR báo thiếu cấu hình. Test trên máy dùng script localhost ở đầu README. Đổi biến cần restart backend. Không xóa database.
 
 Điện thoại mạng ngoài cần **domain/DNS ổn định + HTTPS hợp lệ + public proxy/tunnel trỏ /p/* tới backend**. Vite localhost:5173 không phải share origin. Chưa tự cài/deploy Cloudflare hoặc tunnel; deployment thuộc phase sau. Laptop/backend/storage và Internet phải còn chạy để link hoạt động.
 

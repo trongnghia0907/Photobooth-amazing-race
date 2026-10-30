@@ -24,6 +24,8 @@ import * as module22 from '../components/modal.js';
 import * as module23 from '../components/toast.js';
 import * as persistence from '../services/photo-repository.js';
 import * as cameraAdapter from '../services/camera-adapter.js';
+import * as hostCamera from '../services/host-camera.js';
+import * as kiosk from '../features/home/kiosk.js';
 import { transitionSession } from './session-machine.js';
 import { createStore } from './store.js';
 
@@ -35,6 +37,8 @@ export function createApp() {
     Object.defineProperty(app, key, { enumerable: true, get: () => state[key], set: value => { state[key] = value; } });
   }
   const modules = [module0, module1, module2, module3, module4, module5, module6, module7, module8, module9, module10, module11, module12, module13, module14, module15, module16, module17, module18, module19, module20, module21, module22, module23, persistence, cameraAdapter];
+  modules.push(hostCamera);
+  modules.push(kiosk);
   for (const module of modules) {
     for (const [name, fn] of Object.entries(module)) {
       app[name] = (...args) => fn(app, ...args);

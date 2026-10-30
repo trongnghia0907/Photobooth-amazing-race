@@ -1,7 +1,8 @@
 import * as client from './session-client.js';
+import { newId } from '../utils/ids.js';
 
-const key = () => crypto.randomUUID();
-const pending = app => app.pendingPhotos.some(Boolean) || app.pendingDeletion;
+const key = () => newId();
+const pending = app => app.pendingPhotos.some(Boolean) || app.pendingDeletion || app.hostCaptureOperation;
 
 function busy(app, value) {
   app.persistenceBusy = value;
@@ -22,6 +23,8 @@ export function reportSaveError(app, error) { failed(app, error); }
 export function hasPendingWork(app) { return !!pending(app); }
 
 export function syncPersistenceUI(app) {
+  app.syncHostCaptureUI();
+  app.syncPrintUI();
   const message = document.getElementById('sessionSaveStatus');
   if (!message) return;
   message.textContent = app.persistenceError || (app.persistenceBusy ? 'Đang chờ backend lưu dữ liệu…'
@@ -34,14 +37,24 @@ export function syncPersistenceUI(app) {
   retry.disabled = app.persistenceBusy;
   const confirm = document.getElementById('confirmSessionBtn');
   confirm.classList.toggle('hidden', app.currentScreen !== 'result');
-  confirm.disabled = app.persistenceBusy || app.captureBusy || !app.photos.every(Boolean) || !!pending(app);
-  confirm.textContent = app.saveState === 'saved' ? 'Đã lưu — Xác nhận lại' : 'Xác nhận & Lưu ảnh trên laptop';
+  confirm.disabled = app.persistenceBusy || app.captureBusy || (!app.serverSession?.finalized && !app.photos.every(Boolean)) || !!pending(app);
+  const locked=!!(app.serverSession?.finalized||app.finalOperation?.confirmationStarted);
+  confirm.textContent = app.serverSession?.finalized ? 'Đã chốt ảnh — Kiểm tra QR' : 'Xác nhận & Lưu ảnh trên laptop';
+  for(const node of document.querySelectorAll('[id^="tabPanel_"], [id^="tabBtn_"]')){node.inert=locked;if('disabled' in node)node.disabled=locked;}
+  const canvas=document.getElementById('compositeCanvas');if(canvas)canvas.inert=locked;
+  const captureNav=document.getElementById('stepNavCapture');if(captureNav)captureNav.disabled=locked;
+  const notice=document.getElementById('finalPhotoNotice');if(notice)notice.hidden=!locked;
+  const qrConfirm=document.getElementById('confirmQRCodeBtn');
+  if(qrConfirm) {
+    qrConfirm.disabled=app.persistenceBusy || app.captureBusy || app.shareBusy;
+    qrConfirm.textContent=app.persistenceBusy ? 'Đang lưu ảnh & tạo QR…' : app.saveState==='saved' ? 'Tạo / Thử lại QR' : '✓ Xác nhận & Tạo QR';
+  }
 }
 
 export async function ensureSession(app) {
   if (!app.sessionContext) {
     app.sessionContext = {
-      id: null, token: crypto.randomUUID().replaceAll('-', '') + crypto.randomUUID().replaceAll('-', ''),
+      id: null, token: newId().replaceAll('-', '') + newId().replaceAll('-', ''),
       createKey: key(), slotCount: app.slotCount, layout: app.presetLayout, request: null,
     };
   }
@@ -50,7 +63,7 @@ export async function ensureSession(app) {
   if (!context.request) {
     context.request = client.createSession(context, context.layout).then(result => {
       context.id = result.session_id;
-      app.serverSession = result;
+      if (app.sessionContext === context) app.serverSession = result;
       return context;
     }).finally(() => { context.request = null; });
   }
@@ -59,6 +72,8 @@ export async function ensureSession(app) {
 
 export async function prepareSession(app) {
   if (app.persistenceBusy) return false;
+  if (app.cameraSource === 'host' && !app.photos.some(Boolean) && app.sessionContext?.id
+      && app.sessionContext.layout !== app.presetLayout && !app.forgetSession()) return false;
   busy(app, true);
   try {
     await app.ensureSession();
@@ -147,6 +162,7 @@ export async function removeStoredPhotos(app, slot = null) {
 
 export async function retrySessionSave(app) {
   if (app.persistenceBusy || app.captureBusy) return;
+  if (app.hostCaptureOperation) return app.retryHostCapture();
   if (app.finalOperation && !pending(app)) return app.confirmAndSaveSession();
   busy(app, true);
   try {
@@ -172,7 +188,9 @@ export function onCompositeRendered(app, dataUrl) {
 }
 
 export async function confirmAndSaveSession(app) {
-  if (app.persistenceBusy || app.captureBusy || pending(app) || !app.photos.every(Boolean)) return;
+  if (app.persistenceBusy || app.captureBusy || pending(app)) return;
+  if (app.serverSession?.finalized) return app.generateQRCodeForCurrentPhoto(true);
+  if (!app.photos.every(Boolean)) return;
   app.clearTimers();
   busy(app, true);
   // Freeze the editor only while its chosen snapshot is being persisted.
@@ -198,18 +216,44 @@ export async function confirmAndSaveSession(app) {
       const uploaded = await client.uploadComposite(app.sessionContext, operation);
       operation.compositeId = uploaded.composite.id;
     }
+    operation.confirmationStarted=true;
     const completed = await client.completeSession(app.sessionContext, operation);
     if (completed.status !== 'completed' || completed.session_id !== app.sessionContext.id || completed.composite?.id !== operation.compositeId) {
       throw new Error('Backend chưa xác nhận hoàn tất đúng ảnh ghép. Hãy thử lưu lại.');
     }
     app.serverSession = completed;
+    app.releaseHostCamera();
     app.lastSavedImage = dataUrl;
     app.saveState = 'saved';
+    // Only the confirmed composite remains in the kiosk after a durable ACK.
+    // On a lost/failed confirmation response these working canvases are kept
+    // until the same confirmation request can be resolved safely.
+    app.photos = Array(app.slotCount).fill(null);
+    app.singleRetakeIndex = null;
+    app.renderSixSlotsGrid();
+    app.renderCaptureDots();
     app.transitionSession('SAVED');
     app.persistenceError = '';
     await app.generateQRCodeForCurrentPhoto(true);
     app.showToast('Backend đã lưu ảnh ghép và hoàn tất phiên trên laptop.', 'success');
-  } catch (error) { failed(app, error); }
+  } catch (error) {
+    // A known failed confirmation is still an editable working session. If
+    // the response was merely lost (or status cannot be read), keep the chosen
+    // snapshot locked and retry its key instead of inventing another final.
+    const operation=app.finalOperation;
+    if(operation?.confirmationStarted && app.sessionContext){
+      try{
+        const stored=await client.getSession(app.sessionContext);
+        if(!stored.finalized){
+          app.serverSession=stored;operation.confirmationStarted=false;
+          if(stored.status==='failed'){
+            operation.compositeId=null;operation.uploadKey=key();operation.completeKey=key();
+          }
+        }
+      }catch{/* Outcome unknown: retain working canvases and the original key. */}
+    }
+    failed(app, error);
+  }
   finally { resultScreen.inert = false; busy(app, false); }
 }
 
@@ -218,6 +262,10 @@ export function forgetSession(app) {
     app.showToast('Phiên còn dữ liệu chưa lưu. Hãy thử lưu lại trước khi đổi khách.', 'info');
     return false;
   }
+  app.stopPrintPolling();
+  app.releaseHostCamera();
+  app.printOperation = null;
+  app.printError = '';
   app.sessionContext = null;
   app.activeShare = null;
   app.shareError = '';

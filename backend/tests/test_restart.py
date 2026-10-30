@@ -17,7 +17,7 @@ def test_uvicorn_process_restart_preserves_completed_session(tmp_path):
         listener.bind(('127.0.0.1', 0))
         port = listener.getsockname()[1]
     root = tmp_path/'restart-storage'
-    env = {**os.environ, 'OSA_STORAGE_ROOT':str(root), 'PUBLIC_BASE_URL':'https://photos.osa.test'}
+    env = {**os.environ, 'OSA_STORAGE_ROOT':str(root), 'PUBLIC_BASE_URL':'https://photos.osa.test', 'PRINTER_MODE':'mock','ENABLE_PHYSICAL_PRINTING':'false'}
     backend = Path(__file__).resolve().parents[1]
     client = httpx.Client(base_url=f'http://127.0.0.1:{port}', trust_env=False, timeout=10)
 
@@ -73,7 +73,7 @@ def test_uvicorn_process_restart_preserves_completed_session(tmp_path):
         restored=client.get(f'/api/sessions/{sid}',headers=headers())
         assert restored.json() == shared.json()
         assert client.post(f'/api/sessions/{sid}/complete',headers=headers(complete_key),json={'composite_id':final}).json() == completed.json()
-        assert len(list(root.rglob('*.png'))) == 8
+        assert len(list(root.rglob('*.png'))) == 3  # official composite, QR, print-ready; working shots cleaned
         assert client.get(share_path+'/image').content==image_before
         assert client.get(share_path+'/download').status_code==200
         assert client.get(f'/api/sessions/{sid}/composites/{final}/image',headers=headers()).status_code == 200

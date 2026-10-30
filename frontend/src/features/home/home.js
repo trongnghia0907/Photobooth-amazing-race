@@ -39,7 +39,7 @@ export function toggleFullAutoMode(app) {
   const chk = document.getElementById('chkFullAuto');
   if (chk) chk.checked = app.fullAutoMode;
   app.updateAutoModeUI();
-  app.showToast(app.fullAutoMode ? 'Đã BẬT Chế độ Tự động hoàn toàn (Chụp 6 tấm → QR → Tự động In)!' : 'Đã chuyển sang Chế độ Thủ công.', 'info');
+  app.showToast(app.fullAutoMode ? `Đã BẬT chụp tự động ${app.slotCount} tấm → Result. Xác nhận ảnh và bấm In ảnh khi sẵn sàng.` : 'Đã chuyển sang Chế độ Thủ công.', 'info');
 }
 
 export function updateAutoModeUI(app) {

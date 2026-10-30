@@ -1,4 +1,4 @@
-"""Dry-run adapter for CI; no queue, OS driver, spooler or physical printing."""
+"""Dry-run printer used by the durable queue; never sends data to an OS printer."""
 from pathlib import Path
 import hashlib
 from .images import atomic_write
@@ -16,3 +16,13 @@ class MockPrinterAdapter:
         destination = self.output / f'{job_id}.png'
         atomic_write(destination, data)
         return {'mode': 'mock', 'printed': False, 'sha256': hashlib.sha256(data).hexdigest()}
+
+    def list_printers(self):
+        return [{'id':'mock', 'name':'Mock Printer (không in giấy)', 'status':'ready'}]
+
+    def print_image(self, file_path, copies, options):
+        receipt = self.preview(file_path, options['job_id'].replace('-', ''))
+        return {**receipt, 'copies':copies, 'physical_print_confirmed':False}
+
+    def get_job_status(self, job_id):
+        return {'status':'simulated', 'physical_print_confirmed':False}

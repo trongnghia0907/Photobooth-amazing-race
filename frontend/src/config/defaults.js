@@ -1,6 +1,7 @@
 /** Phase 1 is a demonstration, never an event-ready camera/print system. */
 export const defaults = Object.freeze({
   demoEnabled: import.meta.env?.DEV || import.meta.env?.MODE === 'demo',
+  hostCameraEnabled: import.meta.env?.VITE_CAMERA_SOURCE === 'host',
   enableLegacyUpload: import.meta.env?.DEV && import.meta.env?.VITE_ENABLE_LEGACY_UPLOAD === 'true',
   enableLegacyShutter: import.meta.env?.DEV && import.meta.env?.VITE_ENABLE_LEGACY_SHUTTER === 'true',
   autoPrintPopup: false,

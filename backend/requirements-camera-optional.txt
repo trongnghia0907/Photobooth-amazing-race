@@ -1,0 +1,2 @@
+# Optional host webcam DEMO only, not a DSLR SDK. Not needed for mock/tests.
+opencv-python>=4.10,<5

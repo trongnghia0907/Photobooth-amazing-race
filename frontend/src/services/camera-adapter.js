@@ -13,6 +13,8 @@ class MockCameraAdapter {
 }
 
 export function capturePhoto(app, index) {
+  if(app.serverSession?.finalized||app.finalOperation?.confirmationStarted)throw new Error('Phiên đã chốt ảnh cuối. Hãy bắt đầu khách mới.');
+  if (app.cameraSource === 'host') return app.captureHostPhoto(index);
   app.cameraAdapter ||= new MockCameraAdapter(app);
   return app.cameraAdapter.capture_photo(index);
 }

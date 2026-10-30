@@ -16,6 +16,11 @@ export async function startOrContinueSequence(app) {
 
   const epoch = app.captureEpoch;
   if (!await app.prepareSession() || epoch !== app.captureEpoch) return;
+  if (app.cameraSource === 'host') {
+    try { await app.prepareHostCamera(); }
+    catch(error) { app.reportSaveError(error);return; }
+    if (epoch !== app.captureEpoch) return;
+  }
 
   app.isCapturingSequence = true;
   app.updateCaptureScreenUI();

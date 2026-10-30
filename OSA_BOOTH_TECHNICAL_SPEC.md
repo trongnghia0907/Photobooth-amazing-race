@@ -1,3 +1,19 @@
+# PHASE 6 ADDENDUM — RESTRICTED EVENT LIVE GALLERY
+
+Yêu cầu được bổ sung theo xác nhận mới của người dùng cho AMAZING RACE 2026. Không thay đổi phạm vi refactor ban đầu hoặc quy tắc QR riêng.
+
+- Trang riêng /event-display cho máy chiếu/LED 16:9, tối, tiêu đề lớn căn giữa, wall và slideshow/fullscreen, tự cập nhật, empty state và tự phục hồi mạng.
+- Một session có đúng một composite chính thức. Chỉ composite đã lưu/chốt thành công VÀ đã được Host duyệt mới đủ điều kiện; nguồn/retake/draft không được hiển thị.
+- Mọi ảnh mặc định chưa được duyệt, bao gồm dữ liệu có trước migration. Host chọn cơ sở guest consent hoặc event authorization và xác nhận chủ động cho từng ảnh. Host ẩn ảnh chỉ thu hồi quyền trình chiếu, không xóa gốc/QR.
+- Quyền màn hình tách Host/kiosk/Guest QR; mã do Host tạo, cookie riêng, revoke/rotate, không chứa token QR trong URL hay feed. API chỉ metadata tối thiểu và media được bảo vệ; không có link tải, storage path hoặc private gallery.
+- Ngoại lệ gallery này chỉ dành cho trình chiếu sự kiện có kiểm soát quyền. Quy tắc không public gallery và QR truy cập đúng một ảnh vẫn áp dụng; public photo gateway không đăng ký /event-display.
+- Tái sử dụng FastAPI/SQLite/session_finals/composite hiện có, không dịch vụ upload/database thứ hai. Polling có giới hạn là đủ. Giữ camera, in, QR, Host và frontend cũ.
+- Kiểm thử duyệt/không duyệt, layout 4/6, một item/session, ẩn/reapprove, restart, phân quyền, 16:9, fullscreen/slideshow, offline recovery và toàn bộ regression Phase 1–6.
+
+Thiết kế, thao tác và giới hạn hiện tại: [EVENT_LIVE_GALLERY](docs/EVENT_LIVE_GALLERY.md). Kết quả: [EVENT_LIVE_GALLERY_VERIFICATION](docs/EVENT_LIVE_GALLERY_VERIFICATION.md).
+
+---
+
 # OSA BOOTH — TECHNICAL REQUIREMENTS & IMPLEMENTATION SPECIFICATION
 
 > **Phiên bản:** 1.0 · 29/10/2026  

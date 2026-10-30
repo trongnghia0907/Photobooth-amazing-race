@@ -1,0 +1,10 @@
+# Optional PRIVATE LAN TLS proxy. Replace the IP, keep all ports private.
+# Does not install a trusted root automatically. iPad must explicitly trust it.
+{
+    skip_install_trust
+    auto_https disable_redirects
+}
+https://192.168.1.20:8443, https://localhost:8443 {
+    tls internal
+    reverse_proxy 127.0.0.1:8000
+}
