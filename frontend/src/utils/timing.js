@@ -15,6 +15,7 @@ export function clearTimers(app) {
     app.autoGraceTimerId = null;
   }
   app.isCapturingSequence = false;
+  app.sequencePaused=false;app.countdownState=null;app.sequenceStarting=false;
   const overlay = document.getElementById('countdownOverlay');
   if (overlay) overlay.classList.add('hidden');
   const graceOverlay = document.getElementById('autoGraceOverlay');

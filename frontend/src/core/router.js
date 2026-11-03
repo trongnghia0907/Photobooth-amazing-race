@@ -2,11 +2,13 @@
 
 export function goToScreen(app, screenName) {
   if(screenName!=='result' && (app.serverSession?.finalized||app.finalOperation?.confirmationStarted)){
-    app.showToast('Phiên đã chốt hoặc đang chờ xác nhận lưu. Thử lưu lại nếu có lỗi; bắt đầu Khách mới để chụp/chỉnh ảnh khác.','info');return;
+    app.showToast('This session is finalized or waiting to be saved. Retry saving if there is an error; start a New Session to take or edit another photo.','info');return;
   }
   app.clearTimers();
   app.currentScreen = screenName;
-  if (screenName !== 'capture') app.releaseHostCamera();
+  // Home and Capture share the same live camera. Result releases the lease;
+  // an explicit navigation cancelling an in-flight connect still cleans up.
+  if (screenName === 'result' || (screenName === 'home' && app.hostConnectRequest)) app.releaseHostCamera();
   app.transitionSession(screenName === 'result' ? 'EDIT' : screenName === 'capture' ? 'PREVIEW' : 'RESET');
   app.syncPersistenceUI();
 
@@ -18,18 +20,6 @@ export function goToScreen(app, screenName) {
   if (capSec) capSec.classList.toggle('hidden', screenName !== 'capture');
   if (resSec) resSec.classList.toggle('hidden', screenName !== 'result');
 
-  const navMap = {
-    home: document.getElementById('stepNavHome'),
-    capture: document.getElementById('stepNavCapture'),
-    result: document.getElementById('stepNavResult')
-  };
-  Object.entries(navMap).forEach(([key, btn]) => {
-    if (!btn) return;
-    btn.className = key === screenName
-      ? 'px-4 py-1.5 rounded-full text-xs font-bold transition-all bg-brand-600 text-white shadow-sm'
-      : 'px-4 py-1.5 rounded-full text-xs font-bold transition-all text-brand-700 hover:bg-brand-100';
-  });
-
   if (screenName === 'capture') {
     app.updateCaptureScreenUI();
   } else if (screenName === 'result') {
@@ -37,4 +27,7 @@ export function goToScreen(app, screenName) {
     app.generateQRCodeForCurrentPhoto(false);
   }
   app.syncSetupLayout();
+  if(screenName==='home'&&app.cameraSource==='host'&&!app.hostPreviewHealthy&&!app.hostConnectRequest&&!app.persistenceBusy&&!app.resumeRecoveryPending){
+    app.prepareHostCamera().catch(error=>app.showToast(error.message,'error'));
+  }
 }

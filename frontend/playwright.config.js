@@ -7,7 +7,7 @@ process.env.OSA_TEST_ADMIN_PASSWORD ||= randomBytes(24).toString('hex');
 const backendEnv = {
   ADMIN_USERNAME: 'test-host', ADMIN_PASSWORD: process.env.OSA_TEST_ADMIN_PASSWORD,
   PRINTER_MODE:'mock', ENABLE_PHYSICAL_PRINTING:'false', APP_ENV:'development',
-  PUBLIC_BASE_URL: 'https://photos.osa.test', // synthetic test origin; never a deployed public URL
+  PUBLIC_BASE_URL: 'https://photos.amazingrace.test', // synthetic test origin; never a deployed public URL
   OSA_BACKEND_URL: 'http://127.0.0.1:8001',
   OSA_STORAGE_ROOT: fileURLToPath(new URL('../.tools/e2e-backend/', import.meta.url)),
 };

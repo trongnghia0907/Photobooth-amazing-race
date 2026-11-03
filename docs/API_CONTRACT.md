@@ -26,7 +26,7 @@ All session and print-config endpoints in built deployment require the station c
 
 Host routes additionally require an actual loopback client and existing Host authentication/CSRF. Default admin gallery includes only official completed sessions; `include_working=true` exposes private recovery metadata to authenticated Host, never temporary images. Public `app.public_main:app` only serves `/p/{token}` subresources and minimal `/healthz`; no admin, API, booth, static storage or hardware workers. The tunnel config restricts even health from public routing.
 
-Sharing metadata adds `lan_only`. RFC1918 HTTP origins require APP_ENV=development and ALLOW_LAN_HTTP=true, independent from explicit localhost sharing; UI/print footer clearly label LAN. Production requires HTTPS. Previously issued URLs are pinned. Migration 7 retains pre-upgrade pending cleanup as retained_legacy; only newly confirmed sessions clean temporary files automatically. See [Windows guide](WINDOWS_EVENT_GUIDE.md) and [audit](PHASE0_6_VERIFICATION.md). Earlier API notes below remain applicable except where superseded here.
+Sharing metadata adds `lan_only`. RFC1918 HTTP origins require APP_ENV=development and ALLOW_LAN_HTTP=true, independent from explicit localhost sharing; UI/print footer clearly label LAN. Production requires HTTPS. Previously issued URLs are pinned. Migration 7 retains pre-upgrade pending cleanup as retained_legacy; only newly confirmed sessions clean temporary files automatically. See [Windows guide](WINDOWS_EVENT_GUIDE.md) and [event checklist](EVENT_DAY_CHECKLIST.md). Earlier API notes below remain applicable except where superseded here.
 
 ---
 

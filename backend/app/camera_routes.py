@@ -88,6 +88,14 @@ def host_disconnect(request: Request):
     return request.app.state.camera.disconnect()
 
 
+@admin.post('/diagnostic')
+def host_diagnostic(request: Request):
+    """Host-only capability check; never treats a preview frame as a shutter receipt."""
+    # Safe diagnostics are status/capability-only. They never fire a physical
+    # shutter or manufacture a result from Live View.
+    return request.app.state.camera.diagnose()
+
+
 class Failure(BaseModel):
     failure: Literal['timeout','capture','transfer','disconnect','stale_preview'] | None=None
 

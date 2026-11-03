@@ -2,7 +2,7 @@
 
 Migration 008 adds event_display_config, event_display_sessions and event_display_photos to the same SQLite database. No source/final photo file is removed or rewritten, no existing session is approved automatically, no QR token is regenerated. Consent/approval, hide state and display access hashes persist across restart/backup. Existing schema-7 data is verified private and unchanged after migration.
 
-Added restricted display route/UI and authenticated Host approval/access controls. Fixed Host detail selection/loading races so a stale consent form cannot remain active while selecting another session. No new dependency or public deployment. [Verification](EVENT_LIVE_GALLERY_VERIFICATION.md).
+Added restricted display route/UI and authenticated Host approval/access controls. Fixed Host detail selection/loading races so a stale consent form cannot remain active while selecting another session. No new dependency or public deployment. [Gallery acceptance tests](../backend/tests/test_event_display.py).
 
 ---
 
@@ -10,7 +10,7 @@ Added restricted display route/UI and authenticated Host approval/access control
 
 Migration 007 adds booth station/session bindings and marks all pre-upgrade pending/blocked final cleanup retained_legacy. No photo file is deleted during migration. Migration 006 backfill still identifies official finals; 007 runs before cleanup workers, preserving existing completed data. Newly confirmed sessions retain normal post-commit cleanup.
 
-Reused existing UI controls in 75/25 Setup and fullscreen flow; added station CSRF/pairing, private/public app boundary, LAN URL opt-in, secure deployment profiles, OS leases/supervised shutdown and offline backup. Fixed prior guest custom-text retention and supervisor stop-marker race. Existing uncommitted Phase 3–5 work retained; legacy HTML untouched; no commit/push/public deployment. See [verification](PHASE0_6_VERIFICATION.md).
+Reused existing UI controls in 75/25 Setup and fullscreen flow; added station CSRF/pairing, private/public app boundary, LAN URL opt-in, secure deployment profiles, OS leases/supervised shutdown and offline backup. Fixed prior guest custom-text retention and supervisor stop-marker race. Existing uncommitted Phase 3–5 work retained; legacy HTML untouched; no commit/push/public deployment. See [event checklist](EVENT_DAY_CHECKLIST.md).
 
 ---
 
@@ -22,11 +22,11 @@ Added session_finals and temporary_file_cleanup migration, sealed confirmation b
 
 ## Phase 5 — host camera software
 
-Phase 4 gate re-run and audit fixes documented in PHASE4_VERIFICATION.md. Migration 005 preserves photo/slot IDs while allowing camera_original source and adds capture journal; FK check before commit. Host camera protocol/controller + Mock/optional UVC DEMO/blocked vendor adapter, exclusive lease, native files and transfer retry are isolated from frontend. Same-origin preview and capture API integrate via existing facade/timers/retake/editor; CSS fullscreen overlay covers setup during capture. Added Host diagnostics, host dev/build mode, hardware matrix and software/hardware readiness report. No Phase 6 or commit/push. Previous uncommitted Phase 3–4 changes retained.
+Migration 005 preserves photo/slot IDs while allowing camera_original source and adds capture journal; FK check before commit. Host camera protocol/controller + Mock/optional UVC DEMO/blocked vendor adapter, exclusive lease, native files and transfer retry are isolated from frontend. Same-origin preview and capture API integrate via existing facade/timers/retake/editor; CSS fullscreen overlay covers setup during capture. Added Host diagnostics, host dev/build mode, hardware matrix and software/hardware readiness report. No Phase 6 or commit/push. Previous uncommitted Phase 3–4 changes retained.
 
 ## Phase 4 — Printing System & Host Dashboard
 
-Đã chốt Phase 3 bằng 42 backend + 14 E2E PASS trước thay đổi. Migration 004 thêm bảng derivative, print jobs, printer selection, admin credentials/sessions; không sửa/xóa composite gốc. Share cũ backfill print-ready khi finalize/lookup, giữ token. Guest image/download chuyển sang file print-ready có QR footer; compositor/editor giữ nguyên. `triggerPrint` giữ facade, thay window.print bằng API owner + idempotency + polling. Auto-print trước confirm đổi thành nhắc thao tác thủ công. Mock mặc định, Windows GDI opt-in; lease OS + SQLite FIFO, interrupted job không tự in lại. Dashboard riêng `/admin`, API cookie auth/CSRF, gallery/queue/reprint/printer/system. Chi tiết file/tests/giới hạn ở PHASE4_REPORT.md. Không Phase 5, commit hoặc push; giữ sửa QR local có sẵn.
+Đã chốt Phase 3 bằng 42 backend + 14 E2E PASS trước thay đổi. Migration 004 thêm bảng derivative, print jobs, printer selection, admin credentials/sessions; không sửa/xóa composite gốc. Share cũ backfill print-ready khi finalize/lookup, giữ token. Guest image/download chuyển sang file print-ready có QR footer; compositor/editor giữ nguyên. `triggerPrint` giữ facade, thay window.print bằng API owner + idempotency + polling. Auto-print trước confirm đổi thành nhắc thao tác thủ công. Mock mặc định, Windows GDI opt-in; lease OS + SQLite FIFO, interrupted job không tự in lại. Dashboard riêng `/admin`, API cookie auth/CSRF, gallery/queue/reprint/printer/system. Chi tiết file/tests/giới hạn ở API_CONTRACT.md. Không Phase 5, commit hoặc push; giữ sửa QR local có sẵn.
 
 ## Fix QR Not Ready và test localhost
 
@@ -42,7 +42,7 @@ Phase 2 hoàn thiện/checkpoint dad43d0, sau đó nhánh feat/phase3-qr-guest-p
 
 ## Phase 2 — Backend Foundation (bổ sung sau Phase 1)
 
-Đã triển khai theo yêu cầu Phase 2 mới: FastAPI/sqlite3/Pillow, migration SQL version 1, local file revisions, owner token hash, idempotency, APIs /api và frontend persistence/retry/confirm. Giữ nguyên editor và source/legacy. Không commit/push. Chi tiết file/behavior/test ở [PHASE2_REPORT](PHASE2_REPORT.md); API ở [API_CONTRACT](API_CONTRACT.md). Backend 12/12, Node 6/6, full Playwright 9/9 và builds PASS. Những dòng “dừng trước Phase 2” bên dưới ghi nhận mốc lịch sử Phase 1, đã được yêu cầu Phase 2 hiện tại thay thế.
+Đã triển khai theo yêu cầu Phase 2 mới: FastAPI/sqlite3/Pillow, migration SQL version 1, local file revisions, owner token hash, idempotency, APIs /api và frontend persistence/retry/confirm. Giữ nguyên editor và source/legacy. Không commit/push. Chi tiết file/behavior/test ở [API contract](API_CONTRACT.md); API ở [API_CONTRACT](API_CONTRACT.md). Backend 12/12, Node 6/6, full Playwright 9/9 và builds PASS. Những dòng “dừng trước Phase 2” bên dưới ghi nhận mốc lịch sử Phase 1, đã được yêu cầu Phase 2 hiện tại thay thế.
 
 ## Phase 0 — DONE
 
@@ -69,7 +69,7 @@ Tailwind CDN trả 403 khi tải trong môi trường này. Chuyển sang Tailwi
 ## Các thay đổi hành vi có chủ đích
 
 1. **DEMO rõ ràng:** dev và build mode demo cho phép mock/video frame; production guard từ chối mock, upload ảnh manual và video-frame capture. Không claim real shutter. `npm run build` tạo artifact demo để review; production build chưa event-ready.
-2. **QR:** wrapper mặc định không upload, không có QR/link tải giả. UI báo TODO; local download/mobile preview giữ nguyên. Legacy HTTP implementation giữ ở `services/legacy-qr.js`, opt-in bằng flag DEV. Failure không dùng `#osabooth-*`. Không triển khai QR backend thay thế.
+2. **QR:** wrapper mặc định không upload, không có QR/link tải giả. UI báo TODO; local download/mobile preview giữ nguyên. Legacy HTTP implementation giữ ở `services/legacy-qr.js`, opt-in bằng flag DEV. Failure không dùng `#legacy-placeholder-*`. Không triển khai QR backend thay thế.
 3. **Shutter signal:** giữ ImageCapture/localhost behavior trong `services/legacy-camera.js`, tắt mặc định, opt-in DEV. Test shutter mặc định chỉ hiệu ứng và thông báo đúng demo. `ImageCapture.takePhoto()` cũ vẫn bỏ kết quả khi opt-in; loopback là thiết bị đang mở trang, không phải host từ xa.
 4. **Print:** autoPrintPopup và checkbox mặc định false. Thủ công vẫn dùng window.print legacy; handler onload đặt trước src và tự gỡ sau khi chạy, tránh editor render tiếp làm bật print lại. E2E dùng stub, không mở hộp thoại/in giấy.
 5. **Timers:** theo dõi/cleanup start-delay, next-shot delay, delayed print và QR debounce cùng countdown/grace khi chuyển screen/pause/reset/pagehide. Tránh start trễ sau khi rời Capture; tránh grace interval trùng.

@@ -57,7 +57,7 @@ async function fixture(page, frame=false) {
   return {name:frame?'six-holes.png':'fixture.png',mimeType:'image/png',buffer:Buffer.from(data,'base64')};
 }
 
-test('Home/setup, timers, mock selector, mirror, modal/calibrator and delayed-start cancellation', async({page})=>{
+test('Home/setup, timers, mock selector, mirror, no technical guest controls and delayed-start cancellation', async({page})=>{
   const log=await setup(page);
   await expect(page.locator('#screenHome')).toBeVisible();
   for(const n of [3,5,7,10]) {
@@ -68,13 +68,16 @@ test('Home/setup, timers, mock selector, mirror, modal/calibrator and delayed-st
   await page.locator('#homeCameraSelect').selectOption('simulated_camera');
   await page.locator('#homeMirrorBtn').click();
   expect(await page.evaluate(()=>app.mirrorVideo)).toBe(false);
-  await page.evaluate(()=>app.openSettingsModal());
-  await page.locator('#chkFullAuto').uncheck();
-  await expect(page.locator('#chkAutoPrintPopup')).not.toBeChecked();
-  await page.evaluate(()=>app.autoDetectTransparentHolesFromFrame());
-  await expect(page.locator('#slotDetectStatus')).toContainText('Vui lòng');
-  await page.screenshot({path:evidence+'modular-settings.png'});
-  await page.evaluate(()=>app.closeSettingsModal());
+  await expect(page.locator('#settingsModal')).toHaveCount(0);
+  await expect(page.locator('#kioskExtraControls')).toHaveCount(0);
+  await expect(page.locator('#setupLayoutChoices > .layout-choice-card')).toHaveCount(2);
+  await expect(page.locator('#customFrameInputMain, #frameCardGrid3x2')).toHaveCount(0);
+  await page.locator('#frameCardLandscape4').click();
+  expect(await page.evaluate(()=>app.slotCount)).toBe(4);
+  await page.locator('#frameCardGrid2x3').click();
+  expect(await page.evaluate(()=>app.slotCount)).toBe(6);
+  expect(await page.evaluate(()=>app.fullAutoMode)).toBe(true);
+  await expect(page.locator('#slotDetectStatus')).toHaveCount(0);
   await page.screenshot({path:evidence+'modular-home.png'});
   await page.clock.install();
   await page.evaluate(()=>{app.startAutomaticSession();app.goToScreen('home');});
@@ -130,20 +133,13 @@ test('countdown six shots, pause/resume, dynamic slot retake/delete, reset and a
   expect(log).toEqual({errors:[],externalWrites:[],missing:[]});
 });
 
-test('uploads, six transparent regions, all filters/categories, stickers mouse/touch, text, download and print boundary',async({page})=>{
+test('all filters/categories, stickers mouse/touch, text, download and print boundary',async({page})=>{
   const log=await setup(page);
-  const photo=await fixture(page), frame=await fixture(page,true);
+  const photo=await fixture(page);
   await page.evaluate(()=>{app.fullAutoMode=false;app.goToScreen('capture');});
   await page.locator('input[multiple]').setInputFiles(Array.from({length:6},(_,i)=>({...photo,name:`fixture-${i}.png`})));
   await expect(page.locator('#goToResultBtn')).toBeEnabled();
   await page.locator('#goToResultBtn').click();
-  await page.locator('#customFrameInputMain').setInputFiles(frame);
-  await page.waitForFunction(()=>app.detectedSlots?.length===6);
-  await page.evaluate(()=>app.openSlotCalibrator());
-  await page.locator('#slotPadX').fill('0');
-  expect(await page.evaluate(()=>app.slotMetrics.padX)).toBe(0);
-  await page.evaluate(()=>{app.autoDetectTransparentHolesFromFrame();app.closeSettingsModal();});
-  expect(await page.evaluate(()=>app.detectedSlots.length)).toBe(6);
   await page.evaluate(()=>app.selectPresetLayout('grid3x2'));
   expect(await page.locator('#compositeCanvas').evaluate(c=>[c.width,c.height])).toEqual([1800,1200]);
   await page.evaluate(()=>app.selectPresetLayout('grid2x3'));
@@ -177,16 +173,16 @@ test('uploads, six transparent regions, all filters/categories, stickers mouse/t
   await page.locator('#colorSwatchesGrid button').nth(5).click();
   await page.locator('#customColorPicker').fill('#123456');
   await page.locator('#tabBtn_text').click();
-  await page.locator('#inputTopText').fill('OSA TEST');
+  await page.locator('#inputTopText').fill('AR TEST');
   await page.locator('#inputCardTitle').fill('Refactor test');
   await page.locator('#inputBrandingText').fill('Fixture only');
-  expect(await page.evaluate(()=>app.customTexts.topText)).toBe('OSA TEST');
+  expect(await page.evaluate(()=>app.customTexts.topText)).toBe('AR TEST');
   await page.evaluate(()=>app.openMobilePreviewModal());
   await expect(page.locator('#mobileModalImage')).toHaveAttribute('src',/^data:image\/png/);
   await page.locator('#mobilePreviewModal button').last().click();
   const downloadEvent=page.waitForEvent('download');
   await page.getByText('TẢI ẢNH VỀ',{exact:true}).click();
-  expect((await downloadEvent).suggestedFilename()).toMatch(/^osa-booth-.*\.png$/);
+  expect((await downloadEvent).suggestedFilename()).toMatch(/^amazing-race-2026-.*\.png$/);
   await page.evaluate(()=>app.triggerPrint());
   await expect(page.locator('#toastContainer')).toContainText('Xác nhận & Tạo QR');
   await page.evaluate(()=>app.showToast('Regression fixture','info'));
@@ -203,6 +199,8 @@ test('baseline screenshots and pixel-identical compositor output for all filters
   const baseline=await context.newPage();
   await setup(baseline,localUrl(5174));
   await setup(page);
+  const currentBranding=await page.evaluate(()=>app.customTexts);
+  await baseline.evaluate(texts=>{app.customTexts=texts;},currentBranding);
   await baseline.screenshot({path:evidence+'legacy-home.png'});
   for(const p of [baseline,page]) {
     await p.evaluate(()=>{
@@ -224,8 +222,6 @@ test('baseline screenshots and pixel-identical compositor output for all filters
   }
   await baseline.evaluate(()=>app.goToScreen('result'));
   await baseline.screenshot({path:evidence+'legacy-result.png'});
-  await baseline.evaluate(()=>app.openSettingsModal());
-  await baseline.screenshot({path:evidence+'legacy-settings.png'});
 });
 
 test('built artifact loads on iPad portrait/landscape with functional dynamic handlers',async({page})=>{
@@ -258,7 +254,7 @@ test('production artifact refuses simulated and video-frame capture',async({page
 
 test('real backend: explicit composite confirmation, retake metadata, private files and repeat confirmation',async({page})=>{
   const log=await setup(page);
-  await page.evaluate(async()=>{app.fullAutoMode=false;await app.startAutomaticSession();app.clearTimers();});
+  await page.evaluate(async()=>{app.fullAutoMode=false;await app.prepareSession();app.goToScreen('capture');});
   const sid=await page.evaluate(()=>app.sessionContext.id);
   expect(sid).toMatch(/^[a-f0-9-]{36}$/);
   const photo=await fixture(page);
@@ -286,7 +282,7 @@ test('real backend: explicit composite confirmation, retake metadata, private fi
   await expect.poll(()=>page.evaluate(()=>app.persistenceBusy)).toBe(false);
   expect(readdirSync(new URL(`composites/${sid}/`,storage))).toHaveLength(1);
   await expect(page.locator('#tabPanel_filters')).toHaveAttribute('inert','');
-  await expect(page.locator('#stepNavCapture')).toBeDisabled();
+  await expect(page.locator('[id^="stepNav"]')).toHaveCount(0);
   await expect(page.locator('#finalPhotoNotice')).toBeVisible();
   expect(readdirSync(new URL(`composites/${sid}/`,storage))).toHaveLength(1);
   state=await page.evaluate(()=>app.serverSession);
@@ -395,7 +391,7 @@ test('four-shot landscape mock session captures, retakes, composites and persist
   const log=await setup(page);
   await page.locator('#frameCardLandscape4').click();
   expect(await page.evaluate(()=>app.slotCount)).toBe(4);
-  await page.evaluate(async()=>{app.fullAutoMode=false;await app.startAutomaticSession();app.clearTimers();});
+  await page.evaluate(async()=>{app.fullAutoMode=false;await app.prepareSession();app.goToScreen('capture');});
   for(let i=0;i<4;i++) {
     await page.locator('#manualInstantSnapBtn').click();
     await expect.poll(()=>page.evaluate(()=>app.photos.filter(Boolean).length)).toBe(i+1);
@@ -430,7 +426,7 @@ async function confirmGuest(page,title) {
 async function proxyPublicGuest(page) {
   // Exercise the real guest router at a synthetic HTTPS origin. This does not
   // prove Internet/DNS/TLS/phone reachability of a deployed public hostname.
-  await page.route('https://photos.osa.test/**',async route=>{
+  await page.route('https://photos.amazingrace.test/**',async route=>{
     const path=new URL(route.request().url()).pathname;
     const response=await route.fetch({url:`${localUrl(8001)}${path}`});
     return route.fulfill({response});
@@ -649,7 +645,7 @@ test('guest A/B pages display and download only their own confirmed photo',async
     expect(createHash('sha256').update(readFileSync(await download.path())).digest('hex')).toBe(state.share.print_ready.sha256);
   }
   await guest.screenshot({path:evidence+'phase3-guest-mobile.png'});
-  await guest.goto('https://photos.osa.test/p/'+('z'.repeat(43)));
+  await guest.goto('https://photos.amazingrace.test/p/'+('z'.repeat(43)));
   await expect(guest.getByRole('alert')).toBeVisible();
   expect(await guest.locator('img').count()).toBe(0);
   expect(await guest.locator('a').count()).toBe(0);
@@ -666,7 +662,7 @@ test('confirmed session keeps one composite and stable QR; editing and retake re
   expect(composites).toBe(1);
   await page.evaluate(()=>{for(let i=0;i<5;i++)app.renderCompositeCanvas();});
   await expect(page.locator('#tabPanel_filters')).toHaveAttribute('inert','');
-  await expect(page.locator('#stepNavCapture')).toBeDisabled();
+  await expect(page.locator('[id^="stepNav"]')).toHaveCount(0);
   expect(finalizes).toBe(1);
   expect(composites).toBe(1);
   await expect(page.locator('#qrStatusBadge')).toContainText('QR sẵn sàng');
@@ -735,13 +731,37 @@ test('lost finalize response keeps saved photo, QR retries reuse the same final/
   expect(readdirSync(qrDir)).toHaveLength(1);
 });
 
+test('guest Start refuses unavailable host camera, then recovers into automatic review without finalizing',async({page})=>{
+  await setup(page);
+  let captures=0;
+  page.on('request',r=>{if(r.method()==='POST'&&r.url().endsWith('/camera/captures'))captures++;});
+  await page.evaluate(()=>{app.selectPresetLayout('landscape_4');app.countdownSeconds=1;app.fullAutoMode=false;});
+  await page.route('**/camera/connect',route=>route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({error:{message:'Camera chưa sẵn sàng: kiểm tra kết nối USB.'}})}));
+  await page.locator('#homeCameraSelect').selectOption('host_camera');
+  await page.locator('#setupStartCaptureBtn').click();
+  await expect(page.locator('#setupCameraStatus')).toContainText('Camera chưa sẵn sàng');
+  await expect(page.locator('#screenHome')).toBeVisible();
+  await expect(page.locator('body')).not.toHaveClass(/host-capture-fullscreen/);
+  expect(captures).toBe(0);
+  expect(await page.evaluate(()=>app.photos.filter(Boolean).length)).toBe(0);
+  await page.unroute('**/camera/connect');
+  await page.locator('#setupStartCaptureBtn').click();
+  await expect(page.locator('body')).toHaveClass(/host-capture-fullscreen/);
+  await expect(page.locator('#screenResult')).toBeVisible({timeout:30000});
+  await expect(page.locator('body')).toHaveAttribute('data-workflow','review');
+  await expect(page.locator('#guestDeliveryPanel')).toBeHidden();
+  expect(captures).toBe(4);
+  expect(await page.evaluate(()=>app.serverSession.composite)).toBe(null);
+  expect(await page.evaluate(()=>app.serverSession.finalized)).toBe(false);
+});
+
 test('guest page shows loading and network error, then recovers after reload',async({page,context})=>{
   const owner=await confirmGuest(page,'Loading fixture');
   const guest=await context.newPage();
   await proxyPublicGuest(guest);
   let release;
   const gate=new Promise(resolve=>{release=resolve;});
-  const imagePattern='https://photos.osa.test/p/*/image';
+  const imagePattern='https://photos.amazingrace.test/p/*/image';
   await guest.route(imagePattern,async route=>{await gate;await route.abort('failed');});
   await guest.goto(owner.share.share_url,{waitUntil:'domcontentloaded'});
   await expect(guest.locator('#loading')).toBeVisible();

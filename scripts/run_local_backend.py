@@ -6,7 +6,7 @@ import subprocess
 import getpass
 
 root = Path(__file__).resolve().parents[1]
-parser = argparse.ArgumentParser(description='Run OSA backend with real localhost share URLs')
+parser = argparse.ArgumentParser(description='Run the photobooth backend with real localhost share URLs')
 parser.add_argument('--port', type=int, default=8000)
 parser.add_argument('--reload', action='store_true')
 parser.add_argument('--admin', action='store_true', help='Prompt for host credentials (password is hidden)')
@@ -16,7 +16,7 @@ if not 1 <= args.port <= 65535:
 python = root / 'backend/.venv' / ('Scripts/python.exe' if os.name == 'nt' else 'bin/python')
 if not python.is_file():
     raise SystemExit('Create backend/.venv and install backend/requirements.lock.txt first.')
-env = {**os.environ, 'APP_ENV': 'development', 'PUBLIC_BASE_URL': f'http://localhost:{args.port}',
+env = {**os.environ, 'APP_ENV': 'development','OPERATION_MODE':'development','ALLOW_MOCK_HARDWARE':'false', 'PUBLIC_BASE_URL': f'http://localhost:{args.port}',
        'PRINTER_MODE':'mock','ENABLE_PHYSICAL_PRINTING':'false',
        'CAMERA_ADAPTER':'mock','CAMERA_GUEST_ENABLED':'true'}
 if args.admin:

@@ -74,6 +74,16 @@ class BoothAccess:
 class Pairing(BaseModel):key:str=Field(min_length=1,max_length=1000)
 
 
+@router.get('/config')
+def configuration(request:Request):
+    access=request.app.state.booth_access
+    if access.enabled:access.require(request)
+    settings=access.settings
+    return {'operation_mode':settings.operation_mode,'event_mode':settings.operation_mode=='event',
+            'mock_hardware_allowed':settings.demo_hardware_allowed,'guest_idle_seconds':settings.guest_idle_seconds,
+            'gallery_poll_seconds':settings.gallery_poll_seconds,'recent_gallery_available':access.enabled}
+
+
 @router.post('/pair')
 def pair(request:Request,payload:Pairing,response:Response):
     if request.headers.get('X-OSA-Pair')!='1':raise HTTPException(403,'Thiếu pairing header')

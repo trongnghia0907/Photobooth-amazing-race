@@ -1,4 +1,6 @@
 import json
+import os
+import hashlib
 import re
 from typing import Annotated, Literal
 from uuid import UUID
@@ -33,7 +35,10 @@ Key = Annotated[str, Depends(operation_key)]
 def health(request: Request):
     with request.app.state.repository.db.connect() as db:
         db.execute('SELECT 1').fetchone()
-    return {'status': 'ok', 'phase': 6, 'capture_mode': 'demo/webcam_frame/manual_upload/host_adapter',
+    return {'status': 'ok', 'phase': 6,'startup_id':os.environ.get('PHOTOBOOTH_STARTUP_ID',''),'operation_mode':request.app.state.settings.operation_mode,
+            'runtime_id':hashlib.sha256(str(request.app.state.settings.storage_root.resolve()).encode()).hexdigest(),
+            'storage':{'provider':'google_drive' if request.app.state.settings.google_drive_enabled else 'local'},
+            'capture_mode': 'physical_camera_required' if request.app.state.settings.operation_mode=='event' else 'demo/webcam_frame/manual_upload/host_adapter',
             'sharing': request.app.state.repository.sharing.configuration()}
 
 
@@ -50,6 +55,19 @@ def create(request: Request, payload: CreateSession, owner: Auth, key: Key):
 @router.get('/sessions/{session_id}')
 def get(request: Request, session_id: UUID, owner: Auth):
     return request.app.state.repository.get(str(session_id), owner)
+
+
+@router.put('/sessions/{session_id}/layout')
+def update_layout(request: Request, session_id: UUID, payload: CreateSession, owner: Auth, key: Key):
+    if (payload.layout == 'landscape_4') != (payload.slot_count == 4):
+        raise HTTPException(422, 'Layout không khớp slot_count')
+    # Keep the camera lease/adapter alive; only an unused session's metadata
+    # may change. Serialize with capture startup, never with a disconnect.
+    camera = request.app.state.camera
+    with camera.control:
+        if camera.capture_lock.locked():
+            raise HTTPException(409, 'Camera đang chụp/truyền ảnh; không thể đổi bố cục.')
+        return request.app.state.repository.update_layout(str(session_id), owner, key, payload.model_dump())
 
 
 @router.post('/sessions/{session_id}/photos')
@@ -98,6 +116,11 @@ def complete(request: Request, session_id: UUID, payload: CompleteSession, owner
 @router.post('/sessions/{session_id}/finalize')
 def finalize(request: Request, session_id: UUID, payload: CompleteSession, owner: Auth, key: Key):
     return request.app.state.repository.sharing.finalize(str(session_id), owner, key, payload.composite_id)
+
+
+@router.get('/sessions/{session_id}/public-status')
+def public_status(request:Request,session_id:UUID,owner:Auth):
+    return request.app.state.repository.sharing.verify_public(str(session_id),owner)
 
 
 @router.get('/sessions/{session_id}/{kind}/{image_id}/image')

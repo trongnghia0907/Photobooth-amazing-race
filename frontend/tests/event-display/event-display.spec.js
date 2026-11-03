@@ -7,11 +7,11 @@ import path from 'node:path';
 import net from 'node:net';
 
 const root=fileURLToPath(new URL('../../../',import.meta.url));
-const python=path.join(root,'backend/.venv/Scripts/python.exe');
+const python=process.env.PHOTOBOOTH_PYTHON||path.join(root,process.platform==='win32'?'backend/.venv/Scripts/python.exe':'backend/.venv/bin/python');
 const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 async function port(){const s=net.createServer();await new Promise(resolve=>s.listen(0,'127.0.0.1',resolve));const n=s.address().port;await new Promise(resolve=>s.close(resolve));return n;}
 
-test('16:9 event display: explicit approval, live wall/slideshow, hide, reconnect, revoke and actual backend restart',async({page,browser,request})=>{
+test('16:9 event display: explicit approval, four-corner gallery, hide, reconnect, revoke and actual backend restart',async({page,browser,request})=>{
   mkdirSync(path.join(root,'.tools'),{recursive:true});
   const storage=mkdtempSync(path.join(root,'.tools/event-gallery-')),p=await port(),base='http://127.0.0.1:'+p;
   const password=randomBytes(24).toString('hex'),pairing=randomBytes(24).toString('hex');
@@ -36,6 +36,7 @@ test('16:9 event display: explicit approval, live wall/slideshow, hide, reconnec
   }
   const hostContext=await browser.newContext({viewport:{width:1280,height:960}}),host=await hostContext.newPage();
   async function code(){
+    await host.locator('nav [data-page="event"]').click();
     host.once('dialog',d=>d.accept());await host.locator('#createDisplayCode').click();
     await expect(host.locator('#eventDisplayCode')).toContainText('Mã màn hình');
     return (await host.locator('#eventDisplayCode').textContent()).split(': ').at(-1);
@@ -66,6 +67,8 @@ test('16:9 event display: explicit approval, live wall/slideshow, hide, reconnec
     expect(final.ok(),await final.text()).toBe(true);return {sid,...await final.json(),payload};
   }
   async function consent(count,basis){
+    await host.locator('nav [data-page="photos"]').click();
+    await host.locator('#refreshGallery').click();
     const card=host.locator('#gallery article').filter({hasText:count+' ảnh'});
     await expect(card).toHaveCount(1);await card.locator('button').click();
     await expect(host.locator('#approveDisplayPhoto')).toBeDisabled();
@@ -83,39 +86,35 @@ test('16:9 event display: explicit approval, live wall/slideshow, hide, reconnec
     await page.goto(base+'/event-display');await unlock(firstCode);await expect(page.locator('#displayEmpty')).toBeVisible();
     expect((await page.request.get(base+'/api/admin/sessions')).status()).toBe(401);
     step('create six-photo composite');const a=await finalPhoto(6,'#2856a3');
-    await pause(2800);await expect(page.locator('#photoWall figure')).toHaveCount(0);
-    step('approve first photo');await consent(6,'guest_consent');await expect(page.locator('#photoWall figure')).toHaveCount(1);
+    await pause(2800);await expect(page.locator('#photoWall figure[data-photo-id]')).toHaveCount(0);
+    step('approve first photo');await consent(6,'guest_consent');await expect(page.locator('#photoWall figure[data-photo-id]')).toHaveCount(1);
     const oldMedia=await page.locator('#photoWall img').first().getAttribute('src');
     await expect.poll(()=>page.locator('#photoWall img').first().evaluate(i=>[i.naturalWidth,i.naturalHeight])).toEqual([800,1200]);
     step('create four-photo composite');const b=await finalPhoto(4,'#8a3d61');
-    await pause(2800);await expect(page.locator('#photoWall figure')).toHaveCount(1);
-    step('approve second photo');await consent(4,'event_authorization');await expect(page.locator('#photoWall figure')).toHaveCount(2);
-    await expect.poll(()=>page.locator('#photoWall img').first().evaluate(i=>[i.naturalWidth,i.naturalHeight])).toEqual([1200,800]);
+    await pause(2800);await expect(page.locator('#photoWall figure[data-photo-id]')).toHaveCount(1);
+    step('approve second photo');await consent(4,'event_authorization');await expect(page.locator('#photoWall figure[data-photo-id]')).toHaveCount(2);
+    await expect.poll(()=>page.locator('#photoWall img').nth(1).evaluate(i=>[i.naturalWidth,i.naturalHeight])).toEqual([1200,800]);
     expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
     expect(await page.evaluate(()=>document.documentElement.scrollHeight<=innerHeight)).toBe(true);
     const feed=await page.request.get(base+'/event-display/api/photos');const json=await feed.json();expect(json.items).toHaveLength(2);
     for(const item of json.items)expect(Object.keys(item).sort()).toEqual(['approved_at','height','id','image_url','width']);
     expect(await feed.text()).not.toContain(a.sid);expect(await feed.text()).not.toContain(a.share.share_url);
-    await page.screenshot({path:path.join(root,'docs/screenshots/event-display-wall-1920.png'),fullPage:true});
-    step('slideshow/fullscreen');await page.locator('#slideshowMode').click();await page.locator('#slideInterval').selectOption('5');
-    await expect(page.locator('#slideshow')).toBeVisible();await expect(page.locator('#slideCaption')).toContainText('1 / 2');
-    await expect(page.locator('#slideCaption')).toContainText('2 / 2',{timeout:10000});
-    await page.locator('#fullscreenDisplay').click();await expect.poll(()=>page.evaluate(()=>!!document.fullscreenElement)).toBe(true);
-    await page.screenshot({path:path.join(root,'docs/screenshots/event-display-slideshow-1920.png')});
-    await page.evaluate(()=>document.exitFullscreen());
-    step('hide first photo');await host.locator('#gallery article').filter({hasText:'6 ảnh'}).locator('button').click();await host.locator('#hideDisplayPhoto').click();
-    await expect(page.locator('#photoWall figure')).toHaveCount(1);expect((await page.request.get(base+oldMedia)).status()).toBe(404);
+    await page.screenshot({path:path.join(root,'frontend/test-results/event-display/four-corner-live-1920.png'),fullPage:true});
+    await expect(page.locator('#photoWall figure')).toHaveCount(4);
+    await expect(page.locator('#displayPresentation button, #displayPresentation select')).toHaveCount(0);
+    step('hide first photo');await host.locator('nav [data-page="photos"]').click();await host.locator('#gallery article').filter({hasText:'6 ảnh'}).locator('button').click();await host.locator('#hideDisplayPhoto').click();
+    await expect(page.locator('#photoWall figure[data-photo-id]')).toHaveCount(1);expect((await page.request.get(base+oldMedia)).status()).toBe(404);
     const download=await request.get(base+a.share.download_url);expect(download.ok()).toBe(true);expect(createHash('sha256').update(await download.body()).digest('hex')).toBe(a.share.print_ready.sha256);
-    step('network loss/recovery');await page.route('**/event-display/api/photos',route=>route.abort());
-    await expect(page.locator('#displayStatus')).toContainText('Mất kết nối');await expect(page.locator('#photoWall figure')).toHaveCount(0);
-    await page.unroute('**/event-display/api/photos');await expect(page.locator('#photoWall figure')).toHaveCount(1);
-    step('reapprove and rotate access');await consent(6,'guest_consent');await expect(page.locator('#photoWall figure')).toHaveCount(2);
-    const secondCode=await code();expect(secondCode).not.toBe(firstCode);await expect(page.locator('#displayLogin')).toBeVisible();await expect(page.locator('#photoWall figure')).toHaveCount(0);
-    await unlock(secondCode);await expect(page.locator('#photoWall figure')).toHaveCount(2);
-    step('restart actual backend');await stop();await start();await expect(page.locator('#photoWall figure')).toHaveCount(2);
+    step('network loss/recovery');await page.route('**/event-display/api/photos*',route=>route.abort());
+    await expect(page.locator('#displayStatus')).toContainText('Mất kết nối');await expect(page.locator('#photoWall figure[data-photo-id]')).toHaveCount(1);
+    await page.unroute('**/event-display/api/photos*');await expect(page.locator('#photoWall figure[data-photo-id]')).toHaveCount(1);
+    step('reapprove and rotate access');await consent(6,'guest_consent');await expect(page.locator('#photoWall figure[data-photo-id]')).toHaveCount(2);
+    const secondCode=await code();expect(secondCode).not.toBe(firstCode);await expect(page.locator('#displayLogin')).toBeVisible();await expect(page.locator('#photoWall figure[data-photo-id]')).toHaveCount(0);
+    await unlock(secondCode);await expect(page.locator('#photoWall figure[data-photo-id]')).toHaveCount(2);
+    step('restart actual backend');await stop();await start();await expect(page.locator('#photoWall figure[data-photo-id]')).toHaveCount(2);
     const after=await page.request.get(base+'/event-display/api/photos');expect((await after.json()).items.map(i=>i.id).sort()).toEqual(json.items.map(i=>i.id).sort());
-    await page.locator('#gridMode').click();await expect(page.locator('#photoWall')).toBeVisible();
-    await host.locator('#revokeDisplayCode').click();await expect(page.locator('#displayLogin')).toBeVisible();await expect(page.locator('#photoWall figure')).toHaveCount(0);
+    await expect(page.locator('#photoWall')).toBeVisible();
+    await host.locator('nav [data-page="event"]').click();await host.locator('#revokeDisplayCode').click();await expect(page.locator('#displayLogin')).toBeVisible();await expect(page.locator('#photoWall figure[data-photo-id]')).toHaveCount(0);
     expect((await request.get(base+b.share.download_url)).ok()).toBe(true);
     expect(errors).toEqual([]);
   }finally{try{await stop();}finally{await hostContext.close();writeFileSync(path.join(storage,'test-process.log'),log.join(''));}}

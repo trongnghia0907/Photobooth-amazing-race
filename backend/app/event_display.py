@@ -24,6 +24,7 @@ HEADERS={'Cache-Control':'no-store','X-Content-Type-Options':'nosniff',
          'Content-Security-Policy':"default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"}
 router=APIRouter(prefix=PREFIX)
 admin=APIRouter(prefix='/api/admin/event-display',dependencies=[Depends(host)])
+booth_gallery=APIRouter(prefix='/api/booth/recent-photos')
 
 
 def digest(value):return hashlib.sha256(value.encode()).hexdigest()
@@ -67,6 +68,7 @@ class EventDisplay:
         if row['path']!=f"composites/{row['session_id']}/{row['id']}.png":
             raise HTTPException(404,'Composite không còn sẵn sàng để trình chiếu.')
         root=self.repo.settings.storage_root.resolve();candidate=root/row['path'];path=candidate.resolve()
+        if not path.is_file():self.repo.drive.local(row['id'])
         if path!=candidate or not path.is_relative_to(root) or not path.is_file():
             raise HTTPException(404,'Composite không còn sẵn sàng để trình chiếu.')
         if verify and hashlib.sha256(path.read_bytes()).hexdigest()!=row['sha256']:
@@ -98,6 +100,9 @@ class EventDisplay:
 
 
 def service(request:Request):return request.app.state.event_display
+
+
+def kiosk_auth(request:Request):request.app.state.booth_access.require(request)
 
 
 def display_auth(request:Request):service(request).require(request)
@@ -141,35 +146,54 @@ def lock(request:Request,response:Response):
     return {'locked':True}
 
 
-@router.get('/api/photos',dependencies=[Depends(display_auth)])
-def photos(request:Request,response:Response,limit:int=Query(60,ge=1,le=100)):
-    display=service(request);items=[]
+def approved_photo_feed(display,limit,media_prefix,newest_completion=False):
+    items=[]
+    order='f.confirmed_at DESC,e.display_id DESC' if newest_completion else 'e.approved_at DESC,e.display_id DESC'
     with display.repo.db.connect() as db:
         rows=db.execute('''SELECT e.display_id,e.approved_at,c.path,c.id,c.session_id,c.width,c.height FROM event_display_photos e
             JOIN session_finals f ON f.session_id=e.session_id AND f.composite_id=e.composite_id
             JOIN sessions s ON s.id=f.session_id AND s.status='completed' AND s.composite_id=f.composite_id
             JOIN composites c ON c.id=e.composite_id WHERE e.approved=1
-            ORDER BY e.approved_at DESC,e.display_id DESC LIMIT ?''',(limit,)).fetchall()
+            ORDER BY '''+order+''' LIMIT ?''',(limit,)).fetchall()
         for row in rows:
             try:display.file(row)
             except HTTPException:continue
-            items.append({'id':row['display_id'],'image_url':f"{PREFIX}/media/{row['display_id']}",
+            items.append({'id':row['display_id'],'image_url':f"{media_prefix}/{row['display_id']}",
                           'width':row['width'],'height':row['height'],'approved_at':row['approved_at']})
-    response.headers.update(HEADERS)
     return {'items':items}
 
 
-@router.get('/media/{display_id}',dependencies=[Depends(display_auth)])
-def media(request:Request,display_id:UUID):
-    display=service(request)
+def approved_photo_file(display,display_id):
     with display.repo.db.connect() as db:
         row=db.execute('''SELECT c.path,c.id,c.session_id FROM event_display_photos e
             JOIN session_finals f ON f.session_id=e.session_id AND f.composite_id=e.composite_id
             JOIN sessions s ON s.id=f.session_id AND s.status='completed' AND s.composite_id=f.composite_id
             JOIN composites c ON c.id=e.composite_id WHERE e.display_id=? AND e.approved=1''',(str(display_id),)).fetchone()
         if not row:raise HTTPException(404,'Ảnh không được duyệt trình chiếu.')
-        path=display.file(row)
+        return display.file(row)
+
+
+@router.get('/api/photos',dependencies=[Depends(display_auth)])
+def photos(request:Request,response:Response,limit:int=Query(60,ge=1,le=100)):
+    response.headers.update(HEADERS)
+    return approved_photo_feed(service(request),limit,f'{PREFIX}/media')
+
+
+@router.get('/media/{display_id}',dependencies=[Depends(display_auth)])
+def media(request:Request,display_id:UUID):
+    path=approved_photo_file(service(request),display_id)
     return FileResponse(path,media_type='image/png',headers=HEADERS)
+
+
+@booth_gallery.get('',dependencies=[Depends(kiosk_auth)])
+def booth_photos(request:Request,response:Response,limit:int=Query(8,ge=5,le=10)):
+    response.headers.update(HEADERS)
+    return approved_photo_feed(service(request),limit,'/api/booth/recent-photos',True)
+
+
+@booth_gallery.get('/{display_id}',dependencies=[Depends(kiosk_auth)])
+def booth_media(request:Request,display_id:UUID):
+    return FileResponse(approved_photo_file(service(request),display_id),media_type='image/png',headers=HEADERS)
 
 
 @admin.get('/status')

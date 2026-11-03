@@ -1,4 +1,20 @@
 /** No fabricated share URL and no third-party requests in default demo. */
+export function renderQRConnectionMode(app,config=app.sharingConfig){
+  const element=document.getElementById('qrConnectionMode');
+  if(!element)return;
+  let label='QR connection not verified';
+  if(config?.configured){
+    if(config.tunnel_status==='connecting')label='Connecting to Cloudflare';
+    else if(config.tunnel_status==='disconnected')label='Tunnel disconnected';
+    else if(config.temporary&&config.tunnel_status==='ready')label='Cloudflare HTTPS • verified';
+    else if(config.local_only)label='Local QR • this laptop only';
+    else if(config.lan_only)label='LAN QR • same Wi-Fi only';
+    else label='HTTPS • configured by host';
+  }
+  element.textContent=label;
+  element.dataset.state=config?.tunnel_status|| (config?.local_only?'local':'unverified');
+}
+
 export function showQRUnavailable(app, message, phase='unconfirmed') {
   app.qrPhase=phase;
   clearTimeout(app.qrUpdateDebounceTimer);
@@ -7,20 +23,15 @@ export function showQRUnavailable(app, message, phase='unconfirmed') {
   const container = document.getElementById('qrCodeContainer');
   if (container) {
     container.dataset.phase=phase;
-    container.textContent = phase==='unconfirmed' ? 'Chưa xác nhận ảnh' : 'Chưa tạo được QR';
+    container.textContent = phase==='unconfirmed' ? 'Photo not confirmed' : 'Could not create QR code';
   }
-  const badge = document.getElementById('qrStatusBadge');
-  if (badge) badge.textContent = phase==='unconfirmed' ? 'DEMO • Bước 1: xác nhận ảnh' : 'Ảnh đã lưu • QR cần xử lý';
-  const pill = document.getElementById('qrReadyPill');
-  if (pill) { pill.textContent = phase==='unconfirmed' ? 'Chờ xác nhận ảnh' : phase==='configuration_error' ? 'Thiếu hoặc sai cấu hình URL' : 'Lỗi tạo/tải QR'; pill.className = 'text-amber-800 text-xs font-bold'; }
-  const description = document.getElementById('qrDescriptionText');
-  if (description) description.textContent = message;
-  const input = document.getElementById('qrExternalUrlInput');
-  if (input) input.value = '';
-  const open = document.getElementById('qrExternalOpenBtn');
-  if (open) { open.removeAttribute('href'); open.setAttribute('aria-disabled', 'true'); }
-  const warning=document.getElementById('qrLocalWarning');
-  if(warning) warning.hidden=!app.sharingConfig?.local_only;
-  const lanWarning=document.getElementById('qrLanWarning');if(lanWarning)lanWarning.hidden=!app.sharingConfig?.lan_only;
+  const expiry=document.getElementById('qrExpiryMessage');if(expiry)expiry.hidden=true;
+  const description=document.getElementById('qrDescriptionText');
+  if(description){
+    description.hidden=false;
+    description.textContent=phase==='expired'?'This QR code has expired. Please ask an event staff member for help.':phase==='unconfirmed'?'Confirm your photo to get a QR code.':
+      ['processing','loading','tunnel_connecting'].includes(phase)?'Your photo is saved. Preparing your QR code…':
+      'Your photo is saved. The QR code is not ready yet; the system will retry automatically. Please ask a staff member if you need help.';
+  }
   document.getElementById('qrLoadingOverlay')?.classList.add('hidden');
 }

@@ -3,7 +3,7 @@
 export async function initCameraDevices(app) {
   if (app.useHostCameraByDefault()) return app.enableHostCamera();
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-    app.startSimulatedCamera('Trình duyệt không hỗ trợ Webcam trực tiếp. Đã bật Camera Mô Phỏng Sự Kiện.');
+    app.startSimulatedCamera('This browser does not support a live webcam. Event simulation mode has started.');
     return;
   }
   await app.startCameraStream('', false);
@@ -22,15 +22,15 @@ export async function refreshCameraList(app) {
       select.replaceChildren();
       const option=(value,label,selected)=>{const node=document.createElement('option');node.value=value;node.textContent=label;node.selected=selected;select.append(node);};
       videoDevices.forEach((d,index)=>option(d.deviceId,`📷 ${d.label||`Camera ${index+1}`}`,app.cameraSource!=='host'&&!app.isUsingSimulatedCamera&&d.deviceId===app.selectedDeviceId));
-      option('simulated_camera','✨ Camera Mô Phỏng Sự Kiện (Demo/Không cần quyền)',app.cameraSource!=='host'&&app.isUsingSimulatedCamera);
-      option('host_camera','Camera trên laptop host (theo adapter backend)',app.cameraSource==='host');
+      option('simulated_camera','✨ Event Simulation Camera (Demo / no permission needed)',app.cameraSource!=='host'&&app.isUsingSimulatedCamera);
+      option('host_camera','Host laptop camera (backend adapter)',app.cameraSource==='host');
     }
   } catch (e) {}
 }
 
 export async function selectCameraDevice(app, deviceId) {
   if (app.hostCaptureOperation || app.captureBusy) {
-    app.showToast('Đợi nhận/lưu ảnh camera trước khi đổi nguồn. Nếu lỗi, bấm Thử lưu lại.', 'info');
+    app.showToast('Wait for the camera photo to finish transferring or saving before switching sources. If there is an error, select Retry Save.', 'info');
     return app.refreshCameraList();
   }
   if (deviceId === 'host_camera') return app.enableHostCamera();
@@ -39,7 +39,7 @@ export async function selectCameraDevice(app, deviceId) {
     document.getElementById('hostCameraTools').hidden=true;document.getElementById('hostCameraStatus').hidden=true;
   }
   if (deviceId === 'simulated_camera') {
-    app.startSimulatedCamera('Đã chuyển sang chế độ Camera Mô Phỏng Sự Kiện.');
+    app.startSimulatedCamera('Switched to Event Simulation Camera mode.');
     await app.refreshCameraList();
     return;
   }

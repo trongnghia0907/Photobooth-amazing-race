@@ -1,7 +1,8 @@
 """Printer contract. CUPS can implement this interface without changing the queue."""
 from pathlib import Path
 from typing import Protocol
-from PIL import Image, ImageWin
+import sys
+from PIL import Image
 
 
 class PrinterAdapter(Protocol):
@@ -20,6 +21,12 @@ class WindowsPrinterAdapter:
     """Render PNG through a GDI printer DC; never send PNG bytes as RAW data."""
     def __init__(self, enabled=False):
         self.enabled = enabled
+
+    def diagnostic(self):
+        if sys.platform!='win32':return 'Windows Print Spooler requires Windows; configure CUPS on macOS/Linux.'
+        try:import win32print, win32ui
+        except ImportError:return 'Windows printing requires pywin32 and a configured printer driver.'
+        return ''
 
     def list_printers(self):
         try:
@@ -40,9 +47,10 @@ class WindowsPrinterAdapter:
         dc, started = None, False
         try:
             import win32ui
+            from PIL import ImageWin
             dc = win32ui.CreateDC()
             dc.CreatePrinterDC(printer)
-            spool_id = dc.StartDoc('OSA ' + options['job_id'])
+            spool_id = dc.StartDoc('AMAZING RACE 2026 ' + options['job_id'])
             started = True
             width, height = dc.GetDeviceCaps(8), dc.GetDeviceCaps(10)  # HORZRES / VERTRES
             with Image.open(file_path) as image:

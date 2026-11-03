@@ -24,12 +24,12 @@ export function startSimulatedCamera(app, toastMsg = '') {
 
   const ctx = app.simCanvas.getContext('2d');
   const poses = [
-    { icon: '✌️', title: 'Tạo dáng Peace tươi tắn!' },
-    { icon: '🫶', title: 'Thả tim đôi thật xinh!' },
-    { icon: '😎', title: 'Phong cách cực ngầu!' },
-    { icon: '🥳', title: 'Nụ cười rạng rỡ nhất!' },
-    { icon: '👑', title: 'Thần thái ngôi sao sự kiện!' },
-    { icon: '💙', title: 'Kỷ niệm đáng nhớ cùng nhau!' }
+    { icon: '✌️', title: 'Strike a cheerful peace pose!' },
+    { icon: '🫶', title: 'Make a heart together!' },
+    { icon: '😎', title: 'Show off your coolest look!' },
+    { icon: '🥳', title: 'Give us your brightest smile!' },
+    { icon: '👑', title: 'Bring your event-star energy!' },
+    { icon: '💙', title: 'Make a memory together!' }
   ];
 
   const renderSimFrame = (time) => {
@@ -84,7 +84,7 @@ export function startSimulatedCamera(app, toastMsg = '') {
 
     ctx.fillStyle = 'rgba(224, 242, 254, 0.95)';
     ctx.font = '600 17px "Plus Jakarta Sans", sans-serif';
-    ctx.fillText(`✨ OSA BOOTH DEMO • Sẵn sàng chụp ${app.slotCount} tấm ✨`, w / 2, h * 0.80);
+    ctx.fillText(`✨ AMAZING RACE 2026 DEMO • Ready to capture ${app.slotCount} photos ✨`, w / 2, h * 0.80);
 
     app.simAnimId = requestAnimationFrame(renderSimFrame);
   };
@@ -112,7 +112,7 @@ export function handleManualPhotoFilesUpload(app, event) {
           const image = new Image();
           const url = URL.createObjectURL(file);
           image.onload = () => { URL.revokeObjectURL(url); resolve(image); };
-          image.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Không thể đọc file ảnh. Hãy chọn PNG/JPEG/WebP hợp lệ.')); };
+          image.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Could not read the image file. Choose a valid PNG, JPEG, or WebP.')); };
           image.src = url;
         });
         const snapCanvas = document.createElement('canvas');
@@ -124,7 +124,7 @@ export function handleManualPhotoFilesUpload(app, event) {
         canvases.push(snapCanvas);
       }
       if (epoch !== app.captureEpoch || !await app.acceptPhotoBatch(canvases)) return;
-      app.showToast(`Backend đã lưu ${Math.min(app.slotCount, files.length)} ảnh chụp.`, 'success');
+      app.showToast(`The backend saved ${Math.min(app.slotCount, files.length)} captured photos.`, 'success');
       if (app.photos.every(Boolean)) app.onAllSixShotsCompleted();
     } catch (error) { app.reportSaveError(error); }
     finally { app.captureBusy = false; app.syncPersistenceUI(); }

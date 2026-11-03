@@ -8,7 +8,10 @@ import hashlib
 import hmac
 import json
 import sqlite3
+import shutil
 import uuid
+import logging
+import time
 from datetime import datetime, timezone
 
 from fastapi import HTTPException
@@ -45,6 +48,12 @@ class Repository:
         self.print_ready = PrintReadyService(self)
         from .temporary_assets import TemporaryAssets
         self.temporary_assets = TemporaryAssets(self)
+        from .drive_storage import DriveStorage
+        self.drive = DriveStorage(self)
+
+    def ensure_disk_space(self, extra_bytes=0):
+        if shutil.disk_usage(self.settings.storage_root).free < self.settings.min_free_space_mb*1024*1024+extra_bytes:
+            raise HTTPException(507,'Dung lượng lưu ảnh sắp hết. Nhờ Host giải phóng ổ đĩa; ảnh đã lưu vẫn được giữ.')
 
     def require_working(self, session):
         with self.db.connect() as db:
@@ -113,6 +122,12 @@ class Repository:
             self.authorize(db, sid, token)
             result = self.snapshot(db, sid)
             db.commit()
+            # The snapshot uses a read transaction. Generate/refresh a derived
+            # footer only after that transaction ends (e.g. tunnel URL changed).
+            share=result.get('share')
+            if share and not share.get('print_ready'):
+                self.print_ready.backfill(share['final_id'])
+                result['share']=self.sharing.metadata(db,result['composite']['id'])
             return result
 
     def operation(self, sid, token, key, payload, mutate):
@@ -148,7 +163,19 @@ class Repository:
                     path.unlink(missing_ok=True)
                 raise
 
+    def update_layout(self, sid, token, key, payload):
+        def mutate(db, session, paths):
+            # Historical captures also lock the layout after a retake/reset.
+            if session['status'] != 'created' or db.execute(
+                'SELECT 1 FROM photos WHERE session_id=? UNION ALL SELECT 1 FROM camera_captures WHERE session_id=? LIMIT 1',
+                (sid, sid)).fetchone() or db.execute('SELECT 1 FROM session_finals WHERE session_id=?', (sid,)).fetchone():
+                raise HTTPException(409, 'Chỉ đổi bố cục trước lần chụp đầu tiên. Hãy bắt đầu phiên mới.')
+            db.execute('UPDATE sessions SET layout=?,slot_count=?,updated_at=? WHERE id=?',
+                       (payload['layout'], payload['slot_count'], now(), sid))
+        return self.operation(sid, token, key, {'action':'layout', **payload}, mutate)
+
     def write_image(self, folder, sid, image_id, image, created_paths):
+        self.ensure_disk_space(len(image.data))
         relative = f'{folder}/{sid}/{image_id}.png'
         path = self.settings.storage_root / relative
         atomic_write(path, image.data)
@@ -156,6 +183,8 @@ class Repository:
         return relative
 
     def upload_photo(self, sid, token, key, slot, source, image: ValidatedImage, expected_revision=None, capture_id=None):
+        if self.settings.operation_mode=='event' and (source!='camera_original' or not capture_id):
+            raise HTTPException(403,'Chế độ Event chỉ nhận JPG gốc từ camera đã xác minh; không nhận ảnh demo/upload.')
         def mutate(db, session, paths):
             self.require_working(session)
             if expected_revision is not None and session['shots_revision'] != expected_revision:
@@ -188,6 +217,7 @@ class Repository:
         return self.operation(sid, token, key, {'action': 'delete', 'slot': slot}, mutate)
 
     def upload_composite(self, sid, token, key, shots_revision, editor, image):
+        started=time.perf_counter()
         def mutate(db, session, paths):
             self.require_working(session)
             count = db.execute('SELECT COUNT(*) FROM slots WHERE session_id=?', (sid,)).fetchone()[0]
@@ -199,9 +229,12 @@ class Repository:
             db.execute('INSERT INTO composites VALUES (?,?,?,?,?,?,?,?,?,?)',
                        (image_id, sid, revision, shots_revision, path, image.sha256, image.width, image.height, canonical(editor), now()))
             db.execute("UPDATE sessions SET composite_id=?,status='editing',updated_at=? WHERE id=?", (image_id, now(), sid))
-        return self.operation(sid, token, key, {'action': 'composite', 'shots_revision': shots_revision, 'editor': editor, 'input_hash': image.input_hash}, mutate)
+        result=self.operation(sid, token, key, {'action': 'composite', 'shots_revision': shots_revision, 'editor': editor, 'input_hash': image.input_hash}, mutate)
+        logging.getLogger(__name__).info('composite_durable_ms=%.1f',(time.perf_counter()-started)*1000)
+        return result
 
     def complete(self, sid, token, key, composite_id):
+        started=time.perf_counter()
         with self.db.connect() as db:
             self.authorize(db,sid,token)
             official=db.execute('SELECT composite_id FROM session_finals WHERE session_id=?',(sid,)).fetchone()
@@ -232,8 +265,18 @@ class Repository:
             db.execute("UPDATE sessions SET status='completed',updated_at=? WHERE id=?", (now(), sid))
             db.execute('INSERT INTO session_finals(session_id,composite_id,confirmed_at) VALUES (?,?,?)',(sid,composite_id,now()))
             self.temporary_assets.queue(db,sid,composite_id)
+            self.drive.queue(db,composite_id)
+            # Host policy AND this final snapshot's explicit guest consent.
+            # Run once in the durable completion transaction; retries must not
+            # undo a subsequent Host hide/revocation.
+            if self.settings.event_gallery_auto_publish and json.loads(composite['editor_json']).get('event_display_consent') is True:
+                import time
+                db.execute('''INSERT OR IGNORE INTO event_display_photos
+                    VALUES (?,?,?,?,?,?,?,NULL)''',
+                    (sid,composite_id,str(uuid.uuid4()),1,'guest_consent','guest-consent:auto',time.time()))
         try:
             result = self.operation(sid, token, key, {'action': 'complete', 'composite_id': composite_id}, mutate)
+            logging.getLogger(__name__).info('completion_and_durable_upload_job_ms=%.1f',(time.perf_counter()-started)*1000)
             try:self.temporary_assets.process_session(sid)
             except (OSError,sqlite3.Error):pass
             with self.db.connect() as db:
@@ -259,6 +302,8 @@ class Repository:
             if not row:
                 raise HTTPException(404, 'Không tìm thấy ảnh')
             path = (self.settings.storage_root / row['path']).resolve()
+            if kind=='composites' and not path.is_file():
+                self.drive.local(image_id)
             if not path.is_relative_to(self.settings.storage_root.resolve()) or not path.is_file():
                 raise HTTPException(404, 'Không tìm thấy ảnh')
             return path

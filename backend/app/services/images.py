@@ -43,6 +43,8 @@ def validate_image(data: bytes, content_type: str, settings: Settings) -> Valida
             with Image.open(BytesIO(data)) as probe:
                 if probe.format not in {'PNG', 'JPEG', 'WEBP'}:
                     raise ValueError('Unsupported image format')
+                if probe.format != {'image/png':'PNG','image/jpeg':'JPEG','image/webp':'WEBP'}[content_type]:
+                    raise ValueError('Image format does not match its declared MIME type')
                 if probe.width * probe.height > settings.max_image_pixels:
                     raise HTTPException(413, 'Ảnh vượt giới hạn số pixel')
                 probe.verify()

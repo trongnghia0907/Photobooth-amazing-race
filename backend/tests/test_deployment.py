@@ -102,6 +102,41 @@ def test_public_gateway_only_serves_specific_completed_photo_and_restart(setting
         assert [public.get(path).content for path in paths]==downloads
 
 
+def test_kiosk_recent_gallery_requires_pairing_and_only_lists_approved_finals(settings):
+    with TestClient(create_app(settings),base_url='http://localhost:8000',client=('127.0.0.1',123)) as client:
+        assert client.get('/api/booth/recent-photos').status_code==401
+        station=pair(client,settings)
+        assert client.get('/api/booth/recent-photos',headers=station).json()=={'items':[]}
+        draft=create(client,station,6)
+        csrf=login(client,settings)
+        assert client.put(f'/api/admin/event-display/photos/{draft}',headers=csrf,json={
+            'approved':True,'approval_basis':'guest_consent','consent_confirmed':True
+        }).status_code==409
+        a,final_a=finalized(client,station,6)
+        b,final_b=finalized(client,station,4)
+        # Only explicit Host approval makes a completed composite eligible.
+        assert client.get('/api/booth/recent-photos',headers=station).json()=={'items':[]}
+        for sid in (a,b):
+            assert client.put(f'/api/admin/event-display/photos/{sid}',headers=csrf,json={
+                'approved':True,'approval_basis':'guest_consent','consent_confirmed':True
+            }).status_code==200
+        response=client.get('/api/booth/recent-photos?limit=8',headers=station)
+        assert response.status_code==200
+        items=response.json()['items']
+        assert len(items)==2
+        with client.app.state.repository.db.connect() as db:
+            expected=[row['display_id'] for row in db.execute('''SELECT e.display_id FROM event_display_photos e
+                JOIN session_finals f ON f.session_id=e.session_id AND f.composite_id=e.composite_id
+                WHERE e.approved=1 ORDER BY f.confirmed_at DESC,e.display_id DESC''').fetchall()]
+        assert [item['id'] for item in items]==expected
+        assert all(set(item)=={'id','image_url','width','height','approved_at'} for item in items)
+        assert all(item['image_url'].startswith('/api/booth/recent-photos/') for item in items)
+        assert client.get(items[0]['image_url'],headers=station).status_code==200
+        assert 'share' not in response.text and 'storage' not in response.text and 'token' not in response.text
+        assert client.put(f'/api/admin/event-display/photos/{b}',headers=csrf,json={'approved':False}).status_code==200
+        assert [item['id'] for item in client.get('/api/booth/recent-photos',headers=station).json()['items']]==[items[1]['id']]
+
+
 def test_remote_admin_denied_and_secure_production_cookie(settings):
     production=replace(settings,app_env='production',public_base_url='https://photos.example.test')
     with TestClient(create_app(production),base_url='https://localhost',client=('192.168.1.22',321)) as client:
@@ -162,7 +197,7 @@ def test_upgrade_preserves_preexisting_completed_files(settings,monkeypatch):
     with sqlite3.connect(settings.storage_root/'photobooth.sqlite3') as db:db.execute('PRAGMA user_version=6')
     with TestClient(create_app(settings)) as client:
         with client.app.state.repository.db.connect() as db:
-            assert db.execute('PRAGMA user_version').fetchone()[0]==8
+            assert db.execute('PRAGMA user_version').fetchone()[0]==9
             assert db.execute('SELECT cleanup_status FROM session_finals WHERE session_id=?',(sid,)).fetchone()[0]=='retained_legacy'
         for relative,digest in files.items():assert hashlib.sha256((settings.storage_root/relative).read_bytes()).hexdigest()==digest
         assert client.get(state['share']['download_url']).status_code==200

@@ -1,7 +1,7 @@
 # COPY outside the repository, edit placeholders, validate, then start deliberately.
 # Never point this tunnel to the private kiosk port 8000.
 tunnel: REPLACE_WITH_TUNNEL_UUID
-credentials-file: C:/Users/ASUS/.cloudflared/REPLACE_WITH_TUNNEL_UUID.json
+credentials-file: /ABSOLUTE/PATH/TO/REPLACE_WITH_TUNNEL_UUID.json
 ingress:
   - hostname: photos.example.com
     path: ^/p/.*$

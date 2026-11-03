@@ -1,23 +1,17 @@
 <!doctype html>
-<html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex,nofollow"><title>AMAZING RACE 2026 — Event Live Gallery</title>
 <link rel="stylesheet" href="/event-display/assets/display.css"></head>
 <body><header><h1>AMAZING RACE 2026</h1><p>PHOTOBOOTH · LIVE GALLERY</p></header>
 <main>
 <section id="displayLogin" aria-labelledby="loginTitle"><form id="displayLoginForm">
-<h2 id="loginTitle">Màn hình sự kiện</h2><p>Người vận hành cung cấp mã trình chiếu riêng từ Host Dashboard.</p>
-<label for="displayCode">Mã màn hình</label><input id="displayCode" type="password" required maxlength="200" autocomplete="off">
-<button type="submit">Mở màn hình</button><p id="displayLoginError" role="alert"></p>
+<h2 id="loginTitle">Event Display</h2><p>Enter the display code provided in the Host Dashboard.</p>
+<label for="displayCode">Display Code</label><input id="displayCode" type="password" required maxlength="200" autocomplete="off">
+<button type="submit">Open Display</button><p id="displayLoginError" role="alert"></p>
 </form></section>
-<section id="displayPresentation" hidden aria-label="Ảnh đã được duyệt">
-<nav aria-label="Chế độ trình chiếu"><button id="gridMode" aria-pressed="true">Tường ảnh</button>
-<button id="slideshowMode" aria-pressed="false">Slideshow</button>
-<label>Đổi ảnh <select id="slideInterval"><option value="5">5 giây</option><option value="8" selected>8 giây</option><option value="12">12 giây</option></select></label>
-<button id="fullscreenDisplay">Toàn màn hình</button><button id="lockDisplay">Khóa màn hình</button>
-</nav>
-<p id="displayStatus" role="status" aria-live="polite">Đang kết nối…</p>
-<div id="displayEmpty"><h2>Chờ những khoảnh khắc đầu tiên</h2><p>Ảnh đã chốt và được Host duyệt sẽ tự động xuất hiện.</p></div>
-<div id="photoWall" aria-label="Tường ảnh"></div>
-<div id="slideshow" hidden aria-label="Slideshow"><figure id="slideFigure"><img id="slideImage" alt="Composite đã được duyệt trình chiếu"><figcaption id="slideCaption"></figcaption></figure></div>
+<section id="displayPresentation" hidden aria-label="Approved photos">
+<p id="displayStatus" role="status" aria-live="polite">Connecting…</p>
+<div id="displayEmpty"><h2>Waiting for the first moments</h2><p>Finalized photos approved by the host will appear automatically.</p></div>
+<div id="photoWall" aria-label="Photo gallery"></div>
 </section>
 </main><script type="module" src="/event-display/assets/display.js"></script></body></html>

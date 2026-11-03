@@ -8,6 +8,7 @@ from pathlib import PurePosixPath
 import sqlite3
 import threading
 from uuid import UUID
+from fastapi import HTTPException
 
 
 class TemporaryAssets:
@@ -49,11 +50,14 @@ class TemporaryAssets:
         return target
 
     def check_final(self, db, sid):
-        row = db.execute('''SELECT c.path,c.sha256 FROM session_finals f JOIN sessions s ON s.id=f.session_id
+        row = db.execute('''SELECT c.id,c.path,c.sha256 FROM session_finals f JOIN sessions s ON s.id=f.session_id
             JOIN composites c ON c.id=f.composite_id WHERE f.session_id=? AND s.status='completed'
             AND s.composite_id=f.composite_id AND c.session_id=f.session_id''',(sid,)).fetchone()
         if not row:raise ValueError('Session has no durable final')
         root = self.repo.settings.storage_root.resolve();candidate = root/row['path'];path = candidate.resolve()
+        if not path.is_file():
+            try:self.repo.drive.local(row['id'])
+            except HTTPException:raise ValueError('Final cache unavailable; preserve working files') from None
         if path!=candidate or not path.is_relative_to(root) or not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest()!=row['sha256']:
             raise ValueError('Final missing or corrupt; keep working files')
 
@@ -88,7 +92,7 @@ class TemporaryAssets:
                 try:self.process_pending()
                 except (OSError,sqlite3.Error):pass  # queue remains durable, no unsafe fallback deletion
                 self.stop_event.wait(5)
-        self.thread = threading.Thread(target=run,daemon=True,name='osa-working-file-cleanup');self.thread.start()
+        self.thread = threading.Thread(target=run,daemon=True,name='photobooth-working-file-cleanup');self.thread.start()
 
     def stop(self):
         self.stop_event.set()

@@ -3,24 +3,31 @@ import {createStore} from '../../core/store.js';
 import {showQRUnavailable} from '../../components/qr-status.js';
 
 export async function startAutomaticSession(app) {
-  if (app.persistenceBusy || app.captureBusy || app.hasPendingWork()) return;
+  if(!app.eventConfigurationReady||app.resumeRecoveryPending){app.showToast('Session setup or recovery is not ready. Please ask event staff to check the host.','error');return;}
+  if (app.guestStarting || app.persistenceBusy || app.captureBusy || app.hasPendingWork()) return;
   app.ensureAudio();
   app.clearTimers();
-  if (app.photos.every(p => p !== null)) {
-    if (!await app.resetSessionShots()) return;
-  }
-  const epoch = app.captureEpoch;
-  if (!await app.prepareSession() || epoch !== app.captureEpoch) return;
-  app.goToScreen('capture');
-  app.sessionStartTimerId = setTimeout(() => {
-    app.sessionStartTimerId = null;
-    if (app.currentScreen !== 'capture') return;
-    app.startOrContinueSequence();
-  }, 500);
+  app.guestWorkflowActive=true;app.guestStarting=true;app.syncPersistenceUI();
+  try {
+    if (app.photos.every(Boolean) && !await app.confirmResetShots()) return;
+    const epoch=app.captureEpoch;
+    if (!await app.prepareSession() || epoch!==app.captureEpoch) return;
+    if(app.cameraSource==='host') await app.prepareHostCamera();
+    else if(!app.isUsingSimulatedCamera){
+      const video=document.getElementById('liveVideo');
+      if(!app.stream?.getVideoTracks().some(track=>track.readyState==='live') || !video?.videoWidth || video.readyState<2)
+        throw new Error('The camera is not ready. Check the connection and camera permissions, then try again.');
+    } else if(!app.simCanvas?.width) throw new Error('The demo preview is not ready. Reconnect the camera.');
+    if(epoch!==app.captureEpoch)return;
+    app.goToScreen('capture');
+    await app.startOrContinueSequence();
+  } catch(error){app.reportSaveError(error);}
+  finally{app.guestStarting=false;app.syncPersistenceUI();}
 }
 
 export function startNewGuestSession(app) {
   if (!app.forgetSession()) return;
+  app.guestWorkflowActive=false;app.guestStarting=false;
   app.clearTimers();
   app.photos = Array(app.slotCount).fill(null);
   app.placedStickers = [];
@@ -29,12 +36,13 @@ export function startNewGuestSession(app) {
   app.selectedFilter = 'normal';
   app.updateCustomTextsUI();
   app.renderFilterButtons();
+  app.switchCustomTab('filters');
   app.singleRetakeIndex = null;
   app.lastUploadedUrl = '';
   app.renderSixSlotsGrid();
   app.renderCaptureDots();
   app.renderCompositeCanvas();
-  showQRUnavailable(app,'Bắt đầu phiên mới, chụp và xác nhận ảnh để tạo QR.');
+  showQRUnavailable(app,'Start a new session, take your photos, and confirm them to create a QR code.');
   app.goToScreen('home');
 }
 
@@ -59,9 +67,9 @@ export function renderSixSlotsGrid(app) {
         <div class="group relative aspect-[4/3] rounded-2xl overflow-hidden border-2 border-brand-400 bg-slate-900 shadow-sm cursor-pointer transition-all hover:scale-[1.02]" onclick="app.triggerSingleRetake(${idx})">
           <img src="${dataUrl}" class="w-full h-full object-cover" alt="Shot ${idx + 1}" />
           <div class="absolute top-2 left-2 px-2 py-0.5 rounded-full bg-brand-600/90 text-white font-extrabold text-[10px]">#${idx + 1}</div>
-          <button onclick="event.stopPropagation(); app.deleteSingleSlot(${idx})" class="absolute top-2 right-2 w-6 h-6 rounded-full bg-rose-600/90 hover:bg-rose-700 text-white text-xs font-bold flex items-center justify-center opacity-90 sm:opacity-0 group-hover:opacity-100 transition-opacity" title="Xoá ảnh này">✕</button>
+          <button onclick="event.stopPropagation(); app.deleteSingleSlot(${idx})" class="absolute top-2 right-2 w-6 h-6 rounded-full bg-rose-600/90 hover:bg-rose-700 text-white text-xs font-bold flex items-center justify-center opacity-90 sm:opacity-0 group-hover:opacity-100 transition-opacity" title="Delete this photo">✕</button>
           <div class="absolute inset-0 bg-brand-900/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-            <span class="px-3 py-1 rounded-full bg-white text-brand-800 font-extrabold text-xs shadow">🔄 Chụp lại ô #${idx + 1}</span>
+            <span class="px-3 py-1 rounded-full bg-white text-brand-800 font-extrabold text-xs shadow">🔄 Retake slot #${idx + 1}</span>
           </div>
         </div>
       `;
@@ -69,8 +77,8 @@ export function renderSixSlotsGrid(app) {
       const isTarget = (app.singleRetakeIndex === idx) || (app.singleRetakeIndex === null && app.photos.findIndex(p => p === null) === idx);
       return `
         <div onclick="app.triggerSingleRetake(${idx})" class="aspect-[4/3] rounded-2xl border-2 border-dashed ${isTarget ? 'border-brand-500 bg-brand-50/80' : 'border-brand-200 bg-white/60'} flex flex-col items-center justify-center cursor-pointer hover:border-brand-400 transition-all">
-          <span class="text-xs font-extrabold ${isTarget ? 'text-brand-600' : 'text-slate-400'}">Ô ảnh #${idx + 1}</span>
-          <span class="text-[10px] text-slate-400 mt-0.5">${isTarget ? 'Đang chờ chụp...' : 'Chạm để chụp'}</span>
+          <span class="text-xs font-extrabold ${isTarget ? 'text-brand-600' : 'text-slate-400'}">Photo slot #${idx + 1}</span>
+          <span class="text-[10px] text-slate-400 mt-0.5">${isTarget ? 'Ready to capture…' : 'Tap to capture'}</span>
         </div>
       `;
     }
@@ -78,7 +86,7 @@ export function renderSixSlotsGrid(app) {
 
   const takenCount = app.photos.filter(p => p !== null).length;
   const badge = document.getElementById('capturedCountBadge');
-  if (badge) badge.textContent = `${takenCount} / ${app.slotCount} hoàn tất`;
+  if (badge) badge.textContent = `${takenCount} / ${app.slotCount} complete`;
 
   const goBtn = document.getElementById('goToResultBtn');
   if (goBtn) {
@@ -92,6 +100,12 @@ export function renderSixSlotsGrid(app) {
   }
 }
 
+function canCompleteCapture(app) {
+  return app.currentScreen==='capture'&&(!app.isCapturingSequence||app.sequencePaused)&&app.singleRetakeIndex===null
+    &&app.photos.length===app.slotCount&&app.photos.every(Boolean)
+    &&!app.serverSession?.finalized&&!app.finalOperation?.confirmationStarted;
+}
+
 export function updateCaptureScreenUI(app) {
   app.syncHostCaptureUI();
   const nextEmpty = app.photos.findIndex(p => p === null);
@@ -102,7 +116,7 @@ export function updateCaptureScreenUI(app) {
   const titleEl = document.getElementById('captureProgressTitle');
   if (titleEl) {
     titleEl.textContent = nextEmpty === -1 && app.singleRetakeIndex === null
-      ? `Đã hoàn thành ${app.slotCount} / ${app.slotCount} tấm! 🎉`
+      ? `All ${app.slotCount} photos captured! 🎉`
       : `Tấm ${currentShotIndex + 1} / ${app.slotCount}`;
   }
 
@@ -119,14 +133,28 @@ export function updateCaptureScreenUI(app) {
   const mainBtnText = document.getElementById('mainCaptureBtnText');
   if (mainBtnText) {
     if (app.isCapturingSequence) {
-      mainBtnText.textContent = '⏸️ Tạm dừng đếm ngược';
+      mainBtnText.textContent = app.sequencePaused?'Tiếp tục chụp':'Tạm dừng';
     } else if (app.singleRetakeIndex !== null) {
-      mainBtnText.textContent = `Chụp Lại Ô #${app.singleRetakeIndex + 1} (${app.countdownSeconds}s)`;
+      mainBtnText.textContent = `Retake Slot #${app.singleRetakeIndex + 1} (${app.countdownSeconds}s)`;
     } else if (nextEmpty === -1) {
-      mainBtnText.textContent = `Chụp Lại Toàn Bộ ${app.slotCount} Tấm`;
+      mainBtnText.textContent = `Retake All ${app.slotCount} Photos`;
+    } else if(app.photos.some(Boolean)){
+      mainBtnText.textContent='Tiếp tục chụp';
     } else {
-      mainBtnText.textContent = `Bắt Đầu Chụp Tự Động (${app.slotCount} Tấm)`;
+      mainBtnText.textContent = `Start Automatic Capture (${app.slotCount} Photos)`;
     }
+  }
+
+  const control=document.getElementById('mainCaptureBtn');
+  if(control){control.disabled=!!(app.captureBusy||app.persistenceBusy||app.sequenceStarting);control.setAttribute('aria-pressed',String(!!app.sequencePaused));}
+  for(const id of ['manualInstantSnapBtn','resetAllShotsBtn','cancelRetakeBtn']){
+    const button=document.getElementById(id);if(button)button.disabled=!!(app.captureBusy||app.persistenceBusy);
+  }
+  const complete=document.getElementById('completeCaptureBtn');
+  if(complete){
+    const available=canCompleteCapture(app);
+    complete.classList.toggle('hidden',!available);
+    complete.disabled=!available||!!(app.captureBusy||app.persistenceBusy||app.sequenceStarting||app.hasPendingWork());
   }
 
   app.renderCaptureDots();
@@ -134,34 +162,53 @@ export function updateCaptureScreenUI(app) {
 }
 
 export async function captureCurrentFrameImmediately(app) {
-  if (app.persistenceBusy || app.captureBusy || app.hasPendingWork()) return;
+  if (app.persistenceBusy || app.captureBusy || app.sequenceStarting || app.hasPendingWork()) return;
+  const paused=app.sequencePaused;
   app.clearTimers();
-  if (app.cameraSource === 'host' && !await app.prepareSession()) return;
+  // A manual shot cancels the obsolete countdown, but keeps paused controls.
+  app.sequencePaused=!!paused;
   const epoch = app.captureEpoch;
+  const retake=app.singleRetakeIndex!==null;
   const targetIndex = app.singleRetakeIndex !== null
     ? app.singleRetakeIndex
     : app.photos.findIndex(p => p === null);
 
   if (targetIndex === -1) {
-    app.showToast(`Đã đủ ${app.slotCount} tấm ảnh! Nhấn vào ô bất kỳ nếu bạn muốn chụp lại ô đó.`, 'info');
+    app.showToast(`All ${app.slotCount} photos are ready! Tap any slot to retake that photo.`, 'info');
     return;
   }
 
   app.captureBusy = true;
+  app.updateCaptureScreenUI();
   app.transitionSession('CAPTURE');
   try {
+    if(app.cameraSource==='host'&&!await app.prepareSession())return;
+    if(epoch!==app.captureEpoch)return;
     if (!(await app.capturePhoto(targetIndex)).accepted || epoch !== app.captureEpoch) return;
     app.singleRetakeIndex = null;
+    app.retakeReturnToReview=false;
     app.updateCaptureScreenUI();
-    if (app.photos.every(p => p !== null)) app.onAllSixShotsCompleted();
+    if (retake&&app.photos.every(Boolean)) app.onAllSixShotsCompleted();
   } catch (error) { app.reportSaveError(error); }
-  finally { app.captureBusy = false; app.syncPersistenceUI(); }
+  finally { app.captureBusy = false; app.syncPersistenceUI();app.updateCaptureScreenUI(); }
+}
+
+export function completePausedCapture(app) {
+  if(!canCompleteCapture(app)||app.captureBusy||app.persistenceBusy||app.sequenceStarting||app.hasPendingWork())return;
+  const button=document.getElementById('completeCaptureBtn');if(button)button.disabled=true;
+  // The existing transition switches screens synchronously before its first
+  // await, so a second click cannot enter Review twice. Confirmation stays separate.
+  return app.finishCaptureAndGoToResult();
 }
 
 export function onAllSixShotsCompleted(app) {
   app.transitionSession('REVIEW');
+  if(app.guestWorkflowActive){
+    app.finishCaptureAndGoToResult(true);
+    return;
+  }
   if (!app.fullAutoMode) {
-    app.showToast(`Đã chụp đủ ${app.slotCount} tấm! Nhấn "Hoàn Tất & Xuất Ảnh In" để tiếp tục.`, 'success');
+    app.showToast(`All ${app.slotCount} photos are captured! Select “Finish & Create Print” to continue.`, 'success');
     return;
   }
 
@@ -192,5 +239,5 @@ export function pauseAutoGraceForReview(app) {
   }
   const graceOverlay = document.getElementById('autoGraceOverlay');
   if (graceOverlay) graceOverlay.classList.add('hidden');
-  app.showToast('Đã tạm dừng tự động in. Chạm vào ô ảnh bất kỳ để chụp lại!', 'info');
+  app.showToast('Automatic printing is paused. Tap any photo slot to retake it!', 'info');
 }

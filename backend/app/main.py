@@ -20,10 +20,13 @@ from .admin_page import router as admin_page_router
 from .services.camera.controller import CameraController
 from .services.camera.base import CameraError
 from .camera_routes import router as camera_router, admin as camera_admin_router
+from .frame_routes import admin as frame_admin_router, booth as frame_booth_router
+from .drive_routes import router as drive_router
 from .booth_access import BoothAccess,router as booth_router
 from .runtime_lock import RuntimeLock
 from .deployment import install as install_frontend
-from .event_display import EventDisplay,router as event_router,admin as event_admin,HEADERS as EVENT_HEADERS
+from .event_display import EventDisplay,router as event_router,admin as event_admin,booth_gallery as booth_gallery_router,HEADERS as EVENT_HEADERS
+from .photo_gallery import router as photo_gallery_router
 
 logger = logging.getLogger(__name__)
 
@@ -86,9 +89,11 @@ def create_app(settings: Settings | None = None):
             app.state.camera.start()
             cleanup.callback(app.state.repository.temporary_assets.stop)
             app.state.repository.temporary_assets.start()
+            cleanup.callback(app.state.repository.drive.stop)
+            app.state.repository.drive.start()
             yield
 
-    app = FastAPI(title='OSA Photobooth — Phase 6', lifespan=lifespan,
+    app = FastAPI(title='AMAZING RACE 2026 Photobooth', lifespan=lifespan,
                   docs_url=None if settings.frontend_dist else '/docs',
                   redoc_url=None if settings.frontend_dist else '/redoc',
                   openapi_url=None if settings.frontend_dist else '/openapi.json')
@@ -100,8 +105,13 @@ def create_app(settings: Settings | None = None):
     app.include_router(admin_page_router)
     app.include_router(camera_router)
     app.include_router(camera_admin_router)
+    app.include_router(frame_admin_router)
+    app.include_router(drive_router)
+    app.include_router(frame_booth_router)
     app.include_router(booth_router)
+    app.include_router(booth_gallery_router)
     app.include_router(event_router)
+    app.include_router(photo_gallery_router)
     app.include_router(event_admin)
     install_frontend(app,settings)
 

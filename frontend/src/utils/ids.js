@@ -3,7 +3,7 @@
  */
 export function newId(rng=globalThis.crypto){
   if(typeof rng?.randomUUID==='function')return rng.randomUUID();
-  if(typeof rng?.getRandomValues!=='function')throw new Error('Trình duyệt không có bộ tạo số ngẫu nhiên an toàn. Hãy cập nhật trình duyệt/dùng HTTPS.');
+  if(typeof rng?.getRandomValues!=='function')throw new Error('This browser does not support secure random numbers. Update your browser or use HTTPS.');
   const bytes=rng.getRandomValues(new Uint8Array(16));
   bytes[6]=(bytes[6]&15)|64;bytes[8]=(bytes[8]&63)|128;
   const hex=Array.from(bytes,b=>b.toString(16).padStart(2,'0')).join('');

@@ -8,6 +8,8 @@ export function bindEvents(app) {
     app.stopPrintPolling();
     app.releaseHostCamera();
     app.stopCurrentStreams();
+    app.eventConfigCleanup?.();
+    if (app.recentGalleryTimer) { clearInterval(app.recentGalleryTimer); app.recentGalleryTimer = null; }
   };
   window.addEventListener('pagehide', cleanup);
   return () => {

@@ -6,7 +6,7 @@ Current schema is **8**. Migration 008 adds only restricted display approval/acc
 
 Current schema is **7**. Migration 007 runs after 006 and **retains all pre-existing pending/blocked cleanup as retained_legacy**, so upgrading does not delete completed users' original photo files. The historical statement below that migration 006 schedules cleanup must be read with this overriding preservation rule. Existing published QR URLs/files remain compatible. New confirmations after upgrade alone enqueue automatic cleanup under the existing durable-final/hash/ownership guards.
 
-One session still has one official final composite and one stable QR; print-ready is a derivative, not a separate gallery product. Backend working files for incomplete sessions are retained for recovery/manual retention decisions. Offline backup includes DB/photos/QR/print-ready/.share-key with hash manifest. [Runbook](WINDOWS_EVENT_GUIDE.md), [current audit](PHASE0_6_VERIFICATION.md).
+One session still has one official final composite and one stable QR; print-ready is a derivative, not a separate gallery product. Backend working files for incomplete sessions are retained for recovery/manual retention decisions. Offline backup includes DB/photos/QR/print-ready/.share-key with hash manifest. [Runbook](WINDOWS_EVENT_GUIDE.md), [event checklist](EVENT_DAY_CHECKLIST.md).
 
 ---
 

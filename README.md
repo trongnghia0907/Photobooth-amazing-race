@@ -1,232 +1,222 @@
-# Phase 6 addition — Event Live Gallery
+# AMAZING RACE 2026 Photobooth
 
-Màn hình máy chiếu/LED riêng tại **http://localhost:8000/event-display**. Host đăng nhập **/admin**, tạo mã màn hình riêng và duyệt từng composite đã chốt sau khi xác nhận đồng ý/ủy quyền. Mặc định mọi ảnh chưa được duyệt; Host có thể ẩn ảnh mà không xóa composite/QR. Màn hình có tường ảnh, slideshow/fullscreen và tự cập nhật/kết nối lại.
+[Quick Start](#4-quick-start) · [iPad and device connections](#5-device-connections) · [Troubleshooting](#8-troubleshooting)
 
-[Hướng dẫn màn hình, duyệt ảnh và máy chiếu](docs/EVENT_LIVE_GALLERY.md) · [Kiểm thử và file thay đổi](docs/EVENT_LIVE_GALLERY_VERIFICATION.md). Đây là gallery sự kiện có giới hạn truy cập, không phải Host Gallery hay gallery public. Cổng Cloudflare/public-photo hiện tại không mở route này.
+## 1. Project Overview
 
----
+Capture four or six photos, review and customize them, then confirm one final composite for display, download and printing. The Host laptop runs FastAPI, SQLite, camera control and the print queue. An iPad can operate the Guest UI over the same Wi-Fi or phone hotspot.
 
-# OSA BOOTH — Phase 6 integration
+The default camera and printer are **Mock** devices for software testing. Real DSLR/mirrorless capture is not implemented; physical camera, printer and iPad behavior must be tested on the intended hardware.
 
-Current instructions: [Windows setup, local/LAN/HTTPS and operator guide](docs/WINDOWS_EVENT_GUIDE.md), [Phase 0–6 audit](docs/PHASE0_6_VERIFICATION.md), [hardware/event acceptance](docs/EVENT_DAY_CHECKLIST.md).
+## 2. Requirements
 
-Built kiosk and API now run together without Vite: build `frontend` with `npm.cmd run build:host`, then from repository root run `& backend/.venv/Scripts/python.exe scripts/run_host.py`. Enter Host credentials and a separate kiosk pairing code when prompted. Open **http://localhost:8000/booth**, Host **http://localhost:8000/admin**. Default camera/printer are Mock. Confirm/save composite to get QR automatically. Localhost QR is laptop-only; use the documented explicit LAN or HTTPS profile for phones.
+- **Windows 11 and PowerShell:** primary development/test platform.
+- **Python 3.12**, **Node.js 22.12 or newer**, npm and Git.
+- **Laptop:** runs the Host; keep it powered on and awake.
+- **iPad with Safari:** optional for remote Guest operation; use the laptop browser otherwise.
+- **Camera:** Mock needs no hardware; a laptop/USB webcam can use experimental UVC DEMO.
+- **Printer:** optional, connected to the Host with its operating-system driver installed.
+- **Internet:** needed for optional Google Drive uploads and Cloudflare public access.
+- **Chrome/Chromium:** needed for automated browser tests.
 
-Phase 6 adds 75/25 Setup, fullscreen capture, current-session-only sidebar, complete New Session privacy reset, station pairing/CSRF, Host restricted to laptop, separate public-photo app, migration preserving old files, supervised Windows launch/stop, offline backup and deployment examples. No public tunnel, physical print or real camera operation was enabled. Actual iPad/camera/printer/LAN/public Internet tests remain pending. See the current report before interpreting historical readiness statements below.
+macOS has [separate setup instructions](docs/MACOS_SETUP.md); startup, camera and printing have not been verified on a Mac. Linux is best-effort. No Docker or cloud server is required for local operation.
 
----
+## 3. Installation
 
-# OSA BOOTH — Phase 5 Host Camera Integration
+1. Clone the repository and enter its root directory:
 
-## Vòng đời ảnh hiện tại
+   ```powershell
+   git clone https://github.com/trongnghia0907/Photobooth-amazing-race.git
+   Set-Location Photobooth-amazing-race
+   ```
 
-**Một phiên → một composite cuối → một QR ổn định.** Ảnh chụp riêng chỉ là dữ liệu làm việc để retake/chỉnh ảnh trước khi xác nhận. Sau khi composite được lưu và chốt thành công, backend dọn ảnh tạm an toàn; Dashboard/Guest chỉ xem ảnh cuối và bản in có QR. Lỗi lưu/confirm giữ dữ liệu để phục hồi; lỗi dọn được thử lại. Sau khi chốt, dùng **Khách tiếp theo** để tạo ảnh khác.
+   If you already have the repository, open its folder instead. All following commands start from the root containing `backend/`, `frontend/` and `scripts/`.
 
-Chi tiết và chính sách dữ liệu cũ: [PHOTO_STORAGE_LIFECYCLE](docs/PHOTO_STORAGE_LIFECYCLE.md). Mục này thay thế các mô tả lịch sử về sửa ảnh/tạo token mới trong cùng phiên sau khi xác nhận.
+2. Create the backend environment and install locked dependencies:
 
-## Chạy thử camera trên laptop host (Mock)
+   ```powershell
+   py -3.12 -m venv backend/.venv
+   & ./backend/.venv/Scripts/python.exe -m pip install -r backend/requirements.lock.txt
+   ```
 
-Terminal 1 tại thư mục gốc:
+3. Install and build the frontend:
 
-```powershell
-python scripts/run_local_backend.py --admin
-```
+   ```powershell
+   Push-Location frontend
+   npm.cmd ci
+   npm.cmd run build:host
+   Pop-Location
+   ```
 
-Nhập tài khoản/mật khẩu Host tự chọn. Helper dùng **Host Mock Camera + Mock Printer**, không điều khiển máy ảnh thật/in giấy.
+These installation steps are not required on every launch. Reinstall dependencies when their lockfiles change. Rebuild the frontend after UI changes.
 
-Terminal 2:
+## 4. Quick Start
 
-```powershell
-cd frontend
-npm.cmd ci
-npm.cmd run dev:host
-```
+### Terminal 1 — start the Host
 
-Mở http://localhost:5173 → chọn layout 4/6 ảnh và timer → Bắt đầu. Preview/capture đi qua backend trên laptop; không dùng camera iPad hoặc ảnh chụp preview làm file chụp thật. Capture Mode phủ màn hình, có countdown/progress và nút dừng xem ảnh. Retake, editor, QR, download và hàng đợi in giữ nguyên. Dashboard: http://localhost:8000/admin; xem trạng thái/capabilities của camera và bật guest control nếu trước đó Host đã tắt.
-
-**Mock workflow là software test; chưa HARDWARE READY.** Chưa có model/SDK để xác minh shutter DSLR/file gốc/Live View trên thiết bị thật. UVC tùy chọn chỉ là webcam-frame DEMO. Xem [báo cáo Phase 5](docs/PHASE5_REPORT.md), [camera capability matrix](docs/HARDWARE_COMPATIBILITY.md), [Phase 4 audit gate](docs/PHASE4_VERIFICATION.md). Không triển khai Phase 6, không commit/push.
-
-iPad cùng mạng test: dùng `npm.cmd run dev:host -- --host 0.0.0.0`, mở `http://<IP-LAN-của-laptop>:5173`; Vite chuyển API tới backend laptop. Chỉ dùng mạng tin cậy; không tự mở firewall/tunnel. Hướng dẫn và giới hạn mạng/HTTPS trong báo cáo. **QR localhost từ helper vẫn chỉ mở trên laptop**, cần origin public thật ở bước triển khai sau để khách quét bằng điện thoại.
-
-## Chạy thử Phase 4 (Mock, không in giấy)
-
-Từ thư mục gốc, terminal 1:
-
-```powershell
-python scripts/run_local_backend.py --admin
-```
-
-Nhập tài khoản và mật khẩu Host bạn tự chọn (mật khẩu ít nhất 12 ký tự, nhập không hiện trên màn hình). Script chạy backend localhost:8000, QR localhost và **ép Mock Printer**, không mở tunnel. Nếu đã đặt ADMIN_USERNAME/ADMIN_PASSWORD trong environment, script dùng các giá trị đó. Không có tài khoản/mật khẩu mặc định.
-
-Terminal 2:
+For laptop-only testing:
 
 ```powershell
-cd frontend
-npm.cmd ci
-npm.cmd run dev
+$env:PUBLIC_GALLERY_ENABLED="true"
+& ./backend/.venv/Scripts/python.exe scripts/run_host.py --profile local
 ```
 
-1. Mở http://localhost:5173 → chụp/upload đủ 4 hoặc 6 ảnh → Result → **Xác nhận & Tạo QR**.
-2. QR tự xuất hiện. Mở **Xem bản in có QR** để xem/tải phiên bản sẽ in. Chọn số bản → **In ảnh**; trạng thái Mock đã nhận nghĩa là mô phỏng, không có giấy in.
-3. Mở http://localhost:8000/admin (hoặc http://localhost:5173/admin), đăng nhập bằng tài khoản vừa nhập. Xem gallery → chi tiết phiên → composite gốc/bản có QR → tải/in lại. Dashboard có hàng đợi, lỗi, chọn máy in và logout.
-4. Guest mở QR chỉ xem/tải đúng bản print-ready của mình, không có gallery. **QR localhost chỉ dùng trên laptop này, không mở được từ điện thoại khác.**
-
-Ảnh gốc và bản có QR được lưu riêng; QR nằm ở footer thêm bên dưới, không che ô ảnh. Hàng đợi SQLite chống request trùng. `submitted` chỉ xác nhận gửi hệ thống in; không khẳng định giấy đã in. Job lỗi không tự in lại. Host phải xác nhận khi job có kết quả chưa rõ.
-
-Xem [báo cáo Phase 4](docs/PHASE4_REPORT.md) cho file thay đổi, kiểm thử, API, giới hạn và hướng dẫn in Windows. Chưa triển khai Phase 5/camera SDK/tunnel production. Không commit/push trong lượt này.
-
-Các mục Phase 2–3 bên dưới ghi lại luồng nền; mô tả “chưa có print worker/Host Dashboard/QR embedding” chỉ áp dụng checkpoint cũ. Phase 4 thay thế luồng in trình duyệt bằng backend queue.
-
-## Chạy thử QR trên localhost — không cần domain
-
-Dừng backend cũ bằng Ctrl+C. Tại **thư mục gốc dự án**, chạy:
+For an iPad/display computer on the same Wi-Fi or hotspot, use this **instead**:
 
 ```powershell
-python scripts/run_local_backend.py
+$env:PUBLIC_GALLERY_ENABLED="true"
+& ./backend/.venv/Scripts/python.exe scripts/run_host.py --profile lan --lan-ip auto
 ```
 
-Terminal thứ hai, cũng từ thư mục gốc:
+Run only one Host. Enter a Host username, password of at least **12 characters**, and kiosk pairing code of at least **16 characters**. Password/code entry is hidden. There are no default credentials; keep and reuse your credentials on later launches. **Leave this terminal open.**
+
+The Host serves the built frontend and API together on port **8000**. No separate Vite server is needed. Add `--build` to the Host command when you want to rebuild the UI before starting.
+
+### Open the five interfaces
+
+Use `http://localhost:8000` on the laptop. For LAN devices, use the laptop IP printed by the launcher.
+
+| Interface | Path | Access |
+| --- | --- | --- |
+| Guest Photobooth | `/booth` | Kiosk pairing code |
+| Host Dashboard | `/admin` | Host login, laptop localhost only |
+| Event Display | `/event-display` | Separate display code issued by Host |
+| All-Photos Gallery | `/gallery` | Requires the Gallery flag; eligible published photos only |
+| Guest Photo Page | `/p/{token}` | Open the generated QR/share URL; do not type the placeholder |
+
+`/` also opens the Guest UI. Check `http://localhost:8000/api/health` for `status: "ok"`. API documentation at `/docs` is disabled in the built Host application.
+
+Open Booth, pair it, select a layout/timer and press **Start Capturing**. Review the photos and click **Confirm, Display Photo & Get QR** when ready. Use **New Session** for the next guest.
+
+### Terminal 2 — optional Internet QR and Gallery
+
+Local/LAN startup does **not** start a public tunnel. For smartphone access over 4G/5G, first configure Drive if required (section 7), keep Terminal 1 running, then open another PowerShell at the repository root:
 
 ```powershell
-cd frontend
-npm.cmd run dev
+$env:PUBLIC_GALLERY_ENABLED="true"
+& ./backend/.venv/Scripts/python.exe scripts/mobile_qr_demo.py start --attach-host --host-port 8000 --public-port 8011 --storage-root runtime --require-drive
 ```
 
-Mở http://localhost:5173, chụp/upload đủ ảnh → Result → bấm **“Xác nhận & Tạo QR”** ngay trong ô QR (hoặc nút xác nhận/lưu ở đầu màn hình). Backend lưu composite, complete và finalize; **QR tự hiện**, không cần nhấn Refresh. Bấm **Mở Web** rồi **Download Image** để thử đúng ảnh đó.
+This attaches to the existing Host and starts/reuses a photo gateway on **8011**. Omit `--require-drive` for a local-storage-only test. Do not launch a second Host or a separate standalone demo.
 
-Script chỉ đặt `APP_ENV=development`, `PUBLIC_BASE_URL=http://localhost:8000` cho process con, bind backend 127.0.0.1. Không sửa environment toàn hệ thống, không mở tunnel hoặc gallery. Dùng `--port 8002` nếu cần đổi port; khi đổi port, Vite cần OSA_BACKEND_URL tương ứng.
+Wait for the actual HTTPS URL, complete a **new** photo session, confirm it and keep the result screen open for public URL verification. Scan only when the UI reports QR ready; test the correct image and Download on your phone. Public Gallery uses that HTTPS origin plus `/gallery`.
 
-**QR localhost là QR thật trỏ tới file đã lưu nhưng chỉ mở trên máy này, không dùng được trên điện thoại khác.** UI có cảnh báo rõ. Production vẫn yêu cầu URL HTTPS công khai. Nếu không dùng script, từ backend/ đặt hai biến rồi chạy Uvicorn:
+A stale `running` status file is not proof of connectivity. The live HTTPS photo URL must work. An existing tunnel with different settings must be stopped before starting a replacement.
+
+### Stop or restart
+
+Stop the Host with **Ctrl+C** in Terminal 1, or from another terminal:
 
 ```powershell
-$env:APP_ENV = 'development'
-$env:PUBLIC_BASE_URL = 'http://localhost:8000'
-.\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+& ./backend/.venv/Scripts/python.exe scripts/stop_host.py
 ```
 
-`GET /api/health` có phần `sharing` để xem mode/cấu hình/lỗi cụ thể. `.env` không tự được đọc; script giúp tránh thiếu biến. Không tự rotate link đã phát hành: tạo phiên/revision mới sau khi chuyển từ localhost sang domain thật.
-
-Xem [QR_LOCAL_FIX](docs/QR_LOCAL_FIX.md) cho nguyên nhân, file sửa và kết quả kiểm thử. Không commit/push trong lượt sửa này.
-
-Frontend ES Modules + Vite, tái sử dụng HTML/CSS/editor Phase 1. Backend FastAPI + SQLite lưu từng ảnh demo/webcam/manual và composite trên laptop. Luồng: **Home → tạo session → Capture 6 ảnh → Result/editor → Xác nhận & Lưu ảnh trên laptop**.
-
-Hoàn thiện Phase 2 trước checkpoint: Home có thêm **4 ảnh ngang (2×2)**, slotCount 4/6 xuyên suốt capture/retake/composite/backend; state machine và adapter camera mock trả metadata, printer adapter chỉ dry-run (không in). Sáu ảnh và mọi chức năng editor cũ được giữ. Kiểm tra checkpoint: backend **13/13**, Node **7/7**, Playwright **10/10**, cả hai build PASS.
-
-Đã có QR riêng và Guest Photo Page sau khi xác nhận composite: URL localhost trong development hoặc HTTPS public trong production. Chưa có physical shutter/SDK, Host Dashboard, print worker hoặc public deployment. Dừng ở Phase 3; các checkpoint cũ giữ nguyên, lượt sửa QR local không commit/push.
-
-## Phase 3: QR và trang khách
-
-Luồng **Capture → Customize → Confirm → Save Composite → Complete → Finalize share → QR**. QR/ảnh phục vụ từ backend/laptop, không dùng ImgBB/TmpFiles/File.io hoặc QR server ngoài. Thay filter/sticker/render không upload lại composite và không tạo token; xác nhận revision mới mới có link mới. Link cũ vẫn xem đúng file cũ.
-
-`/p/{token}` chỉ có một ảnh và nút Download Image, có loading/error. Image/download/QR đều kiểm tra token; không gallery hoặc runtime listing. Token là bearer link: ai có link đó có thể xem ảnh tương ứng, không phải xác thực danh tính người chụp.
-
-**QR chưa chèn vào ảnh** (`qr_embedded=false`) theo yêu cầu mới: Phase 3 chuẩn bị asset PNG/link, Phase 4 mới dùng cho bản in. Không có print worker/in vật lý.
-
-### Cấu hình và thử trên điện thoại
-
-Trong shell backend, trước khi chạy Uvicorn:
+If you started the tunnel, stop it separately:
 
 ```powershell
-$env:PUBLIC_BASE_URL = 'https://<ten-mien-public-thuc-te-cua-ban>'
+./scripts/stop_mobile_qr_demo.ps1
 ```
 
-Phần này dành cho điện thoại/public deployment: thay placeholder bằng origin HTTPS thực tế, không path/query/credentials; production không dùng localhost/private IP/example.com. Mặc định production + URL trống: vẫn lưu ảnh nhưng QR báo thiếu cấu hình. Test trên máy dùng script localhost ở đầu README. Đổi biến cần restart backend. Không xóa database.
+Do not run stop commands when services are already stopped. For a restart, use the same Host credentials and runtime; add `--build` only when the UI needs rebuilding.
 
-Điện thoại mạng ngoài cần **domain/DNS ổn định + HTTPS hợp lệ + public proxy/tunnel trỏ /p/* tới backend**. Vite localhost:5173 không phải share origin. Chưa tự cài/deploy Cloudflare hoặc tunnel; deployment thuộc phase sau. Laptop/backend/storage và Internet phải còn chạy để link hoạt động.
+## 5. Device Connections
 
-Sau khi có origin thực: chụp/upload → chỉnh → Xác nhận → chờ “QR sẵn sàng” → quét điện thoại, thử xem/tải trên Wi-Fi và 4G/5G. Trạng thái QR sẵn sàng xác nhận file/URL/PNG đã tạo, không tự chứng minh DNS/Internet online. **Chưa kiểm chứng điện thoại/Internet thực tế trong lượt này.**
+- **Camera → Host laptop:** connect a supported webcam by USB or use its built-in camera. A USB connection alone does not enable DSLR shutter control.
+- **iPad → local network:** connect the iPad and laptop to the same Wi-Fi/phone hotspot. Run the LAN command in section 4 and open the printed Booth URL in Safari.
+- **Printer → Host laptop:** connect it and install its driver. Configure/select it through the Host before enabling physical printing.
+- **Auditorium display → laptop or another computer:** connect a projector/LED by HDMI/USB-C, or open Event Display on a computer on the same LAN. Create a display code in Host, enter it on the display page and use fullscreen (F11 on Windows).
 
-Tests dùng `https://photos.osa.test` và proxy nội bộ chỉ trong Playwright; không dùng origin đó cho điện thoại/sự kiện.
+For LAN access, replace `LAPTOP_IP` with the current Wi-Fi IPv4 from `ipconfig`:
 
-Storage bổ sung: `runtime/qrcodes/<session>/<final>.png`, table shares và **runtime/.share-key**. DB lưu hash token + nonce, ACK cache chỉ giữ composite reference; key 32 byte riêng không gửi frontend/commit/log. Backup nhất quán toàn runtime (DB, ảnh, QR, key); mất key không được tự sinh key thay thế link cũ. Chưa có backup worker.
+- Booth: `http://LAPTOP_IP:8000/booth`
+- Event Display: `http://LAPTOP_IP:8000/event-display`
+- Gallery: `http://LAPTOP_IP:8000/gallery`
 
-Xem [PHASE3_REPORT](docs/PHASE3_REPORT.md), [API_CONTRACT](docs/API_CONTRACT.md), [SECURITY_PRIVACY](docs/SECURITY_PRIVACY.md). Checkpoint Phase 2 `dad43d0`, nhánh Phase 3 `feat/phase3-qr-guest-page`.
+Do not use `localhost` on the iPad. If automatic detection selects a VPN interface, supply the correct address with `--lan-ip LAPTOP_IP`. When DHCP changes the address, reopen the new URL; an existing browser session does not automatically migrate between origins.
 
-## Windows 11: chạy backend
+### Camera modes
 
-Cần Python 3.11+, Node.js 22.12+, npm. Đã test Python 3.12.10, Node 26.13.0 và npm 11.20.0. Không cần Docker. PowerShell tại thư mục gốc:
+- **Mock:** implemented synthetic preview/capture for testing; no physical camera required.
+- **UVC DEMO:** experimental OpenCV webcam frames; physical device compatibility is not guaranteed.
+- **Vendor SDK:** blocked placeholder. DSLR/mirrorless shutter and original-JPG retrieval require model-specific integration and hardware verification.
+
+To try the Host webcam, install the optional dependency, stop the Host, and restart it with UVC:
 
 ```powershell
-cd backend
-python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r requirements.lock.txt
-.\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+& ./backend/.venv/Scripts/python.exe -m pip install -r backend/requirements-camera-optional.txt
+& ./backend/.venv/Scripts/python.exe scripts/run_host.py --profile local --camera uvc_demo
 ```
 
-`requirements.lock.txt` khóa phiên bản đã test; `requirements.txt` ghi dependencies trực tiếp. Không cần activate venv hoặc đổi Execution Policy.
+Use `--profile lan --lan-ip auto` instead of `--profile local` for iPad access. Close competing camera apps and allow desktop camera access in Windows. See [hardware compatibility](docs/HARDWARE_COMPATIBILITY.md) for limits and physical-device acceptance.
 
-Health: http://127.0.0.1:8000/api/health. OpenAPI: http://127.0.0.1:8000/docs.
+## 6. Main Features
 
-## Chạy frontend
+Implemented software workflows, testable with Mock devices:
 
-PowerShell thứ hai tại thư mục gốc:
+- **Layouts:** portrait 2×3 (six photos) and landscape 2×2 (four photos).
+- **Capture:** countdown, pause/resume, Capture Now and individual-slot retake. After paused manual capture fills every saved slot, **Complete** opens Review without confirming or publishing.
+- **Review:** filters, stickers, frames and text; finalization requires explicit guest confirmation.
+- **Storage:** one official composite per session; temporary captures retained until safe cleanup. Optional private Drive upload runs asynchronously.
+- **Printing:** persistent queue and Mock adapter; Windows GDI and optional CUPS adapters need configured drivers and physical testing.
+- **QR sharing:** session-specific photo page/download, after successful public URL verification. QR expiry starts at the first successful verification and lasts **24 hours**; restarting a tunnel does not renew it.
+- **Event Display:** four-corner presentation of published composites; polls automatically, independent of Drive upload completion.
+- **All-Photos Gallery:** approved/published finals only, with an already-issued, unexpired QR; hidden/revoked images are excluded.
+
+Confirmation explicitly discloses display publication. Host can hide photos; historical private sessions are not automatically published. Gallery may be empty even when Event Display has photos, because its QR/expiry requirements are stricter.
+
+## 7. Configuration
+
+Environment variables apply to the terminal and its child processes. Set them **before** startup; enable Gallery in both Host and tunnel terminals if both should serve it.
+
+- `PUBLIC_GALLERY_ENABLED=true`: enables the Gallery website.
+- `GOOGLE_DRIVE_ENABLED=true`: enables private asynchronous upload after OAuth/privacy checks.
+- `EVENT_GALLERY_AUTO_PUBLISH=false`: disables automatic publication of newly consented confirmations.
+
+Launcher options/environment can also come from `--env-file`. Example files are templates and are not loaded automatically. Exported environment overrides file values; CLI options take priority. See [configuration and operation modes](docs/EVENT_CONFIGURATION.md).
+
+Keep `runtime/` private and backed up: it contains SQLite, photos, queue state and secrets needed to preserve existing shares. Never delete it to resolve startup errors or commit it to Git. See [backup and recovery](docs/WINDOWS_EVENT_GUIDE.md).
+
+### Optional Google Drive
+
+Install the optional dependency:
 
 ```powershell
-cd frontend
-npm ci
-npm run dev
+& ./backend/.venv/Scripts/python.exe -m pip install -r backend/requirements-drive-optional.txt
 ```
 
-Mở **http://127.0.0.1:5173**. Nếu npm.ps1 bị chặn, dùng `npm.cmd` thay npm. Vite proxy `/api` đến backend. Biến shell `OSA_BACKEND_URL` đổi target; mặc định `http://127.0.0.1:8000`. Không hardcode URL backend trong logic frontend.
+A fresh setup needs a Google Cloud project with Drive/Picker APIs, a Desktop OAuth client, an authorized account and a destination folder that passes the privacy guard. Follow the [Drive/OAuth and folder-selection guide](docs/PRIVATE_GOOGLE_DRIVE.md); existing valid authorization should be reused.
 
-Chọn mock hoặc webcam preview, chụp sáu ảnh hoặc upload file thử nghiệm. Từng slot chỉ được thay sau ACK lưu của backend. Retake thất bại giữ ảnh cũ và canvas mới đang chờ. **Thử lưu lại** giữ nguyên payload/idempotency key; mất phản hồi sau khi đã ghi không tạo file trùng. Lỗi batch upload giữ cả những canvas chưa upload xong.
-
-Đi Result/chỉnh filter, frame, sticker hoặc text chưa upload composite. Chỉ nút **Xác nhận & Lưu ảnh trên laptop** render snapshot, lưu composite và complete; editor tạm khóa khi lưu. UI chỉ báo thành công sau ACK đúng session/composite. Chỉnh sửa sau khi lưu làm snapshot chưa xác nhận; xác nhận lại tạo composite revision mới. Retake/xóa/reset cập nhật active slots và vô hiệu composite cũ; files revision cũ vẫn private.
-
-**Không reload trình duyệt khi còn dữ liệu chưa lưu:** canvas/credential/pending retry chỉ ở RAM; chưa có resume UI. Backend restart không mất file/metadata đã commit. Bấm khách mới tạo session mới; không xóa file cũ.
-
-## Storage
-
-Mặc định dưới thư mục gốc repository, không phụ thuộc working directory:
-
-```text
-runtime/photobooth.sqlite3
-runtime/originals/<session_id>/<photo_id>.png
-runtime/composites/<session_id>/<composite_id>.png
-```
-
-Mở bằng Explorer để xem ảnh trên laptop. SQLite chỉ giữ metadata/path tương đối, không chứa binary. SQLite WAL có thể tạo thêm `-wal`/`-shm`. `originals` ở Phase 2 là ảnh canvas/manual normalize PNG, **chưa phải file shutter DSLR**. Source ghi đúng `demo`, `webcam_frame`, `manual_upload`.
-
-Không public runtime/gallery. API xem ảnh yêu cầu credential đúng session; metadata không lộ filesystem paths. Các thư mục runtime, venv, ảnh khách, DB, .env và logs được ignore.
-
-Tùy chọn set biến môi trường trong shell backend:
+Check existing credentials and privacy without starting login:
 
 ```powershell
-$env:OSA_STORAGE_ROOT = 'D:\OSA_Runtime'
-$env:OSA_MAX_UPLOAD_BYTES = '10485760'
-$env:OSA_MAX_IMAGE_PIXELS = '24000000'
+& ./backend/.venv/Scripts/python.exe -X utf8 scripts/connect_google_drive.py --storage-root runtime --check --audit
 ```
 
-`backend/.env.example` là mẫu tham chiếu, không tự được đọc. Đường dẫn cấu hình tương đối resolve theo working directory. macOS có thể dùng `.venv/bin/python`; code core dùng pathlib/sqlite3, chưa test macOS thực tế.
+Then set `$env:GOOGLE_DRIVE_ENABLED="true"` in Terminal 1 before starting Host. Confirm its startup output says `Google Drive: enabled (background upload)`. Explicit configuration overrides the runtime's remembered Drive setting. Failed uploads remain queued; do not change folder sharing to bypass a privacy/access error.
 
-## Build và test
+### Optional Cloudflare and production deployment
 
-Từ backend:
+The section 4 tunnel workflow requires `cloudflared`; on Windows it can attempt installation using the official `Cloudflare.cloudflared` winget package if missing. See [Mobile QR setup](docs/MOBILE_QR_DEMO.md) for prerequisites and errors.
+
+Quick Tunnel forwards traffic to the laptop; it does not deploy a cloud server. Its hostname is temporary, so old printed QR URLs may fail after replacement. Keep the laptop, Internet and tunnel running.
+
+Only the isolated Guest Photo Page/media endpoints and enabled public Gallery belong on the public gateway. Never tunnel Host port 8000 directly. Host Dashboard, camera/printing management and Event Display remain private. Permanent cloud deployment is not provided by Quick Tunnel; production HTTPS and hardware readiness require separate configuration and validation.
+
+## 8. Troubleshooting
+
+- **Host will not start:** inspect the actual exception/log printed by the launcher. Check `/api/health`, build the frontend if missing, and stop only an existing owned Host. Do not kill unrelated processes or delete runtime/lock files.
+- **iPad cannot connect:** check the LAN profile, current IP, same network and hotspot client isolation. On a trusted hotspot, use a Windows Private network profile; do not disable the firewall.
+- **Camera missing or losing signal:** check the selected adapter, USB/power, device index, Windows camera permissions and competing apps. Vendor SDK mode is not implemented.
+- **Live Preview unavailable:** check network/frame timeouts and Host camera diagnostics. A transport failure does not prove physical camera disconnection; saved photos should remain intact.
+- **QR unavailable:** start Host before the tunnel, verify the live HTTPS origin, confirm a new composite and keep Result open. Localhost URLs cannot serve another phone; expired QRs are not automatically renewed.
+- **Gallery disabled/empty:** enable its flag before service startup, then check publication, hide/revoke state and QR expiry.
+- **Drive upload fails:** check Drive enabled, OAuth/folder access, privacy audit and queue errors. Keep pending local photos.
+- **Admin returns 403:** open `http://localhost:8000/admin` on the Host laptop.
+
+If Windows blocks a trusted Private Wi-Fi network, an administrator can add this restricted inbound rule (replace `Wi-Fi` if the adapter name differs):
 
 ```powershell
-.\.venv\Scripts\python.exe -m pytest -q
+New-NetFirewallRule -DisplayName "Amazing Race Hotspot 8000" -Direction Inbound -Action Allow -Protocol TCP -LocalPort 8000 -Profile Private -InterfaceAlias "Wi-Fi" -RemoteAddress LocalSubnet
 ```
 
-Từ frontend:
-
-```powershell
-npm test
-npm run build
-npm run build:production -- --outDir dist-production
-$env:CHROME_PATH = 'C:\Program Files\Google\Chrome\Application\chrome.exe'
-npm run test:e2e
-```
-
-Hoặc bỏ CHROME_PATH và `npx playwright install chromium`. E2E tự mở/dọn các port **8001, 5173, 5174, 4173, 4273**; cần port trống, backend venv/dependencies và hai frontend builds. Storage test riêng `.tools/e2e-backend/`, không dùng runtime của người vận hành.
-
-`npm run build` là **DEMO** để review; `npm run preview` mở http://127.0.0.1:4173 với API proxy. `build:production` chỉ chặn mock/video capture, chưa phải event-ready deployment. Tests dùng fixture, stub window.print và tài nguyên CDN, không upload ra ngoài/in giấy. Google Fonts/QRCode CDN chưa được kiểm chứng online; Tailwind build local giữ theme gốc.
-
-## Cấu trúc và tài liệu
-
-- `backend/app/`: app factory, config/pathlib, sqlite3 database/migration, schemas, routers và services file/metadata.
-- `frontend/src/services/{api-client,session-client,photo-repository}.js`: HTTP/session/pending/retry/confirm.
-- Giữ nguyên editor/layout algorithms; compositor chỉ thêm hook báo dirty. Giữ facade window.app cho handlers cũ.
-- SQLite schema nằm trong `migrations/001_initial.sql`; không tạo ORM models/folder rỗng. Browser camera/mock tiếp tục dùng service Phase 1; backend không giả lập shutter thật.
-- [API_CONTRACT](docs/API_CONTRACT.md), [PHASE2_REPORT](docs/PHASE2_REPORT.md), [FUNCTION_INVENTORY](docs/FUNCTION_INVENTORY.md), [MIGRATION_LOG](docs/MIGRATION_LOG.md), [ACCEPTANCE_TESTS](docs/ACCEPTANCE_TESTS.md).
-
-HTML root và legacy giữ nguyên. Upload QR legacy đã ngắt khỏi frontend; handler names/UI vẫn tái sử dụng. Nút in legacy là browser print demo, chưa có QR embedded/print worker hay bằng chứng giấy đã in. Không triển khai Phase 4.
+For developer test commands, use the [Windows guide](docs/WINDOWS_EVENT_GUIDE.md); for event acceptance, use the [event checklist](docs/EVENT_DAY_CHECKLIST.md). Software/Mock test results do not certify physical cameras, printers, Safari/iPad or venue networks.

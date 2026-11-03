@@ -7,7 +7,7 @@ Trang trình chiếu riêng **/event-display**, độc lập với Host Dashboar
 Tại thư mục repository:
 
 ~~~powershell
-Set-Location 'D:\Bách Khoa\bÊN LỀ\amazing race 2026\Ptb\OSA_BOOTH_CODEX_STARTER_DOCS'
+Set-Location '<path-to-repository>'
 & backend/.venv/Scripts/python.exe scripts/run_host.py --build
 ~~~
 
@@ -16,15 +16,15 @@ Nếu server cũ đang chạy, dừng bằng Ctrl+C rồi chạy lại để áp
 1. Trên laptop mở **http://localhost:8000/admin** và đăng nhập Host.
 2. Trong **Màn hình sự kiện**, bấm **Tạo / đổi mã màn hình**. Xác nhận việc thu hồi mã cũ. Mã mới chỉ hiện một lần trong phiên Host này; giữ riêng cho người vận hành, không đưa vào URL.
 3. Mở **http://localhost:8000/event-display** trong browser profile riêng hoặc cửa sổ InPrivate/Incognito dành cho màn hình; nhập mã. Không đăng nhập Host trong profile đó.
-4. Ban đầu màn hình chờ trống. Tạo ảnh từ booth, chốt/lưu thành công, rồi Host duyệt theo phần dưới.
+4. Ban đầu màn hình chờ trống. Khách bấm **Xác nhận, chiếu ảnh & nhận QR**; composite mới được publish sau khi lưu thành công, không cần duyệt từng ảnh.
 
 Vite development cũng proxy /event-display đến backend, nhưng bản chạy sự kiện nên dùng launcher/bản build. Với LAN, dùng profile LAN và IP laptop theo [hướng dẫn Windows](WINDOWS_EVENT_GUIDE.md); máy trình chiếu mở **http://IP-LAPTOP:8000/event-display**, nhập mã riêng, không cần ghép kiosk. HTTP LAN chỉ để thử trên mạng tin cậy. Khi dùng HTTPS riêng, mở cùng origin HTTPS nội bộ và /event-display; cookie production yêu cầu HTTPS.
 
 ## Duyệt và ẩn ảnh
 
-Mặc định **không ảnh nào được duyệt**, kể cả ảnh đã có trước khi nâng cấp.
+Chính sách auto-publish mặc định bật, nhưng vẫn yêu cầu consent trên đúng composite. Nút **Xác nhận, chiếu ảnh & nhận QR** gửi consent rõ ràng; các thao tác xác nhận/recovery khác không tự cấp consent. Host có thể tắt bằng `EVENT_GALLERY_AUTO_PUBLISH=false`. Ảnh riêng tư lịch sử không được quét để publish; retry sau khi chốt hoặc sau khi Host ẩn không tái publish. Drive upload được xếp job độc lập, không cần SYNCED để dùng ảnh local an toàn.
 
-Trong Host → Các phiên chụp → **Xem phiên / In lại**:
+Với ảnh cũ cần duyệt riêng hoặc khi muốn ẩn ảnh, trong Host → Các phiên chụp → **Xem phiên / In lại**:
 
 - Kiểm tra composite cuối của đúng khách.
 - Chọn **Khách đã đồng ý trình chiếu** hoặc **Có ủy quyền phù hợp của sự kiện**.
@@ -37,17 +37,17 @@ Host gallery có nhãn đã duyệt/chưa duyệt. Trạng thái duyệt không 
 
 Kết nối HDMI/USB-C hoặc bộ xử lý LED như màn hình ngoài Windows. Nhấn **Win+P → Extend (Mở rộng)**. Đặt độ phân giải 16:9 phù hợp thiết bị, ví dụ 1920×1080. Kéo cửa sổ Event Live Gallery sang màn hình ngoài; giữ Host Dashboard trên laptop. Tránh Duplicate nếu cần thao tác Host riêng tư.
 
-Chọn **Tường ảnh** để xem tối đa 9 ảnh mới nhất trong khung 16:9; ảnh vừa được duyệt được đặt lớn ở đầu. Chọn **Slideshow** để luân phiên tối đa 60 ảnh được duyệt gần nhất, với nhịp 5/8/12 giây. Ảnh mới được ưu tiên ngay khi feed cập nhật. Ảnh portrait/landscape giữ tỉ lệ, không bị crop hoặc kéo giãn.
+Màn hình có đúng bốn ô cố định ở bốn góc, giữ vùng giữa trống. Ảnh mới lấp ô trống trước, sau đó thay ảnh nằm lâu nhất trong cùng ô, fade out/in khoảng 500 ms. Không có toolbar, slideshow hoặc đổi ảnh theo timer. Ảnh giữ tỉ lệ, không crop hay kéo giãn.
 
-Bấm **Toàn màn hình** sau khi chọn chế độ; hoặc dùng **F11** trên Chrome/Edge. Escape/F11 thoát tùy browser. Nếu browser từ chối Fullscreen API, dùng F11 thủ công. Fullscreen không tự được bật khi chưa có thao tác người dùng.
+Dùng **F11** trên Chrome/Edge để fullscreen; Escape/F11 thoát tùy browser.
 
 ## Tự cập nhật, mất kết nối và khóa
 
-Màn hình poll mỗi **2,5 giây sau khi request trước kết thúc**, timeout 5 giây. Không cần Refresh. Ảnh mới được duyệt hoặc ảnh bị ẩn sẽ cập nhật ở lượt poll tiếp theo. Slideshow tự đổi ảnh và không bị reset mỗi lần poll khi danh sách không đổi.
+Màn hình poll mỗi **2,5 giây sau khi request trước kết thúc**, timeout 5 giây. Không cần Refresh. Ảnh mới publish hoặc ảnh bị ẩn cập nhật ở lượt poll tiếp theo. Sidebar Guest dùng feed đã publish và tự cập nhật khoảng 5 giây.
 
-Khi mất kết nối, màn hình tạm ẩn ảnh, báo đang kết nối lại và tự thử tiếp. Khi backend restart cùng runtime, mã/trạng thái duyệt/cookie màn hình còn hạn được giữ; màn hình tự phục hồi mà không reload. Không có offline photo cache để tiếp tục chiếu ảnh có thể vừa bị Host ẩn.
+Khi mất kết nối, màn hình giữ bố cục/ảnh hiện tại, báo đang kết nối lại và tự thử tiếp. Sau reconnect, ảnh thu hồi được gỡ và ảnh mới được xử lý tuần tự, không trùng. Backend restart cùng runtime giữ trạng thái publish và cookie còn hạn.
 
-**Khóa màn hình** thu hồi riêng cookie của màn hình hiện tại và xóa ảnh khỏi trang. Host **Tạo / đổi mã màn hình** thu hồi tất cả cookie màn hình cũ. **Tắt truy cập màn hình** vô hiệu hóa mã và tất cả phiên trình chiếu; không xóa ảnh hoặc quyết định duyệt. Sau bật lại cần nhập mã mới. Cookie hết hạn sau 12 giờ; nhập lại mã đang dùng, hoặc Host tạo mã mới nếu không còn giữ mã.
+Host **Tạo / đổi mã màn hình** thu hồi cookie màn hình cũ. **Tắt truy cập màn hình** vô hiệu hóa mã và mọi phiên trình chiếu; không xóa ảnh hoặc quyết định publish. Sau bật lại cần nhập mã mới. Cookie hết hạn sau 12 giờ.
 
 ## Quyền truy cập và dữ liệu
 
@@ -72,4 +72,4 @@ npm.cmd run test:e2e -- --config playwright.event-display.config.js
 Set-Location ..
 ~~~
 
-Xem [kết quả kiểm thử và file thay đổi](EVENT_LIVE_GALLERY_VERIFICATION.md). Test dùng database riêng và ảnh mô phỏng; chưa thử máy chiếu/LED, dây cáp, Wi-Fi phòng hội trường hoặc browser của thiết bị hiển thị thực tế. Cần kiểm tra tại địa điểm trước sự kiện. Màn hình giới hạn 60 ảnh gần nhất, chưa có chia nhiều sự kiện/playlist hoặc moderation tự động; Host duyệt thủ công từng ảnh.
+Test dùng database riêng và ảnh mô phỏng; chưa thử máy chiếu/LED và mạng tại hội trường. Màn hình chỉ hiển thị bốn ảnh, lấy feed tối đa 100 ảnh để khôi phục cập nhật sau mất mạng; chưa có nhiều sự kiện/playlist. Các phiên mới qua nút công bố rõ ràng tự publish; Host vẫn có quyền ẩn/thu hồi.

@@ -31,7 +31,7 @@ class UvcDemoCameraAdapter:
         self.device = cv2.VideoCapture(self.index,cv2.CAP_DSHOW if os.name == 'nt' else cv2.CAP_ANY)
         if not self.device.isOpened():
             self.disconnect()
-            raise CameraError('disconnected','Không mở được webcam host. Kiểm tra device index/quyền Windows và ứng dụng đang giữ camera.',stage='connect')
+            raise CameraError('disconnected','Không mở được webcam host. Kiểm tra device index, quyền camera của hệ điều hành và ứng dụng đang giữ camera.',stage='connect')
 
     def disconnect(self):
         if self.device:self.device.release()

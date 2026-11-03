@@ -1,6 +1,7 @@
 /** Extracted from legacy; explicit app context supplied by bootstrap. */
 
 export async function init(app) {
+  if(app.useHostCameraByDefault())app.cameraSource='host';
   app.updateSlotLabels();
   app.renderCaptureDots();
   app.renderSixSlotsGrid();
@@ -10,14 +11,13 @@ export async function init(app) {
   app.renderColorSwatches();
   app.setupCanvasStickerInteractions();
   app.updateCustomTextsUI();
-  await app.initCameraDevices();
+  if(!app.serverSession?.finalized&&!app.resumeRecoveryPending&&app.currentScreen!=='result')await app.initCameraDevices();
 }
 
 export function updateSlotLabels(app) {
   for (const element of document.querySelectorAll('[data-shot-template]')) {
     element.textContent = element.dataset.shotTemplate.replaceAll('{count}', app.slotCount);
   }
-  document.getElementById('stepNavCapture').textContent = `2. Chụp ${app.slotCount} Tấm`;
 }
 
 export function setCountdownSeconds(app, sec) {
@@ -31,7 +31,7 @@ export function setCountdownSeconds(app, sec) {
     }
   });
   const hint = document.getElementById('timerHintText');
-  if (hint) hint.textContent = `${sec} giây / tấm`;
+  if (hint) hint.textContent = `${sec} seconds per photo`;
 }
 
 export function toggleFullAutoMode(app) {

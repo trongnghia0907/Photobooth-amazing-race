@@ -8,7 +8,7 @@
 ## PROMPT CHÍNH — COPY VÀ DÁN VÀO CODEX
 
 ```text
-Bạn là senior full-stack engineer và đang nhận nhiệm vụ refactor dự án OSA BOOTH Photobooth. Hãy trực tiếp kiểm tra repository, đọc đầy đủ file:
+Bạn là senior full-stack engineer và đang nhận nhiệm vụ refactor AMAZING RACE 2026 Photobooth. Hãy trực tiếp kiểm tra repository, đọc đầy đủ file:
 
 1. OSA_BOOTH_TECHNICAL_SPEC.md  (tài liệu yêu cầu kỹ thuật chuẩn)
 2. osa_booth_photobooth.html hoặc osa_booth_photobooth(1).html (single-file HTML gốc)

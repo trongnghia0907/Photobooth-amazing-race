@@ -1,1 +1,1 @@
-"""OSA local photobooth backend — Phase 2."""
+"""AMAZING RACE 2026 photobooth backend."""

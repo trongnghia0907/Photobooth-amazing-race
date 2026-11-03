@@ -50,22 +50,25 @@ export function clearCustomFrame(app) {
     app.renderCompositeCanvas();
     app.scheduleQRCodeUpdate();
   }
-  app.showToast('Đã quay về Khung Xanh OSA BOOTH mặc định.', 'info');
+  app.showToast('Đã quay về khung xanh AMAZING RACE 2026 mặc định.', 'info');
 }
 
 export function selectPresetLayout(app, layout) {
   const definition = layouts[layout];
   if (!definition) return;
-  if (app.cameraSource === 'host' && app.currentScreen === 'home' && !app.photos.some(Boolean)
-      && app.sessionContext?.id && app.sessionContext.layout !== layout) {
-    if (!app.forgetSession()) return;
+  if(layout!==app.presetLayout&&(app.isCapturingSequence||app.guestStarting||app.persistenceBusy||app.captureBusy||app.hasPendingWork()||app.resumeRecoveryPending)){
+    app.showToast('Wait for the current action to finish before changing the layout.', 'info');
+    return;
+  }
+  if(layout!==app.presetLayout&&(app.currentScreen!=='home'||app.photos.some(Boolean)||(app.serverSession&&app.serverSession.status!=='created'))){
+    app.showToast('Capture has started. Choose New Session to change the layout.', 'info');
+    return;
   }
   if (definition.slotCount !== app.slotCount) {
     if (app.currentScreen !== 'home' || app.photos.some(Boolean) || app.hasPendingWork() || app.persistenceBusy || app.captureBusy) {
-      app.showToast('Hãy bắt đầu khách mới ở Home trước khi đổi số ảnh.', 'info');
+      app.showToast('Start a new session on the Home screen before changing the photo count.', 'info');
       return;
     }
-    if (!app.forgetSession()) return;
     app.slotCount = definition.slotCount;
     app.photos = Array(app.slotCount).fill(null);
     app.pendingPhotos = Array(app.slotCount).fill(null);
@@ -76,6 +79,7 @@ export function selectPresetLayout(app, layout) {
   app.detectedSlots = null;
   app.presetLayout = layout;
   app.updateFrameSelectionUI();
+  if(app.currentScreen==='home')app.saveSetupLayout();
   if (app.currentScreen === 'result') {
     app.renderCompositeCanvas();
     app.scheduleQRCodeUpdate();
@@ -95,36 +99,40 @@ export function updateFrameSelectionUI(app) {
   const homeFrameDesc = document.getElementById('homeFrameDesc');
   const homeFrameThumb = document.getElementById('homeFrameThumb');
 
+  const baseClass = 'layout-choice-card p-4 rounded-2xl border-2 transition-all cursor-pointer bg-white border-brand-100';
+  const selectedClass = 'layout-choice-card p-4 rounded-2xl border-2 transition-all cursor-pointer bg-brand-50/90 border-brand-600 shadow-sm';
   [cardCustom, card2x3, card3x2, card4].forEach(el => {
-    if (el) el.className = 'p-4 rounded-2xl border-2 transition-all cursor-pointer flex items-center justify-between bg-white border-brand-100 hover:border-brand-300';
+    if (el) { el.className = baseClass; el.setAttribute('aria-checked', 'false'); }
   });
 
   if (app.customFrameImg) {
-    if (cardCustom) cardCustom.className = 'p-4 rounded-2xl border-2 transition-all cursor-pointer flex items-center justify-between bg-brand-50/90 border-brand-600 shadow-sm';
+    const selectedLayoutCard = app.presetLayout === 'landscape_4' ? card4 : card2x3;
+    if (selectedLayoutCard) { selectedLayoutCard.className = selectedClass; selectedLayoutCard.setAttribute('aria-checked', 'true'); }
+    if (cardCustom) cardCustom.className = selectedClass;
     if (badge) badge.classList.remove('hidden');
-    if (calibrateBtn) calibrateBtn.classList.remove('hidden');
-    if (subtext) subtext.textContent = `Frame Osa first meeting: ${app.customFrameName} (${app.customFrameImg.width}×${app.customFrameImg.height}px)`;
-    if (homeFrameName) homeFrameName.textContent = `Osa first meeting (${app.customFrameName})`;
-    if (homeFrameDesc) homeFrameDesc.textContent = app.detectedSlots ? `Đã tự động khớp ${app.slotCount} ô trong suốt` : `Bố cục ${app.slotCount} ô tuỳ chỉnh`;
+    if (calibrateBtn) calibrateBtn.classList.add('hidden');
+    if (subtext) subtext.textContent = `Frame tùy chỉnh: ${app.customFrameName} (${app.customFrameImg.width}×${app.customFrameImg.height}px)`;
+    if (homeFrameName) homeFrameName.textContent = `Frame ${app.customFrameName}`;
+    if (homeFrameDesc) homeFrameDesc.textContent = app.detectedSlots ? `Automatically aligned ${app.slotCount} transparent slots` : `Custom ${app.slotCount}-photo layout`;
     if (homeFrameThumb) homeFrameThumb.innerHTML = `<img src="${app.customFrameImg.src}" class="w-full h-full object-contain" />`;
   } else {
     if (badge) badge.classList.add('hidden');
     if (calibrateBtn) calibrateBtn.classList.add('hidden');
     if (subtext) subtext.textContent = 'Nhấn để tải file Frame PNG cá nhân của bạn (Tự động khớp 6 ô trống)';
-    if (homeFrameThumb) homeFrameThumb.innerHTML = `<span class="text-xs font-bold text-brand-600">OSA</span>`;
+    if (homeFrameThumb) homeFrameThumb.innerHTML = `<span class="text-xs font-bold text-brand-600">AR</span>`;
 
     if (app.presetLayout === 'grid2x3') {
-      if (card2x3) card2x3.className = 'p-4 rounded-2xl border-2 transition-all cursor-pointer flex items-center justify-between bg-brand-50/90 border-brand-600 shadow-sm';
-      if (homeFrameName) homeFrameName.textContent = 'Frame: Osa first meeting (2×3)';
-      if (homeFrameDesc) homeFrameDesc.textContent = 'OSA BOOTH • 6 ảnh dọc (10×15cm)';
+      if (card2x3) { card2x3.className = selectedClass; card2x3.setAttribute('aria-checked', 'true'); }
+      if (homeFrameName) homeFrameName.textContent = 'AMAZING RACE 2026 • 6 Portrait Photos';
+      if (homeFrameDesc) homeFrameDesc.textContent = '6-photo portrait layout (10×15 cm)';
     } else if (app.presetLayout === 'landscape_4') {
-      if (card4) card4.className = 'p-4 rounded-2xl border-2 bg-brand-50/90 border-brand-600 shadow-sm cursor-pointer';
-      if (homeFrameName) homeFrameName.textContent = 'Frame: 4 ảnh ngang (2×2)';
-      if (homeFrameDesc) homeFrameDesc.textContent = 'OSA BOOTH • 4 ảnh ngang';
+      if (card4) { card4.className = selectedClass; card4.setAttribute('aria-checked', 'true'); }
+      if (homeFrameName) homeFrameName.textContent = 'AMAZING RACE 2026 • 4 Landscape Photos (2×2)';
+      if (homeFrameDesc) homeFrameDesc.textContent = '4-photo landscape layout';
     } else {
-      if (card3x2) card3x2.className = 'p-4 rounded-2xl border-2 transition-all cursor-pointer flex items-center justify-between bg-brand-50/90 border-brand-600 shadow-sm';
-      if (homeFrameName) homeFrameName.textContent = 'Frame: Osa first meeting (3×2)';
-      if (homeFrameDesc) homeFrameDesc.textContent = 'OSA BOOTH • 6 ảnh ngang';
+      if (card3x2) { card3x2.className = selectedClass; card3x2.setAttribute('aria-checked', 'true'); }
+      if (homeFrameName) homeFrameName.textContent = 'AMAZING RACE 2026 • 6 Landscape Photos';
+      if (homeFrameDesc) homeFrameDesc.textContent = '6-photo landscape layout';
     }
   }
 }

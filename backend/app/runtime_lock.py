@@ -18,7 +18,7 @@ class RuntimeLock:
                 import fcntl
                 fcntl.flock(stream,fcntl.LOCK_EX|fcntl.LOCK_NB)
         except OSError:
-            stream.close();raise RuntimeError('Another process already owns this runtime service') from None
+            stream.close();raise RuntimeError(f'Another process already owns this runtime service: {self.path.name}') from None
         self.stream=stream
         return self
 

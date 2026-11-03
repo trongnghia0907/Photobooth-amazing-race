@@ -26,12 +26,14 @@ import * as persistence from '../services/photo-repository.js';
 import * as cameraAdapter from '../services/camera-adapter.js';
 import * as hostCamera from '../services/host-camera.js';
 import * as kiosk from '../features/home/kiosk.js';
+import {restoreSavedSession} from '../services/session-recovery.js';
 import { transitionSession } from './session-machine.js';
 import { createStore } from './store.js';
 
 export function createApp() {
   const state = createStore();
   const app = {};
+  app.restoreSavedSession=()=>restoreSavedSession(app);
   app.transitionSession = event => transitionSession(app, event);
   for (const key of Object.keys(state)) {
     Object.defineProperty(app, key, { enumerable: true, get: () => state[key], set: value => { state[key] = value; } });

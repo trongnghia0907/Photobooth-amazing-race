@@ -2,7 +2,7 @@
 
 export async function finishCaptureAndGoToResult(app, isAutoTriggered = false) {
   if (!app.photos.every(Boolean) || app.persistenceBusy || app.hasPendingWork()) {
-    app.showToast(`Cần lưu đủ ${app.slotCount} ảnh chụp trước khi sang Result.`, 'info');
+    app.showToast(`Capture all ${app.slotCount} photos before continuing to your results.`, 'info');
     return;
   }
   app.clearTimers();
@@ -15,23 +15,12 @@ export async function finishCaptureAndGoToResult(app, isAutoTriggered = false) {
   document.getElementById('screenCapture').classList.add('hidden');
   document.getElementById('screenResult').classList.remove('hidden');
 
-  const navMap = {
-    home: document.getElementById('stepNavHome'),
-    capture: document.getElementById('stepNavCapture'),
-    result: document.getElementById('stepNavResult')
-  };
-  Object.entries(navMap).forEach(([key, btn]) => {
-    if (!btn) return;
-    btn.className = key === 'result'
-      ? 'px-4 py-1.5 rounded-full text-xs font-bold transition-all bg-brand-600 text-white shadow-sm'
-      : 'px-4 py-1.5 rounded-full text-xs font-bold transition-all text-brand-700 hover:bg-brand-100';
-  });
-
   app.renderCompositeCanvas();
   await app.generateQRCodeForCurrentPhoto(false);
+  app.syncSetupLayout();
 
   if (isAutoTriggered && app.fullAutoMode && app.autoPrintPopup) {
-    app.showToast('Hãy xác nhận & tạo QR, rồi bấm In ảnh để gửi yêu cầu tới host.', 'info');
+    app.showToast('Confirm your photo and create a QR code, then select Print Photo to send the request to the host.', 'info');
   }
 }
 
@@ -58,14 +47,19 @@ export function openMobilePreviewModal(app) {
 }
 
 export function downloadCompositeImage(app) {
+  if(app.serverSession?.finalized&&app.activeShare){
+    if(!app.activeShare.print_ready||!app.activeShare.public_ready){app.showToast(app.activeShare.print_ready_error||'Waiting for a verified HTTPS print image with a QR code.','info');return;}
+    const download=document.createElement('a');download.href=app.activeShare.download_url;download.download='amazing-race-2026-print-ready.png';
+    document.body.appendChild(download);download.click();download.remove();return;
+  }
   app.renderCompositeCanvas();
   const canvas = document.getElementById('compositeCanvas');
   const link = document.createElement('a');
   const timestamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
-  link.download = `osa-booth-${timestamp}.png`;
+  link.download = `amazing-race-2026-${timestamp}.png`;
   link.href = canvas.toDataURL('image/png', 1.0);
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
-  app.showToast('Đã tải ảnh OSA BOOTH về thiết bị!', 'success');
+  app.showToast('AMAZING RACE 2026 photo downloaded to your device!', 'success');
 }

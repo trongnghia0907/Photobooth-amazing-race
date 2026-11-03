@@ -10,7 +10,7 @@ class Database:
         with self.connect() as db:
             db.execute('PRAGMA journal_mode=WAL')
             version = db.execute('PRAGMA user_version').fetchone()[0]
-            if version > 8:
+            if version > 9:
                 raise RuntimeError('Database schema newer than this backend')
             if version == 0:
                 migration = Path(__file__).parent / 'migrations/001_initial.sql'
@@ -52,6 +52,10 @@ class Database:
                 version = 7
             if version == 7:
                 migration = Path(__file__).parent / 'migrations/008_event_display.sql'
+                db.executescript('BEGIN IMMEDIATE;\n' + migration.read_text() + '\nCOMMIT;')
+                version = 8
+            if version == 8:
+                migration = Path(__file__).parent / 'migrations/009_drive_storage.sql'
                 db.executescript('BEGIN IMMEDIATE;\n' + migration.read_text() + '\nCOMMIT;')
 
     @contextmanager

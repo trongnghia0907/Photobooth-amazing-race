@@ -17,7 +17,7 @@ if not (source/'photobooth.sqlite3').is_file():raise SystemExit('No source datab
 if output==source or output.is_relative_to(source) or output.exists():raise SystemExit('Use a new backup directory outside the source runtime')
 leases=[]
 try:
-    for name in ('.launcher.lock','.host-app.lock','.public-app.lock','.print-worker.lock','.camera-controller.lock'):
+    for name in ('.launcher.lock','.host-app.lock','.public-app.lock','.print-worker.lock','.camera-controller.lock','.drive-worker.lock'):
         leases.append(RuntimeLock(source/name).acquire())
     output.mkdir(parents=True);hashes={}
     for path in source.rglob('*'):

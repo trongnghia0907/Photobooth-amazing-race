@@ -5,10 +5,12 @@ import re
 class ShareTokenFilter(logging.Filter):
     """Avoid leaking possession tokens through Uvicorn's default access log."""
     def filter(self, record):
-        if isinstance(record.args,tuple) and len(record.args)>=3:
+        if record.name=='uvicorn.access' and isinstance(record.args,tuple) and len(record.args)>=3:
             args=list(record.args)
             args[2]=re.sub(r'/p/[^/?\s]+', '/p/[redacted]', str(args[2]))
             record.args=tuple(args)
+        elif '/p/' in record.getMessage():
+            record.msg=re.sub(r'/p/[^/?\s]+','/p/[redacted]',record.getMessage());record.args=()
         return True
 
 

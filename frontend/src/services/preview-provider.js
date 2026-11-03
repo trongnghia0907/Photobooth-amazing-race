@@ -23,8 +23,8 @@ export async function startCameraStream(app, deviceId = '', notifyOnSuccess = fa
     } catch (permissionOrHardwareErr) {
       app.startSimulatedCamera(
         notifyOnSuccess
-          ? 'Trình duyệt đang chặn quyền Camera. Vui lòng bật quyền Camera trên thanh địa chỉ hoặc dùng chế độ Mô Phỏng.'
-          : 'Chưa cấp quyền Webcam — Đã tự động bật Camera Mô Phỏng để bạn trải nghiệm đầy đủ tính năng!'
+          ? 'Camera access is blocked. Allow camera access in the address bar or use simulation mode.'
+          : 'Webcam access was not granted — simulation mode has started automatically so you can try all features.'
       );
     }
   }
@@ -51,7 +51,7 @@ export async function attachRealStreamToVideo(app, notifyOnSuccess) {
   }
 
   if (notifyOnSuccess) {
-    app.showToast('Đã kết nối video preview (DEMO, chưa tích hợp chụp ảnh gốc)!', 'success');
+    app.showToast('Video preview connected (DEMO; original camera capture is not integrated).', 'success');
   }
 }
 
@@ -73,6 +73,6 @@ export function toggleMirror(app) {
   document.getElementById('hostCameraPreview')?.classList.toggle('mirror-video', app.mirrorVideo);
   const homeMirrorBtn = document.getElementById('homeMirrorBtn');
   if (homeMirrorBtn) {
-    homeMirrorBtn.textContent = `🪞 Lật gương: ${app.mirrorVideo ? 'BẬT' : 'TẮT'}`;
+    homeMirrorBtn.textContent = `🪞 Mirror: ${app.mirrorVideo ? 'ON' : 'OFF'}`;
   }
 }

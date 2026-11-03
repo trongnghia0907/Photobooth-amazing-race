@@ -18,7 +18,7 @@ from test_printing import login, wait_job, enqueue
 
 @pytest.fixture
 def settings(tmp_path):
-    return Settings(tmp_path/'camera',public_base_url='http://localhost:8000',app_env='development',
+    return Settings(tmp_path/'camera',public_base_url='https://photos.test',app_env='development',
                     camera_guest_enabled=True,camera_allow_faults=True,
                     admin_username='test-host',admin_password=secrets.token_urlsafe(24))
 
@@ -188,6 +188,27 @@ def test_mock_faults_protected_native_paths_and_input_only_commands(settings):
         assert client.get(base+'/captures/../../photobooth.sqlite3/original',headers=headers()).status_code in (404,422)
 
 
+def test_host_camera_diagnostics_are_structured_safe_and_authenticated(settings):
+    app=create_app(settings)
+    with TestClient(app) as client:
+        assert client.get('/api/admin/camera').status_code==401
+        assert client.post('/api/admin/camera/diagnostic').status_code==401
+        csrf=login(client,settings)
+        refreshed=client.get('/api/admin/camera',headers=csrf)
+        assert refreshed.status_code==200
+        assert refreshed.json()['capabilities']['adapter']=='mock'
+        result=client.post('/api/admin/camera/diagnostic',headers=csrf,json={'confirm_physical_shutter':False})
+        assert result.status_code==200,result.text
+        body=result.json()
+        assert body['last_checked_at'] and body['physical_test']['status']=='NOT_TESTED'
+        checks={item['name']:item for item in body['checks']}
+        assert checks['connection']['status']=='FAIL'
+        assert checks['live_preview']['status']=='PASS'
+        assert checks['physical_shutter']['status']=='UNSUPPORTED'
+        assert checks['original_file']['status']=='UNSUPPORTED'
+        assert app.state.camera.adapter.shutter_calls==0
+
+
 def test_controller_os_lock_prevents_other_process_owner(settings):
     app=create_app(settings)
     with TestClient(app) as client:
@@ -196,6 +217,41 @@ def test_controller_os_lock_prevents_other_process_owner(settings):
         try:
             with pytest.raises(CameraError,match='process khác'):other.connect(sid,'a'*64)
         finally:other.stop()
+
+
+def test_empty_session_layout_changes_preserve_live_camera_and_lock_after_capture(settings):
+    app=create_app(settings)
+    with TestClient(app) as client:
+        sid=create(client);base=connect(client,sid);adapter=app.state.camera.adapter
+        assert client.put(f'/api/sessions/{sid}/layout',json={'layout':'landscape_4','slot_count':4}).status_code==401
+        assert client.put(f'/api/sessions/{sid}/layout',headers=headers(key(),token='b'*64),json={'layout':'landscape_4','slot_count':4}).status_code==404
+        assert client.put(f'/api/sessions/{sid}/layout',headers=headers(key()),json={'layout':'landscape_4','slot_count':6}).status_code==422
+        for count,layout in [(4,'landscape_4'),(6,'grid2x3'),(4,'landscape_4')]:
+            operation=key();payload={'layout':layout,'slot_count':count}
+            changed=client.put(f'/api/sessions/{sid}/layout',headers=headers(operation),json=payload)
+            assert changed.status_code==200,changed.text
+            assert changed.json()['slot_count']==count
+            assert client.put(f'/api/sessions/{sid}/layout',headers=headers(operation),json=payload).json()==changed.json()
+            assert app.state.camera.adapter is adapter and adapter.connected and adapter.previewing
+            assert app.state.camera.owner==sid and client.get(base+'/frame',headers=headers()).status_code==200
+        assert capture(client,base,0).status_code==200
+        assert client.put(f'/api/sessions/{sid}/layout',headers=headers(key()),json={'layout':'grid2x3','slot_count':6}).status_code==409
+        assert client.get(f'/api/sessions/{sid}',headers=headers()).json()['slot_count']==4
+        # A reset must not unlock the layout of an already-used session.
+        assert client.delete(f'/api/sessions/{sid}/photos',headers=headers(key())).status_code==200
+        assert client.put(f'/api/sessions/{sid}/layout',headers=headers(key()),json={'layout':'grid2x3','slot_count':6}).status_code==409
+
+
+def test_layout_update_refuses_inflight_capture_without_releasing_camera(settings):
+    app=create_app(settings)
+    with TestClient(app) as client:
+        sid=create(client);connect(client,sid);camera=app.state.camera
+        camera.capture_lock.acquire()
+        try:
+            response=client.put(f'/api/sessions/{sid}/layout',headers=headers(key()),json={'layout':'landscape_4','slot_count':4})
+            assert response.status_code==409
+            assert camera.owner==sid and camera.adapter.connected
+        finally:camera.capture_lock.release()
 
 
 def test_real_adapter_contract_preserves_native_file_without_preview_substitution(settings,monkeypatch):

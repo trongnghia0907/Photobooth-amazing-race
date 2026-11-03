@@ -21,7 +21,7 @@ from test_sessions import headers, key, create, upload, composite, image
 
 @pytest.fixture
 def settings(tmp_path):
-    return Settings(tmp_path/'printing',public_base_url='http://localhost:8000',app_env='development',
+    return Settings(tmp_path/'printing',public_base_url='https://photos.test',app_env='development',
                     admin_username='test-host',admin_password=secrets.token_urlsafe(24))
 
 
@@ -215,7 +215,8 @@ def test_windows_gdi_contract_contain_copies_and_ambiguous_failure_without_devic
         def __init__(self,img):pass
         def draw(self,handle,box):events.append(('draw',handle,box))
     monkeypatch.setitem(sys.modules,'win32ui',SimpleNamespace(CreateDC=DC))
-    monkeypatch.setattr(printers.ImageWin,'Dib',Dib)
+    from PIL import ImageWin
+    monkeypatch.setattr(ImageWin,'Dib',Dib)
     adapter=WindowsPrinterAdapter(True)
     monkeypatch.setattr(adapter,'list_printers',lambda:[{'id':'fake-driver'}])
     source=tmp_path/'input.png';source.write_bytes(image(size=(800,1200)))

@@ -1,6 +1,12 @@
+# Automatic Guest workflow — intentional DOM change
+
+User explicitly requested complete removal of the numbered stepper. Removed stepNavHome, stepNavCapture and stepNavResult from the modular frontend and removed their controller updates. These are the only exceptions to the original DOM-ID preservation assertion. All 80 legacy methods, remaining IDs, compositor algorithms and the original/legacy HTML are retained. Existing capture/result/retake/confirmation services are reused; guestWorkflowActive/guestStarting and syncGuestWorkflowUI control automatic presentation. [Verification](GUEST_AUTOMATIC_WORKFLOW.md).
+
+---
+
 # Phase 6 mapping addition
 
-The 80 legacy methods keep their existing mapped modules and callable facade names (Node verification). Existing home/capture/editor/QR/print methods are reused; no new Frame Editor. Added facade functions in `frontend/src/features/home/kiosk.js`: initializeKioskUI, syncSetupLayout, syncKioskStatus, renderRecentPhotos, confirmNewGuestSession and confirmResetShots. `frontend/src/services/booth-access.js` supplies boothFetch and initializeBoothAccess; these are service imports rather than legacy replacements. Existing startNewGuestSession resets private editor/QR state before Setup. See [Phase 0–6 audit](PHASE0_6_VERIFICATION.md) for behavior evidence.
+The 80 legacy methods keep their existing mapped modules and callable facade names (Node verification). Existing home/capture/editor/QR/print methods are reused; no new Frame Editor. Added facade functions in `frontend/src/features/home/kiosk.js`: initializeKioskUI, syncSetupLayout, syncKioskStatus, renderRecentPhotos, confirmNewGuestSession and confirmResetShots. `frontend/src/services/booth-access.js` supplies boothFetch and initializeBoothAccess; these are service imports rather than legacy replacements. Existing startNewGuestSession resets private editor/QR state before Setup. See [event checklist](EVENT_DAY_CHECKLIST.md) for behavior evidence.
 
 ---
 

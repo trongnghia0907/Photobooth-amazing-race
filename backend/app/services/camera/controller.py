@@ -28,6 +28,7 @@ class CameraController:
         self.last_error = None
         self.last_frame_at = None
         self.stop_event = threading.Event()
+        self.last_diagnostic = None
         self.process_lock = None
         self.thread = None
 
@@ -79,6 +80,13 @@ class CameraController:
             raise CameraError('not_connected','Phiên chưa giữ camera. Bấm Kết nối lại camera.',stage='connect')
         self.lease_until = time.monotonic()+self.settings.camera_lease_seconds
 
+    def check_event_capabilities(self, adapter=None):
+        cap=(adapter or self.adapter).get_capabilities()
+        if cap.demo and not self.settings.demo_hardware_allowed:
+            raise CameraError('event_hardware_required','Camera thật chưa sẵn sàng. Nhờ Host kiểm tra cấu hình; chế độ Event không cho phép camera mô phỏng.',stage='connect')
+        if self.settings.operation_mode=='event' and not (cap.capture and cap.physical_shutter and cap.original_file and cap.hardware_verified):
+            raise CameraError('event_hardware_required','Camera/SDK chưa được xác minh chụp JPG gốc trên máy này. Nhờ Host kiểm tra thiết bị.',stage='connect')
+
     def status(self, sid=None, token=None):
         if sid:self.authorize(sid,token)
         with self.control:
@@ -91,7 +99,48 @@ class CameraController:
                     'lease_active':bool(self.owner),'preview_healthy':fresh,
                     'last_frame_at':self.last_frame_at,'last_error':self.last_error,
                     'timeout_seconds':self.settings.camera_timeout_seconds,
-                    'stale_seconds':self.settings.camera_stale_seconds}
+                    'stale_seconds':self.settings.camera_stale_seconds,
+                    'operation_mode':self.settings.operation_mode,'configured_model':self.settings.camera_model}
+
+    def diagnose(self, *, confirm_physical_shutter=False):
+        """Return safe capability/status diagnostics for the Host UI.
+
+        This intentionally never calls capture_photo or get_captured_photo.
+        A real shutter test needs a separate, explicitly confirmed test
+        session so a dashboard click cannot trigger an untracked photo.
+        """
+        with self.control:
+            self._expire()
+            capabilities = self.adapter.get_capabilities()
+            adapter_status = self.adapter.get_status()
+            checked_at = now()
+            connected = bool(adapter_status.get('connected'))
+            live_supported = bool(capabilities.live_view)
+            checks = [
+                {'name': 'connection', 'status': 'PASS' if connected else 'FAIL',
+                 'detail': 'Camera adapter đang kết nối.' if connected else 'Chưa kết nối camera host.',
+                 'suggestion': None if connected else 'Kết nối camera hoặc chọn adapter DEMO trong Host Dashboard.'},
+                {'name': 'live_preview', 'status': 'PASS' if live_supported else 'UNSUPPORTED',
+                 'detail': 'Live Preview được adapter hỗ trợ.' if live_supported else 'Adapter không hỗ trợ Live Preview.',
+                 'suggestion': None if live_supported else 'Chọn adapter có khả năng preview hoặc kiểm tra SDK.'},
+                {'name': 'physical_shutter', 'status': 'UNSUPPORTED' if not capabilities.physical_shutter else 'NOT_TESTED',
+                 'detail': ('Adapter không khai báo shutter vật lý.' if not capabilities.physical_shutter else
+                            'Có capability shutter; chưa phát lệnh shutter trong chẩn đoán an toàn.'),
+                 'suggestion': ('Không dùng DEMO/webcam để kết luận shutter thật.' if not capabilities.physical_shutter else
+                                'Tạo phiên test riêng và xác nhận trước khi chụp thử có chủ đích.')},
+                {'name': 'original_file', 'status': 'UNSUPPORTED' if not capabilities.original_file else 'NOT_TESTED',
+                 'detail': ('Adapter không khai báo nhận file gốc từ camera.' if not capabilities.original_file else
+                            'Có capability file gốc; chưa chụp/nhận file trong chẩn đoán an toàn.'),
+                 'suggestion': ('Cấu hình SDK camera thật; không dùng frame preview thay file gốc.' if not capabilities.original_file else
+                                'Kiểm thử trong phiên test riêng sau khi xác nhận shutter.')},
+            ]
+            result = {'adapter': capabilities.json(), 'connection': adapter_status,
+                      'state': self.state, 'last_checked_at': checked_at, 'checks': checks,
+                      'physical_test': {'requested': bool(confirm_physical_shutter),
+                                        'status': 'NOT_TESTED',
+                                        'detail': 'Không có lệnh shutter nào được phát từ dashboard; cần phiên test riêng có xác nhận rõ ràng.'}}
+            self.last_diagnostic = result
+            return result
 
     def connect(self, sid, token):
         self.repo.require_working(self.authorize(sid,token))
@@ -102,6 +151,7 @@ class CameraController:
             if self.capture_lock.locked():raise CameraError('busy','Camera đang chụp/truyền ảnh.',stage='connect')
             self.state = 'connecting'
             try:
+                self.check_event_capabilities()
                 self.adapter.connect()
                 self.owner = sid;self.lease_until = time.monotonic()+self.settings.camera_lease_seconds
                 self.state = 'ready';self.last_error = None
@@ -171,13 +221,21 @@ class CameraController:
             if old['status']=='captured':return self.result(sid,token,old['id'])
             if old['status']=='failed':raise CameraError(old['error_code'] or 'failed',old['error_message'] or 'Capture thất bại.',uncertain=bool(old['uncertain']))
         self.repo.require_working(session)
+        self.repo.ensure_disk_space(self.settings.max_upload_bytes*2)
         if not self.capture_lock.acquire(blocking=False):raise CameraError('busy','Một lệnh chụp đang được xử lý. Đọc trạng thái/thử lại cùng key.')
         capture_id = old['id'] if old else str(uuid.uuid4())
         try:
             with self.control:
+                # An unused session may have changed layout while this command
+                # was waiting for the controller. Check the current slot bound
+                # before issuing a shutter or writing the capture journal.
+                session = self.authorize(sid,token)
+                if not 0 <= slot < session['slot_count']:
+                    raise HTTPException(422,'Slot nằm ngoài phiên')
                 self._owned(sid)
                 if not self.enabled():raise CameraError('disabled','Host đã tắt điều khiển camera.')
                 capabilities = self.adapter.get_capabilities()
+                self.check_event_capabilities()
                 if not capabilities.capture:raise CameraError('unsupported','Adapter không hỗ trợ chụp; không lấy screenshot thay thế.')
                 if not capabilities.demo and (not capabilities.physical_shutter or not capabilities.original_file):
                     raise CameraError('unsupported','Adapter thật chưa hỗ trợ shutter/file gốc. Không gửi lệnh chụp.')
@@ -208,7 +266,7 @@ class CameraController:
                 if time.monotonic()>deadline:raise CameraError('timeout','Hết thời gian truyền ảnh. Thử lại cùng yêu cầu.',stage='transfer')
                 validated = validate_image(data,mime,self.settings)
                 cap = self.adapter.get_capabilities()
-                if not cap.demo and (source!='camera_original' or not cap.physical_shutter or not cap.original_file):
+                if not cap.demo and (source!='camera_original' or mime!='image/jpeg' or not cap.physical_shutter or not cap.original_file):
                     raise CameraError('invalid_provenance','Adapter thật chưa xác nhận shutter/file gốc; từ chối dùng frame thay thế.',stage='transfer')
                 relative = f'camera_originals/{sid}/{capture_id}'+{'image/jpeg':'.jpg','image/png':'.png','image/webp':'.webp'}[mime]
                 atomic_write(self.settings.storage_root/relative,data)
@@ -237,7 +295,9 @@ class CameraController:
             self._expire()
             if self.capture_lock.locked() or self.owner:raise CameraError('busy','Ngắt phiên camera đang dùng trước khi đổi cấu hình.',stage='connect')
             if mode:
-                self.adapter.disconnect();self.adapter = self.make_adapter(mode);self.mode = mode;self.state = 'idle';self.last_error = None
+                adapter=self.make_adapter(mode)
+                self.check_event_capabilities(adapter)
+                self.adapter.disconnect();self.adapter = adapter;self.mode = mode;self.state = 'idle';self.last_error = None
             if guest_enabled is not None:
                 with self.repo.db.connect() as db:
                     db.execute("INSERT INTO host_settings VALUES ('camera_guest_enabled',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",('true' if guest_enabled else 'false',))
@@ -253,7 +313,7 @@ class CameraController:
         def monitor():
             while not self.stop_event.wait(.5):
                 with self.control:self._expire()
-        self.thread = threading.Thread(target=monitor,daemon=True,name='osa-camera-lease')
+        self.thread = threading.Thread(target=monitor,daemon=True,name='photobooth-camera-lease')
         self.thread.start()
 
     def stop(self):

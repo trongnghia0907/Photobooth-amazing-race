@@ -7,6 +7,7 @@ import uuid
 from fastapi import HTTPException
 from .mock_printer import MockPrinterAdapter
 from .printers import WindowsPrinterAdapter, PrinterError
+from .cups_printer import CupsPrinterAdapter
 from .repository import now, canonical, digest
 
 
@@ -16,7 +17,8 @@ class PrintingService:
         self.adapter = adapter or (MockPrinterAdapter(self.settings.storage_root/'mock_prints')
                                   if self.settings.printer_mode == 'mock' else
                                   WindowsPrinterAdapter(self.settings.enable_physical_printing)
-                                  if self.settings.printer_mode == 'windows' else None)
+                                  if self.settings.printer_mode == 'windows' else
+                                  CupsPrinterAdapter(self.settings.enable_physical_printing,self.settings.cups_lp,self.settings.cups_lpstat))
         self.stop_event = threading.Event()
         self.thread = None
 
@@ -25,16 +27,17 @@ class PrintingService:
 
     def selected(self, db):
         row = db.execute('SELECT value FROM host_settings WHERE key=?', ('printer:'+self.settings.printer_mode,)).fetchone()
-        return row[0] if row else ('mock' if self.settings.printer_mode == 'mock' else '')
+        return row[0] if row else ('mock' if self.settings.printer_mode == 'mock' else self.settings.printer_name)
 
     def config(self):
         with self.repo.db.connect() as db:
             selected = self.selected(db)
         devices = self.printers()
-        enabled = self.settings.printer_mode == 'mock' or (self.settings.printer_mode == 'windows' and self.settings.enable_physical_printing)
+        enabled = (self.settings.printer_mode == 'mock' and self.settings.demo_hardware_allowed) or (self.settings.printer_mode != 'mock' and self.settings.enable_physical_printing)
+        diagnostic=getattr(self.adapter,'diagnostic',lambda:'')()
         return {'mode':self.settings.printer_mode,'max_copies':self.settings.max_print_copies,
-                'available':enabled and selected in [p['id'] for p in devices],
-                'message':'Mock Printer: không in giấy.' if self.settings.printer_mode == 'mock' else 'Host cần chọn máy in và bật in thật; chưa xác nhận giấy đã in.'}
+                'available':enabled and not diagnostic and selected in [p['id'] for p in devices],
+                'message':diagnostic or ('Mock Printer: không in giấy.' if self.settings.printer_mode == 'mock' and self.settings.demo_hardware_allowed else 'Chế độ Event không cho phép MockPrinter.' if self.settings.printer_mode=='mock' else 'Host cần chọn máy in và bật in thật; chưa xác nhận giấy đã in.')}
 
     @staticmethod
     def metadata(row):
@@ -67,7 +70,11 @@ class PrintingService:
                 return self.metadata(existing)
             ready = db.execute('SELECT p.* FROM print_ready p JOIN shares s ON s.id=p.final_id WHERE s.id=? AND s.session_id=? AND s.revoked_at IS NULL AND (s.expires_at IS NULL OR s.expires_at>?)', (final_id,sid,now())).fetchone()
             if not ready:
+                share=db.execute('SELECT 1 FROM shares WHERE id=? AND session_id=? AND revoked_at IS NULL',(final_id,sid)).fetchone()
+                if share and not self.repo.print_ready.url(db,final_id):raise HTTPException(503,'Chờ URL HTTPS công khai hoạt động để tạo bản in có QR. Không in QR localhost.')
                 raise HTTPException(409, 'Cần xác nhận ảnh, tạo QR và lưu print-ready trước khi in.')
+            ready=self.repo.print_ready.ensure(db,final_id,[])
+            if not ready:raise HTTPException(503,'Chờ URL HTTPS công khai hoạt động để tạo bản in có QR. Không in QR localhost.')
             self.checked_file(ready['path'], ready['sha256'])
             if retry_of:
                 previous = db.execute('SELECT * FROM print_jobs WHERE id=?', (retry_of,)).fetchone()
@@ -108,6 +115,8 @@ class PrintingService:
             db.commit()
         receipt, error, uncertain, status = None, None, False, 'submitted'
         try:
+            if row['mode']=='mock' and not self.settings.demo_hardware_allowed:
+                raise PrinterError('Event mode blocks MockPrinter; Host must explicitly select a physical printer.')
             if row['mode'] != self.settings.printer_mode or not self.adapter:
                 raise PrinterError('Printer mode đã thay đổi. Host cần kiểm tra rồi retry rõ ràng.')
             with self.repo.db.connect() as db:
@@ -161,7 +170,7 @@ class PrintingService:
             lock.close()
 
     def start(self):
-        self.thread = threading.Thread(target=self._run,daemon=True,name='osa-print-worker')
+        self.thread = threading.Thread(target=self._run,daemon=True,name='amazing-race-print-worker')
         self.thread.start()
 
     def stop(self):

@@ -1,6 +1,10 @@
 import { request } from './api-client.js';
 
 export const getSession = context => request(`/sessions/${context.id}`, { token: context.token });
+export const updateLayout = (context, operation) => request(`/sessions/${context.id}/layout`, {
+  method:'PUT', token:context.token, key:operation.key,
+  body:{layout:operation.layout,slot_count:operation.slotCount},
+});
 
 export const createSession = (context, layout) => request('/sessions', {
   method: 'POST', token: context.token, key: context.createKey,

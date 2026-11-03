@@ -13,7 +13,8 @@ export function showToast(app, message, type = 'info') {
 
   const toast = document.createElement('div');
   toast.className = `pointer-events-auto px-4 py-3 rounded-2xl border shadow-lg text-xs sm:text-sm font-bold flex items-center justify-between gap-3 transition-all duration-300 ${colors[type] || colors.info}`;
-  toast.innerHTML = `<span>${message}</span><button onclick="this.parentElement.remove()" class="opacity-75 hover:opacity-100 font-extrabold">✕</button>`;
+  const text=document.createElement('span');text.textContent=app.eventConfig?.event_mode&&type==='error'?'This action is temporarily unavailable. Please ask an event staff member for help.':message;
+  const close=document.createElement('button');close.type='button';close.textContent='✕';close.className='opacity-75 hover:opacity-100 font-extrabold';close.addEventListener('click',()=>toast.remove());toast.append(text,close);
 
   container.appendChild(toast);
   setTimeout(() => {

@@ -1,3 +1,9 @@
+# Guest workflow amendment — Phase 6
+
+Latest user requirement: remove the three-step navigation completely from Guest UI. Keep centered AMAZING RACE 2026, 75/25 workspace/current-session sidebar, frame/timer/4–6 choices and sensible defaults. Start must verify camera readiness before fullscreen/countdown; capture all selected shots and automatically open Review/Customize, including retake and existing editing. Only explicit guest confirmation saves/finalizes; then show QR/download/printing automatically. Phiên mới safely resets the guest. Preserve backend/camera/QR/printing/storage and one official final. [Implementation and verification](docs/GUEST_AUTOMATIC_WORKFLOW.md).
+
+---
+
 # PHASE 6 ADDENDUM — RESTRICTED EVENT LIVE GALLERY
 
 Yêu cầu được bổ sung theo xác nhận mới của người dùng cho AMAZING RACE 2026. Không thay đổi phạm vi refactor ban đầu hoặc quy tắc QR riêng.
@@ -10,11 +16,11 @@ Yêu cầu được bổ sung theo xác nhận mới của người dùng cho AM
 - Tái sử dụng FastAPI/SQLite/session_finals/composite hiện có, không dịch vụ upload/database thứ hai. Polling có giới hạn là đủ. Giữ camera, in, QR, Host và frontend cũ.
 - Kiểm thử duyệt/không duyệt, layout 4/6, một item/session, ẩn/reapprove, restart, phân quyền, 16:9, fullscreen/slideshow, offline recovery và toàn bộ regression Phase 1–6.
 
-Thiết kế, thao tác và giới hạn hiện tại: [EVENT_LIVE_GALLERY](docs/EVENT_LIVE_GALLERY.md). Kết quả: [EVENT_LIVE_GALLERY_VERIFICATION](docs/EVENT_LIVE_GALLERY_VERIFICATION.md).
+Thiết kế, thao tác và giới hạn hiện tại: [EVENT_LIVE_GALLERY](docs/EVENT_LIVE_GALLERY.md). Kết quả: [Gallery acceptance tests](backend/tests/test_event_display.py).
 
 ---
 
-# OSA BOOTH — TECHNICAL REQUIREMENTS & IMPLEMENTATION SPECIFICATION
+# AMAZING RACE 2026 Photobooth — TECHNICAL REQUIREMENTS & IMPLEMENTATION SPECIFICATION
 
 > **Phiên bản:** 1.0 · 29/10/2026  
 > **Trạng thái:** Specification để Codex đọc và triển khai theo phase; **không phải** tuyên bố rằng các tính năng đã hoàn thành.  

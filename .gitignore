@@ -9,6 +9,8 @@ dist-host/
 !/frontend/.env.host
 runtime/
 .share-key
+.drive-oauth.bin
+client_secret*.json
 originals/
 composites/
 qrcodes/
@@ -23,8 +25,14 @@ __pycache__/
 test-results/
 playwright-report/
 deployment/config.yml
+deployment/*.env
 *.pem
 *.key
 *.pfx
 *.crt
 cert.json
+
+# Local verification marker, generated metrics and disposable pytest workspace.
+/CODEX_LOCAL_VERIFY.txt
+/docs/EVENT_STABILITY_RESULTS.json
+/backend/.pytest_tmp_camera/

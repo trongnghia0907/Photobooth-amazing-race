@@ -3,10 +3,16 @@
 export function renderStickerCategories(app) {
   const bar = document.getElementById('stickerCategoryBar');
   if (!bar) return;
+  const labels = {
+    'Yêu thích 💙': 'Favorites 💙',
+    'Dễ thương 🐻': 'Cute 🐻',
+    'Sự kiện 🥂': 'Event 🥂',
+    'Biểu cảm 😍': 'Expressions 😍'
+  };
   bar.innerHTML = Object.keys(app.stickerLibrary).map(cat => {
     const active = cat === app.activeStickerCategory;
     return `
-      <button onclick="app.selectStickerCategory('${cat}')" class="px-3.5 py-1.5 rounded-full text-xs font-extrabold shrink-0 transition-all ${active ? 'btn-primary-blue text-white' : 'bg-brand-50 text-brand-800 hover:bg-brand-100'}">${cat}</button>
+      <button onclick="app.selectStickerCategory('${cat}')" class="px-3.5 py-1.5 rounded-full text-xs font-extrabold shrink-0 transition-all ${active ? 'btn-primary-blue text-white' : 'bg-brand-50 text-brand-800 hover:bg-brand-100'}">${labels[cat]||cat}</button>
     `;
   }).join('');
 }
@@ -56,7 +62,7 @@ export function handleCustomStickerUpload(app, event) {
       });
       app.renderCompositeCanvas();
       app.scheduleQRCodeUpdate();
-      app.showToast('Đã thêm Sticker cá nhân!', 'success');
+      app.showToast('Custom sticker added!', 'success');
     };
     img.src = e.target.result;
   };

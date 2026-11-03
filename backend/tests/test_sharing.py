@@ -16,7 +16,7 @@ from app.main import create_app
 from app.logging_filters import ShareTokenFilter
 from test_sessions import headers, key, image, create, six_photos, composite
 
-PUBLIC='https://photos.osa.test'
+PUBLIC='https://photos.amazingrace.test'
 
 
 @pytest.fixture
@@ -51,9 +51,11 @@ def test_two_guests_only_their_immutable_composite_and_no_public_gallery(shared_
         assert Image.open(BytesIO(image_b.content)).getpixel((0,0))[:3]==(0,0,255)
         assert hashlib.sha256(image_a.content).hexdigest()==first['share']['print_ready']['sha256']
         assert client.get(pa+'/download').content==image_a.content
-        assert 'attachment;' in client.get(pa+'/download').headers['content-disposition']
+        disposition=client.get(pa+'/download').headers['content-disposition']
+        assert 'attachment;' in disposition and 'amazing-race-2026-photo-' in disposition
         html=client.get(pa)
         assert html.status_code==200 and a not in html.text and b not in html.text
+        assert 'AMAZING RACE 2026' in html.text and 'OSA BOOTH' not in html.text
         assert 'gallery' not in html.text and '/api/sessions' not in html.text
         assert html.headers['referrer-policy']=='no-referrer'
         assert 'noindex' in html.headers['x-robots-tag']
@@ -118,7 +120,7 @@ def test_no_share_before_complete_invalid_expired_revoked_tokens(shared_settings
 
 
 @pytest.mark.parametrize('origin',['','http://localhost:8000','https://localhost','https://127.0.0.1','https://192.168.1.2',
-    'https://[::1]','https://user:password@photos.osa.test','https://photos.osa.test/path','https://photos.osa.test?q=1','https://example.com','https://127.1'])
+    'https://[::1]','https://user:password@photos.amazingrace.test','https://photos.amazingrace.test/path','https://photos.amazingrace.test?q=1','https://example.com','https://127.1'])
 def test_bad_public_base_never_creates_token(tmp_path,origin):
     settings=Settings(tmp_path/'bad-base',public_base_url=origin)
     with TestClient(create_app(settings)) as client:
@@ -145,7 +147,7 @@ def test_upgrade_v1_database_is_non_destructive(tmp_path):
     with TestClient(create_app(settings)) as client:
         assert client.get(f'/api/sessions/{sid}',headers=headers()).status_code==200
         with sqlite3.connect(settings.storage_root/'photobooth.sqlite3') as db:
-            assert db.execute('PRAGMA user_version').fetchone()[0]==8
+            assert db.execute('PRAGMA user_version').fetchone()[0]==9
 
 
 def test_access_log_redacts_share_token():

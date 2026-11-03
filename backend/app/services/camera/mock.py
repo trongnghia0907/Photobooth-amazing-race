@@ -76,7 +76,7 @@ class MockCameraAdapter:
         color = tuple(50+b%150 for b in hashlib.sha256(reference.encode()).digest()[:3])
         image = Image.new('RGB',(1600,1200),color)
         draw = ImageDraw.Draw(image)
-        draw.text((60,60),'OSA HOST MOCK CAPTURE - NOT A REAL CAMERA',fill='white')
+        draw.text((60,60),'AMAZING RACE 2026 DEMO - NOT A REAL CAMERA',fill='white')
         draw.text((60,100),reference,fill='white')
         buffer = BytesIO();image.save(buffer,'JPEG',quality=94)
         return CapturedPhoto(buffer.getvalue(),'image/jpeg','demo')

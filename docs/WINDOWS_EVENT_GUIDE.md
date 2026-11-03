@@ -1,3 +1,22 @@
+# Cập nhật Event Readiness và cấu hình Windows 11
+
+Windows 11 là nền tảng chính. Xem [cấu hình Event/rehearsal](EVENT_CONFIGURATION.md) trước khi dùng các ví dụ mạng bên dưới. macOS có [hướng dẫn riêng](MACOS_SETUP.md), chưa được kiểm thử trực tiếp.
+
+Giữ các bước cài Python/Node/driver trong tài liệu này. Với vận hành có cấu hình cố định:
+
+```powershell
+Copy-Item deployment/event.env.example deployment/event.env
+# Sửa file bằng editor: hostname, TLS riêng, credentials, runtime, camera, printer.
+& backend/.venv/Scripts/python.exe scripts/run_host.py --env-file deployment/event.env --check --no-prompt
+.\scripts\start_event.ps1 --env-file deployment/event.env --build
+# Dừng từ terminal khác, vẫn dùng đúng file/runtime:
+.\scripts\stop_event.ps1 --env-file deployment/event.env
+```
+
+`--check` không chụp/in và không mở tunnel. Ví dụ Event chưa thể nghiệm thu vật lý khi vendor SDK chưa tích hợp. Để diễn tập bằng Mock, dùng `--mode rehearsal --allow-mock-hardware`; webcam video-frame cần thêm `--camera uvc_demo`. Không xóa nhãn DEMO để giả thành camera thật.
+
+Sau cập nhật source, dừng launcher cũ rồi khởi động lại; build frontend riêng không cập nhật được API đang chạy. Log private/public nằm trong `runtime/logs` hoặc `OSA_LOG_DIRECTORY`; kiểm tra Host Dashboard để xem mode, ổ đĩa, camera và máy in. Không tạo Scheduled Task tự động.
+
 # Máy chiếu / LED — bổ sung Phase 6
 
 Sau khi restart server mới, Host mở /admin → Màn hình sự kiện → tạo mã riêng; duyệt từng composite đã chốt với cơ sở đồng ý/ủy quyền. Mở **http://localhost:8000/event-display** ở browser profile riêng, nhập mã và chọn Tường ảnh hoặc Slideshow → Toàn màn hình/F11. Kết nối HDMI/USB-C, dùng Win+P → Extend để giữ Host trên laptop; kéo cửa sổ trình chiếu sang màn hình ngoài. Không cần refresh.
@@ -15,7 +34,7 @@ Chỉ camera Mock và máy in Mock được kiểm thử tự động. Chưa xá
 Mở PowerShell tại repository. Python 3.12 và Node >=22.12 cần có trên PATH.
 
 ```powershell
-Set-Location 'D:\Bách Khoa\bÊN LỀ\amazing race 2026\Ptb\OSA_BOOTH_CODEX_STARTER_DOCS'
+Set-Location '<path-to-repository>'
 py -3.12 -m venv backend/.venv
 & backend/.venv/Scripts/python.exe -m pip install -r backend/requirements.lock.txt
 Set-Location frontend
@@ -84,12 +103,12 @@ Profile LAN dùng APP_ENV=development, có nhãn LAN/Wi-Fi trên QR, không dùn
 
 Hai cổng độc lập: **8000 private kiosk/API/Host**, **8001 photo-only loopback**. Chỉ `/p/{token}` và ảnh/download/QR liên quan được public; không proxy toàn bộ 8000 ra Internet. Cổng public không chạy camera, in hay cleanup.
 
-Nếu có certificate/key hợp lệ cho host nội bộ, chạy HTTPS trực tiếp bằng `--profile https --public-url https://photos.example.com --ssl-certfile <certificate.pem> --ssl-keyfile <private-key.pem> --tls-host 192.168.1.20 --bind 0.0.0.0 --public-gateway`. Bảo vệ file khóa bên ngoài repo. URL iPad phải khớp certificate và được iPad tin cậy. Certificate trực tiếp cần SAN gồm cả IP/hostname iPad sử dụng và DNS:localhost để Host mở https://localhost:8000/admin từ laptop. --tls-host phải khớp tên/IP trong certificate cho kiểm tra health.
+Nếu có certificate/key hợp lệ cho host nội bộ, chạy HTTPS trực tiếp bằng `--profile https --mode rehearsal --allow-mock-hardware --public-url https://photos.example.com --ssl-certfile <certificate.pem> --ssl-keyfile <private-key.pem> --tls-host 192.168.1.20 --bind 0.0.0.0 --public-gateway`. Bảo vệ file khóa bên ngoài repo. URL iPad phải khớp certificate và được iPad tin cậy. Certificate trực tiếp cần SAN gồm cả IP/hostname iPad sử dụng và DNS:localhost để Host mở https://localhost:8000/admin từ laptop. --tls-host phải khớp tên/IP trong certificate cho kiểm tra health.
 
 Cách khác: chuẩn bị Caddy riêng trên LAN, sao chép `deployment/Caddyfile.example` ra file cấu hình ngoài repo, thay IP rồi chạy Caddy theo [tài liệu TLS chính thức](https://caddyserver.com/docs/caddyfile/directives/tls). `tls internal` cần cài và tin cậy root CA trên iPad một cách chủ động; ví dụ tắt tự cài trust. Không bỏ qua xác minh certificate. Backend phía sau proxy:
 
 ```powershell
-& backend/.venv/Scripts/python.exe scripts/run_host.py --profile https --behind-proxy --public-url https://photos.example.com --public-gateway
+& backend/.venv/Scripts/python.exe scripts/run_host.py --profile https --mode rehearsal --allow-mock-hardware --behind-proxy --public-url https://photos.example.com --public-gateway
 ```
 
 Chỉ proxy loopback được tin forwarded headers; Caddy chuyển IP thật, nên `/admin` từ iPad vẫn bị chặn. Với Caddy example, trên laptop mở Host qua https://localhost:8443/admin (đã tin cậy CA); iPad mở https://192.168.1.20:8443/booth. Không mở Host bằng LAN IP vì backend chỉ cho client loopback. Cookie production có Secure; đăng nhập Host/ghép kiosk bằng HTTP trực tiếp 8000 sẽ không hoạt động đúng. Đường kết nối Caddy→backend loopback dùng HTTP; iPad→Caddy dùng HTTPS.
@@ -98,15 +117,15 @@ Chỉ proxy loopback được tin forwarded headers; Caddy chuyển IP thật, n
 
 ```powershell
 cloudflared tunnel login
-cloudflared tunnel create osa-photos
-cloudflared tunnel route dns osa-photos photos.example.com
+cloudflared tunnel create amazing-race-photos
+cloudflared tunnel route dns amazing-race-photos photos.example.com
 ```
 
 Sao chép `deployment/cloudflared.example.yml` vào `$env:USERPROFILE/.cloudflared/config.yml`, thay UUID, đường dẫn credentials và hostname. Giữ credentials trong thư mục người dùng, không trong repo. Origin luôn là **http://127.0.0.1:8001**. Kiểm tra trước khi chủ động mở tunnel:
 
 ```powershell
 cloudflared tunnel --config "$env:USERPROFILE/.cloudflared/config.yml" ingress validate
-cloudflared tunnel --config "$env:USERPROFILE/.cloudflared/config.yml" run osa-photos
+cloudflared tunnel --config "$env:USERPROFILE/.cloudflared/config.yml" run amazing-race-photos
 ```
 
 Quy tắc hostname/path và catch-all 404 theo [tài liệu cấu hình](https://developers.cloudflare.com/tunnel/features/locally-managed-tunnels/configuration-file/). Public hostname phải trùng `--public-url` từ **trước khi chốt ảnh**. Tunnel tạm `cloudflared tunnel --url http://127.0.0.1:8001` có URL thay đổi; chỉ dùng khi chủ động thử, cập nhật PUBLIC_BASE_URL và khởi động lại trước phiên mới. QR cũ không tự đổi domain. Laptop phải chạy và có Internet khi khách tải ảnh; tắt tunnel/server thì link tạm không truy cập được. Chưa thử mạng ngoài/4G trong phiên kiểm thử này.

@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="vi">
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <title>AMAZING RACE 2026 — OSA PHOTOBOOTH</title>
+  <title>AMAZING RACE 2026 — PHOTOBOOTH</title>
   <!-- Tailwind CSS CDN -->
   <!-- Tailwind built locally with the unchanged legacy theme/classes. -->
   <!-- QRCode.js CDN for instant client-side QR generation -->
@@ -16,8 +16,8 @@
 
 </head>
 <body class="flex flex-col min-h-screen selection:bg-brand-500 selection:text-white">
-  <section id="boothPairOverlay" hidden aria-label="Ghép thiết bị kiosk">
-    <form id="boothPairForm"><h2>Ghép thiết bị Photobooth</h2><p>Người vận hành nhập mã kiosk trên iPad này. Khách không cần đăng nhập Host.</p><label for="boothPairKey">Mã ghép kiosk</label><input id="boothPairKey" type="password" required autocomplete="off" minlength="16"><p id="boothPairError" role="alert"></p><button type="submit">Ghép thiết bị</button></form>
+<section id="boothPairOverlay" hidden aria-label="Pair kiosk device">
+    <form id="boothPairForm"><h2>Pair Photobooth Device</h2><p>An operator enters the kiosk code on this iPad. Guests do not need to sign in to the Host Dashboard.</p><label for="boothPairKey">Kiosk Pairing Code</label><input id="boothPairKey" type="password" required autocomplete="off" minlength="16"><p id="boothPairError" role="alert"></p><button type="submit">Pair Device</button></form>
   </section>
 
   <!-- ================= PRINT-ONLY CONTAINER ================= -->
@@ -36,50 +36,28 @@
   <header class="w-full bg-white/80 backdrop-blur-md border-b border-brand-100 sticky top-0 z-40">
     <div class="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
       <!-- Brand Logo -->
-      <div class="flex items-center gap-3 cursor-pointer" onclick="app.goToScreen('home')">
+      <div class="flex items-center gap-3">
         <div class="w-10 h-10 rounded-2xl btn-primary-blue flex items-center justify-center shadow-md">
           <span class="text-xl">📸</span>
         </div>
         <div>
           <span class="font-display-title text-xl font-bold bg-gradient-to-r from-brand-700 via-brand-600 to-brand-400 bg-clip-text text-transparent">
-            OSA BOOTH
+            AMAZING RACE 2026
           </span>
           <span class="hidden sm:inline-block ml-2 text-xs font-semibold px-2.5 py-0.5 rounded-full bg-brand-100 text-brand-700 border border-brand-200">
-            Osa first meeting
+            Photobooth
           </span>
         </div>
       </div>
 
-      <!-- Center Step Pills -->
-      <div class="hidden md:flex items-center gap-2 bg-brand-50 p-1.5 rounded-full border border-brand-100">
-        <button id="stepNavHome" onclick="app.goToScreen('home')" class="px-4 py-1.5 rounded-full text-xs font-bold transition-all bg-brand-600 text-white shadow-sm">
-          1. Khởi tạo & Khung
-        </button>
-        <button id="stepNavCapture" onclick="app.goToScreen('capture')" class="px-4 py-1.5 rounded-full text-xs font-bold transition-all text-brand-700 hover:bg-brand-100">
-          2. Chụp 6 Tấm
-        </button>
-        <button id="stepNavResult" onclick="app.goToScreen('result')" class="px-4 py-1.5 rounded-full text-xs font-bold transition-all text-brand-700 hover:bg-brand-100">
-          3. Tuỳ chỉnh, QR & In
-        </button>
-      </div>
-
       <!-- Quick Controls & Settings -->
-      <button type="button" id="newSessionButton" onclick="app.confirmNewGuestSession()" class="px-4 py-3 rounded-xl bg-brand-100 text-brand-800 font-bold">Phiên mới</button>
-      <div id="kioskExtraControls" class="flex items-center gap-2.5">
+      <button type="button" id="newSessionButton" onclick="app.confirmNewGuestSession()" class="px-4 py-3 rounded-xl bg-brand-100 text-brand-800 font-bold">New Session</button>
+      <div id="kioskExtraControls" class="hidden" aria-hidden="true">
         <!-- Full Auto Mode Badge Toggle -->
         <button id="autoModeHeaderBtn" onclick="app.toggleFullAutoMode()" class="flex items-center gap-2 px-3.5 py-2 rounded-full text-xs font-bold border transition-all bg-brand-50 border-brand-300 text-brand-700 hover:bg-brand-100" title="Bật/Tắt tự động chụp và chuyển sang xem kết quả; in sau khi xác nhận">
           <span id="autoModeDot" class="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
           <span>Tự động: <strong id="autoModeStatusText">BẬT</strong></span>
         </button>
-
-        <!-- Upload Custom Frame Quick Button -->
-        <label class="cursor-pointer flex items-center gap-1.5 px-3.5 py-2 rounded-full text-xs font-bold bg-white border border-brand-200 text-brand-700 hover:bg-brand-50 shadow-sm transition-all">
-          <svg class="w-4 h-4 text-brand-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
-          </svg>
-          <span class="hidden sm:inline">Tải Frame PNG</span>
-          <input type="file" accept="image/png,image/webp,image/jpeg" class="hidden" onchange="app.handleCustomFrameUpload(event)" />
-        </label>
 
         <!-- Hardware & Kiosk Settings Modal Trigger -->
         <button onclick="app.openSettingsModal()" class="p-2.5 rounded-full bg-white border border-brand-200 text-brand-700 hover:bg-brand-50 shadow-sm transition-all" title="Cài đặt Camera, Khung mẫu & Máy in">
@@ -95,10 +73,10 @@
   <!-- ================= MAIN CONTENT AREA ================= -->
   <main class="flex-1 flex flex-col items-center justify-center p-4 sm:p-6 max-w-7xl w-full mx-auto">
     <div id="sessionPersistencePanel" class="w-full max-w-6xl mb-4 p-4 rounded-2xl bg-white border border-brand-200 flex flex-wrap items-center justify-between gap-3">
-      <p id="sessionSaveStatus" role="status" aria-live="polite" class="text-xs font-bold text-brand-800">Backend: phiên mới sẽ được tạo khi bắt đầu chụp.</p>
+      <p id="sessionSaveStatus" role="status" aria-live="polite" class="text-xs font-bold text-brand-800">A new session will be created when you start capturing.</p>
       <div class="flex gap-2">
-        <button id="retrySessionSaveBtn" onclick="app.retrySessionSave()" class="hidden px-4 py-2 rounded-xl bg-amber-100 text-amber-800 text-xs font-bold">Thử lưu lại</button>
-        <button id="confirmSessionBtn" onclick="app.confirmAndSaveSession()" class="hidden px-4 py-2 rounded-xl btn-primary-blue text-xs font-bold">Xác nhận &amp; Lưu ảnh trên laptop</button>
+        <button id="retrySessionSaveBtn" onclick="app.retrySessionSave()" class="hidden px-4 py-2 rounded-xl bg-amber-100 text-amber-800 text-xs font-bold">Retry Save</button>
+        <button id="confirmSessionBtn" onclick="app.confirmAndSaveSession(true)" class="hidden px-4 py-2 rounded-xl btn-primary-blue text-xs font-bold">Confirm, Display Photo &amp; Get QR</button>
       </div>
     </div>
 
@@ -125,13 +103,13 @@
 
           <!-- Title -->
           <h1 class="font-display-title text-3xl sm:text-4xl font-bold tracking-tight leading-tight mb-3">
-            <span class="bg-gradient-to-r from-brand-700 via-brand-600 to-brand-400 bg-clip-text text-transparent block">OSA BOOTH</span>
+            <span class="bg-gradient-to-r from-brand-700 via-brand-600 to-brand-400 bg-clip-text text-transparent block">AMAZING RACE 2026</span>
           </h1>
 
           <!-- Subtitle Pill -->
           <div class="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-brand-50 border border-brand-200 text-brand-800 text-xs sm:text-sm font-semibold mb-7">
             <span>✨</span>
-            <span data-shot-template="Osa first meeting • DEMO chụp {count} tấm">Osa first meeting • DEMO chụp 6 tấm</span>
+            <span data-shot-template="AMAZING RACE 2026 • DEMO: {count} photos">AMAZING RACE 2026 • DEMO: 6 photos</span>
             <span>✨</span>
           </div>
 
@@ -139,30 +117,26 @@
           <div class="mb-7 p-3.5 rounded-2xl bg-brand-50/90 border border-brand-200 flex items-center justify-between text-left">
             <div class="flex items-center gap-3">
               <div id="homeFrameThumb" class="w-10 h-12 rounded-lg bg-white border border-brand-200 flex items-center justify-center overflow-hidden shadow-sm shrink-0">
-                <span class="text-xs font-bold text-brand-600">OSA</span>
+                <span class="text-xs font-bold text-brand-600">AR</span>
               </div>
               <div>
-                <div class="text-xs font-bold text-brand-900" id="homeFrameName">Frame: Osa first meeting</div>
-                <div class="text-[11px] text-brand-600 font-medium" id="homeFrameDesc">Bố cục 6 ô chuẩn</div>
+                <div class="text-xs font-bold text-brand-900" id="homeFrameName">Frame: AMAZING RACE 2026</div>
+                <div class="text-[11px] text-brand-600 font-medium" id="homeFrameDesc">Standard 6-photo layout</div>
               </div>
             </div>
-            <label class="cursor-pointer px-3 py-1.5 rounded-xl bg-white hover:bg-brand-100 text-brand-700 border border-brand-200 text-xs font-bold transition-all shrink-0 shadow-sm">
-              Up Frame PNG
-              <input type="file" accept="image/png,image/webp,image/jpeg" class="hidden" onchange="app.handleCustomFrameUpload(event)" />
-            </label>
           </div>
 
           <!-- Giant 1-Click Automatic Start Button -->
           <button onclick="app.startAutomaticSession()" class="w-full py-5 px-8 rounded-full btn-primary-blue font-extrabold text-lg sm:text-xl tracking-wide flex items-center justify-center gap-3 shadow-glow-blue mb-6">
-            <span>BẮT ĐẦU CHỤP NGAY</span>
+            <span>START CAPTURING</span>
             <span class="text-2xl">📸</span>
           </button>
 
           <!-- Bottom Feature Pills -->
           <div class="flex flex-wrap items-center justify-center gap-2 text-xs font-bold text-brand-700">
-            <span data-shot-template="☆ {count} Tấm Liên Tiếp" class="px-3.5 py-1.5 rounded-full bg-brand-50 border border-brand-100">☆ 6 Tấm Liên Tiếp</span>
-            <span class="px-3.5 py-1.5 rounded-full bg-brand-50 border border-brand-100">QR ảnh riêng sau xác nhận</span>
-            <span class="px-3.5 py-1.5 rounded-full bg-brand-50 border border-brand-100">In qua laptop host</span>
+            <span data-shot-template="☆ {count} Photos in a Row" class="px-3.5 py-1.5 rounded-full bg-brand-50 border border-brand-100">☆ 6 Photos in a Row</span>
+            <span class="px-3.5 py-1.5 rounded-full bg-brand-50 border border-brand-100">Private QR after confirmation</span>
+            <span class="px-3.5 py-1.5 rounded-full bg-brand-50 border border-brand-100">Print from the host laptop</span>
           </div>
         </div>
       </div>
@@ -173,10 +147,10 @@
           <div class="text-center sm:text-left mb-5 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             <div>
               <h2 class="font-display-title text-2xl sm:text-3xl font-bold bg-gradient-to-r from-brand-700 to-brand-500 bg-clip-text text-transparent flex items-center justify-center sm:justify-start gap-2">
-                <span>✨ Chọn Khung & Thiết Bị ✨</span>
+                <span>Choose Your Photo Layout</span>
               </h2>
               <p class="text-xs sm:text-sm text-slate-500 font-medium mt-0.5">
-                Tải lên frame PNG cá nhân của bạn hoặc chọn mẫu 6 ô có sẵn
+                Choose the number and orientation of photos before capturing
               </p>
             </div>
           </div>
@@ -188,63 +162,32 @@
                 <svg class="w-4 h-4 text-brand-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/>
                 </svg>
-                Kết nối Camera / Webcam
+                Camera / Webcam
               </label>
               <button onclick="app.refreshCameraList()" class="text-xs font-bold text-brand-600 hover:text-brand-800 flex items-center gap-1">
-                <span>🔄 Làm mới</span>
+                <span>🔄 Refresh</span>
               </button>
             </div>
             <div class="flex gap-2">
               <select id="homeCameraSelect" onchange="app.selectCameraDevice(this.value)" class="flex-1 bg-white border border-brand-200 rounded-xl px-3.5 py-2.5 text-sm font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-brand-500">
-                <option value="">Đang tìm thiết bị camera...</option>
+                <option value="">Searching for cameras...</option>
               </select>
-              <button onclick="app.toggleMirror()" id="homeMirrorBtn" class="px-3.5 py-2.5 rounded-xl bg-white border border-brand-200 text-xs font-bold text-brand-700 hover:bg-brand-100 transition-all shrink-0" title="Lật ngược ảnh gương">
-                🪞 Lật gương: BẬT
+              <button onclick="app.toggleMirror()" id="homeMirrorBtn" class="px-3.5 py-2.5 rounded-xl bg-white border border-brand-200 text-xs font-bold text-brand-700 hover:bg-brand-100 transition-all shrink-0" title="Mirror image">
+                🪞 Mirror: ON
               </button>
             </div>
           </div>
 
-          <!-- Frame Layout / Custom Frame Upload List -->
-          <div class="space-y-3 mb-6">
-            <!-- Option 1: Upload Personal PNG Frame (6 Slots) -->
-            <div id="frameCardCustom" class="p-4 rounded-2xl border-2 transition-all cursor-pointer flex items-center justify-between bg-white border-brand-200 hover:border-brand-400" onclick="document.getElementById('customFrameInputMain').click()">
+          <!-- Guest layout choices; advanced custom frames remain Host-only in the dashboard. -->
+          <div class="space-y-3 mb-6" id="setupLayoutChoices" role="radiogroup" aria-label="Choose photo layout">
+            <div id="frameCardGrid2x3" role="radio" aria-checked="true" tabindex="0" onclick="app.selectPresetLayout('grid2x3')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();app.selectPresetLayout('grid2x3')}" class="layout-choice-card p-4 rounded-2xl border-2 transition-all cursor-pointer bg-brand-50/80 border-brand-500 shadow-sm">
               <div class="flex items-center gap-3.5">
-                <div class="w-12 h-12 rounded-2xl bg-brand-100 text-brand-600 flex items-center justify-center text-2xl shrink-0">
-                  🖼️
-                </div>
                 <div>
-                  <div class="font-bold text-slate-900 text-sm sm:text-base flex items-center gap-2">
-                    <span>Up Frame PNG: Osa first meeting (6 Ô)</span>
-                    <span id="customFrameBadge" class="hidden px-2 py-0.5 text-[10px] rounded-full bg-brand-600 text-white font-bold">ĐANG DÙNG</span>
-                  </div>
-                  <p class="text-xs text-slate-500 mt-0.5" id="customFrameSubtext">
-                    Nhấn để tải file Frame PNG cá nhân của bạn (Tự động khớp 6 ô trống)
-                  </p>
+                  <div class="font-bold text-slate-900 text-base sm:text-lg">2×3 Portrait</div>
+                  <p class="text-sm text-slate-500">6 photos · 2 columns × 3 rows</p>
                 </div>
               </div>
-              <div class="flex items-center gap-2">
-                <button type="button" onclick="event.stopPropagation(); app.openSlotCalibrator()" id="calibrateSlotsBtn" class="hidden px-3 py-1.5 rounded-xl bg-brand-50 hover:bg-brand-100 text-brand-700 text-xs font-bold border border-brand-200">
-                  Căn chỉnh ô
-                </button>
-                <div class="w-9 h-9 rounded-full bg-brand-50 border border-brand-200 flex items-center justify-center text-brand-600 font-bold">
-                  ↑
-                </div>
-              </div>
-              <input id="customFrameInputMain" type="file" accept="image/png,image/webp,image/jpeg" class="hidden" onchange="app.handleCustomFrameUpload(event)" />
-            </div>
-
-            <!-- Option 2: Standard 2x3 Grid (6 Photos - Vertical Photobooth Card 4x6) -->
-            <div id="frameCardGrid2x3" onclick="app.selectPresetLayout('grid2x3')" class="p-4 rounded-2xl border-2 transition-all cursor-pointer flex items-center justify-between bg-brand-50/80 border-brand-500 shadow-sm">
-              <div class="flex items-center gap-3.5">
-                <div class="w-12 h-12 rounded-2xl bg-brand-600 text-white flex items-center justify-center text-xl font-bold shrink-0">
-                  2×3
-                </div>
-                <div>
-                  <div class="font-bold text-slate-900 text-sm sm:text-base">Frame Osa first meeting — Dọc (2 Cột × 3 Hàng)</div>
-                  <p class="text-xs text-slate-500">Khung 6 ô dọc tiêu chuẩn OSA BOOTH (10×15cm)</p>
-                </div>
-              </div>
-              <div class="grid grid-cols-2 gap-1 p-1.5 bg-white rounded-lg border border-brand-200">
+              <div class="layout-diagram grid grid-cols-2 gap-1 p-2 bg-white rounded-lg border border-brand-200" aria-hidden="true">
                 <div class="w-3 h-2.5 rounded-sm bg-brand-500"></div>
                 <div class="w-3 h-2.5 rounded-sm bg-brand-500"></div>
                 <div class="w-3 h-2.5 rounded-sm bg-brand-500"></div>
@@ -253,44 +196,33 @@
                 <div class="w-3 h-2.5 rounded-sm bg-brand-500"></div>
               </div>
             </div>
-
-            <!-- Option 3: Horizontal 3x2 Grid (6 Photos Landscape) -->
-            <div id="frameCardGrid3x2" onclick="app.selectPresetLayout('grid3x2')" class="p-4 rounded-2xl border-2 transition-all cursor-pointer flex items-center justify-between bg-white border-brand-100 hover:border-brand-300">
+            <div id="frameCardLandscape4" role="radio" aria-checked="false" tabindex="0" onclick="app.selectPresetLayout('landscape_4')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();app.selectPresetLayout('landscape_4')}" class="layout-choice-card p-4 rounded-2xl border-2 transition-all cursor-pointer bg-white border-brand-100">
               <div class="flex items-center gap-3.5">
-                <div class="w-12 h-12 rounded-2xl bg-brand-100 text-brand-700 flex items-center justify-center text-xl font-bold shrink-0">
-                  3×2
-                </div>
                 <div>
-                  <div class="font-bold text-slate-900 text-sm sm:text-base">Frame Osa first meeting — Ngang (3 Cột × 2 Hàng)</div>
-                  <p class="text-xs text-slate-500">Khung 6 ô ngang hiện đại OSA BOOTH</p>
+                  <div class="font-bold text-slate-900 text-base sm:text-lg">2×2 Landscape</div>
+                  <p class="text-sm text-slate-500">4 photos · 2 columns × 2 rows</p>
                 </div>
               </div>
-              <div class="grid grid-cols-3 gap-1 p-1.5 bg-brand-50 rounded-lg border border-brand-200">
-                <div class="w-2.5 h-2.5 rounded-sm bg-brand-400"></div>
-                <div class="w-2.5 h-2.5 rounded-sm bg-brand-400"></div>
-                <div class="w-2.5 h-2.5 rounded-sm bg-brand-400"></div>
-                <div class="w-2.5 h-2.5 rounded-sm bg-brand-400"></div>
-                <div class="w-2.5 h-2.5 rounded-sm bg-brand-400"></div>
-                <div class="w-2.5 h-2.5 rounded-sm bg-brand-400"></div>
+              <div class="layout-diagram grid grid-cols-2 gap-1 p-2 bg-brand-50 rounded-lg border border-brand-200" aria-hidden="true">
+                <div class="w-4 h-4 rounded-sm bg-brand-400"></div><div class="w-4 h-4 rounded-sm bg-brand-400"></div>
+                <div class="w-4 h-4 rounded-sm bg-brand-400"></div><div class="w-4 h-4 rounded-sm bg-brand-400"></div>
               </div>
             </div>
           </div>
-
-          <button id="frameCardLandscape4" onclick="app.selectPresetLayout('landscape_4')" class="w-full mb-4 p-4 rounded-2xl border-2 border-brand-200 bg-white text-left font-bold text-brand-800">4 ảnh ngang — 2 Cột × 2 Hàng</button>
           <!-- Countdown Timer Selector -->
           <div>
             <div class="flex items-center justify-between mb-2.5">
               <span class="text-xs font-extrabold uppercase tracking-wider text-brand-800 flex items-center gap-1.5">
-                <span>⏱️ Thời gian đếm ngược mỗi tấm (Timer)</span>
+                <span>⏱️ Countdown before each photo</span>
               </span>
-              <span class="text-xs font-semibold text-brand-600" id="timerHintText">5 giây / tấm</span>
+              <span class="text-xs font-semibold text-brand-600" id="timerHintText">5 seconds per photo</span>
             </div>
             <div class="grid grid-cols-4 gap-2.5">
               <button onclick="app.setCountdownSeconds(3)" id="timerBtn3" class="py-3 rounded-2xl font-extrabold text-sm border transition-all bg-brand-50 border-brand-200 text-brand-800 hover:bg-brand-100">
-                3s (Nhanh)
+                3s (Quick)
               </button>
               <button onclick="app.setCountdownSeconds(5)" id="timerBtn5" class="py-3 rounded-2xl font-extrabold text-sm border transition-all btn-primary-blue text-white border-transparent">
-                5s (Chuẩn)
+                5s (Standard)
               </button>
               <button onclick="app.setCountdownSeconds(7)" id="timerBtn7" class="py-3 rounded-2xl font-extrabold text-sm border transition-all bg-brand-50 border-brand-200 text-brand-800 hover:bg-brand-100">
                 7s
@@ -311,12 +243,12 @@
          ===================================================================== -->
     <section id="screenCapture" class="hidden w-full max-w-6xl my-auto">
       <div id="hostCameraTools" hidden class="p-3 mb-2 rounded-xl bg-white border border-brand-200 text-brand-800 text-sm">
-        Camera host: Preview và file chụp được nhận từ laptop; adapter Mock/UVC là DEMO.
+        Host camera: Preview and photo files come from the laptop; Mock/UVC adapters are DEMO.
         <button type="button" onclick="app.prepareHostCamera().catch(e=>app.showToast(e.message,'error'))" class="font-bold underline ml-2">Kết nối lại camera</button>
       </div>
       <div class="flex flex-wrap items-center justify-between gap-3 mb-4 bg-white/90 backdrop-blur-md px-5 py-3.5 rounded-2xl border border-brand-100 shadow-card-blue">
         <button onclick="app.goToScreen('home')" class="flex items-center gap-1.5 text-sm font-bold text-brand-700 hover:text-brand-900 transition-all">
-          <span>← Quay lại</span>
+          <span>← Back</span>
         </button>
 
         <div class="flex items-center gap-3">
@@ -328,59 +260,58 @@
 
         <div class="flex items-center gap-2">
           <select id="liveCameraSelect" onchange="app.selectCameraDevice(this.value)" class="bg-brand-50 border border-brand-200 rounded-xl px-3 py-1.5 text-xs font-bold text-brand-800 focus:outline-none"></select>
-          <button onclick="app.toggleMirror()" class="p-2 rounded-xl bg-brand-50 hover:bg-brand-100 text-brand-700 border border-brand-200 text-xs font-bold" title="Lật gương">🪞</button>
+          <button onclick="app.toggleMirror()" class="p-2 rounded-xl bg-brand-50 hover:bg-brand-100 text-brand-700 border border-brand-200 text-xs font-bold" title="Mirror">🪞</button>
         </div>
       </div>
 
       <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
         <div class="lg:col-span-8 flex flex-col">
           <div id="cameraPreviewPanel" class="relative w-full aspect-[4/3] bg-slate-900 rounded-[2rem] overflow-hidden border-4 border-white shadow-soft-blue flex items-center justify-center">
-            <img id="hostCameraPreview" class="mirror-video" hidden alt="Live View từ camera trên laptop host" />
+            <img id="hostCameraPreview" class="mirror-video" hidden alt="Live view from the host laptop camera" />
             <p id="hostCameraStatus" role="status" hidden></p>
             <span id="hostShotProgress"></span>
-            <button id="hostCaptureExit" type="button" onclick="app.exitHostCapture()">Dừng đếm ngược / Xem ảnh</button>
             <video id="liveVideo" autoplay playsinline muted class="w-full h-full object-cover mirror-video"></video>
             <canvas id="simLiveCanvas" width="960" height="720" class="hidden w-full h-full object-cover"></canvas>
 
             <div id="cameraFallbackBar" class="hidden absolute top-4 left-4 right-4 z-20 flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 rounded-2xl bg-slate-900/75 backdrop-blur-md border border-brand-300/40 text-white text-xs">
               <div class="flex items-center gap-2">
                 <span class="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse"></span>
-                <span class="font-semibold">Đang dùng Camera Mô Phỏng (Chưa cấp quyền Webcam)</span>
+                <span class="font-semibold">Using the simulated camera (webcam permission not granted)</span>
               </div>
               <div class="flex items-center gap-2">
                 <button type="button" onclick="app.requestRealCameraPermission()" class="px-3 py-1 rounded-xl bg-brand-500 hover:bg-brand-400 text-white font-bold transition-all">📷 Cấp quyền Camera</button>
                 <label class="cursor-pointer px-3 py-1 rounded-xl bg-white/20 hover:bg-white/30 text-white font-bold transition-all">
-                  📁 Chọn 6 ảnh từ máy
+                  📁 Select 6 photos from this device
                   <input type="file" accept="image/*" multiple class="hidden" onchange="app.handleManualPhotoFilesUpload(event)" />
                 </label>
               </div>
             </div>
 
             <div class="absolute inset-4 border-2 border-dashed border-white/40 rounded-2xl pointer-events-none flex items-end justify-center pb-3">
-              <span class="px-3 py-1 rounded-full bg-slate-900/50 backdrop-blur-sm text-white/90 text-xs font-semibold">Hãy nhìn vào ống kính & tạo dáng thật tươi nhé! ✨</span>
+              <span class="px-3 py-1 rounded-full bg-slate-900/50 backdrop-blur-sm text-white/90 text-xs font-semibold">Look at the camera and strike a pose! ✨</span>
             </div>
 
             <div id="retakeBanner" class="hidden absolute top-4 left-1/2 -translate-x-1/2 px-5 py-2 rounded-full bg-amber-500 text-white font-extrabold text-xs sm:text-sm shadow-lg z-20 flex items-center gap-2">
-              <span>🔄 Đang chụp lại Ô số <span id="retakeSlotNumber">1</span></span>
-              <button onclick="app.cancelSingleRetake()" class="underline ml-2 text-white/90 hover:text-white">Huỷ</button>
+              <span>🔄 Retaking photo <span id="retakeSlotNumber">1</span></span>
+              <button id="cancelRetakeBtn" onclick="app.cancelSingleRetake()" class="underline ml-2 text-white/90 hover:text-white">Back</button>
             </div>
 
             <div id="countdownOverlay" class="hidden absolute inset-0 bg-brand-900/25 backdrop-blur-[2px] flex flex-col items-center justify-center z-20 pointer-events-none">
               <div id="countdownNumber" class="font-display-title text-[7rem] sm:text-[9rem] font-bold text-white drop-shadow-[0_10px_25px_rgba(37,99,235,0.85)] leading-none">5</div>
-              <div id="countdownLabel" class="mt-2 px-5 py-2 rounded-full bg-white/90 text-brand-800 font-extrabold text-sm sm:text-base shadow-lg">Chuẩn bị chụp tấm #1...</div>
+              <div id="countdownLabel" class="mt-2 px-5 py-2 rounded-full bg-white/90 text-brand-800 font-extrabold text-sm sm:text-base shadow-lg">Get ready for photo #1...</div>
             </div>
 
             <div id="autoGraceOverlay" class="hidden absolute inset-x-6 bottom-6 p-5 rounded-3xl bg-white/95 backdrop-blur-md border-2 border-brand-400 shadow-2xl z-30 flex flex-col sm:flex-row items-center justify-between gap-4">
               <div class="text-center sm:text-left">
                 <div class="font-extrabold text-brand-900 text-base flex items-center justify-center sm:justify-start gap-2">
                   <span class="w-3 h-3 rounded-full bg-emerald-500 animate-ping"></span>
-                  <span>Đã chụp đủ 6 tấm! Tự động xem kết quả sau <span id="graceSecondsText" class="text-brand-600 text-lg">5</span>s...</span>
+                  <span>All 6 photos captured! Opening your results in <span id="graceSecondsText" class="text-brand-600 text-lg">5</span>s...</span>
                 </div>
-                <p class="text-xs text-slate-600 font-medium mt-0.5">Chạm vào bất kỳ ảnh nào bên phải nếu bạn muốn <strong>chụp lại (Retake)</strong> ô đó.</p>
+                <p class="text-xs text-slate-600 font-medium mt-0.5">Tap any photo on the right to <strong>retake</strong> that slot.</p>
               </div>
               <div class="flex items-center gap-2 shrink-0">
-                <button onclick="app.pauseAutoGraceForReview()" class="px-4 py-2.5 rounded-xl bg-brand-100 hover:bg-brand-200 text-brand-800 font-bold text-xs transition-all">✋ Dừng để xem lại</button>
-                <button onclick="app.finishCaptureAndGoToResult(true)" class="px-5 py-2.5 rounded-xl btn-primary-blue font-bold text-xs">Tiếp tục ngay →</button>
+                <button onclick="app.pauseAutoGraceForReview()" class="px-4 py-2.5 rounded-xl bg-brand-100 hover:bg-brand-200 text-brand-800 font-bold text-xs transition-all">✋ Review Now</button>
+                <button onclick="app.finishCaptureAndGoToResult(true)" class="px-5 py-2.5 rounded-xl btn-primary-blue font-bold text-xs">Continue →</button>
               </div>
             </div>
           </div>
@@ -391,10 +322,11 @@
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/>
                 <circle cx="12" cy="13" r="3" stroke-width="2.2"/>
               </svg>
-              <span id="mainCaptureBtnText">Bắt Đầu Chụp Tự Động (6 Tấm)</span>
+              <span id="mainCaptureBtnText">Start Automatic Capture (6 Photos)</span>
             </button>
-            <button id="manualInstantSnapBtn" onclick="app.captureCurrentFrameImmediately()" class="px-5 py-4 rounded-full bg-white hover:bg-brand-50 text-brand-700 border border-brand-200 font-bold text-sm shadow-sm transition-all">⚡ Chụp tức thì</button>
-            <button id="resetAllShotsBtn" onclick="app.confirmResetShots()" class="px-5 py-4 rounded-full bg-white hover:bg-rose-50 text-rose-600 border border-rose-200 font-bold text-sm shadow-sm transition-all">🗑️ Xoá chụp lại từ đầu</button>
+            <button id="manualInstantSnapBtn" onclick="app.captureCurrentFrameImmediately()" class="px-5 py-4 rounded-full bg-white hover:bg-brand-50 text-brand-700 border border-brand-200 font-bold text-sm shadow-sm transition-all">⚡ Capture Now</button>
+            <button id="completeCaptureBtn" type="button" onclick="app.completePausedCapture()" class="hidden px-6 py-4 rounded-full btn-primary-blue font-bold text-sm" disabled>Complete</button>
+            <button id="resetAllShotsBtn" onclick="app.confirmResetShots()" class="px-5 py-4 rounded-full bg-white hover:bg-rose-50 text-rose-600 border border-rose-200 font-bold text-sm shadow-sm transition-all">🗑️ Start Over</button>
           </div>
         </div>
 
@@ -402,16 +334,16 @@
           <div class="glass-card rounded-[2rem] p-5 flex-1 flex flex-col justify-between">
             <div>
               <div class="flex items-center justify-between mb-3">
-                <h3 data-shot-template="Khung {count} Tấm Đã Chụp" class="font-display-title text-lg font-bold text-brand-900">Khung 6 Tấm Đã Chụp</h3>
-                <span class="text-xs font-bold px-2.5 py-1 rounded-full bg-brand-100 text-brand-700" id="capturedCountBadge">0 / 6 hoàn tất</span>
+                <h3 data-shot-template="{count}-Photo Layout" class="font-display-title text-lg font-bold text-brand-900">6-Photo Layout</h3>
+                <span class="text-xs font-bold px-2.5 py-1 rounded-full bg-brand-100 text-brand-700" id="capturedCountBadge">0 / 6 complete</span>
               </div>
-              <p class="text-xs text-slate-500 mb-4">Nhấn vào <strong>từng ô ảnh</strong> bên dưới nếu bạn muốn xoá hoặc chụp lại riêng tấm đó.</p>
+              <p class="text-xs text-slate-500 mb-4">Tap any <strong>photo slot</strong> below to delete or retake that photo.</p>
               <div id="sixSlotsGrid" class="grid grid-cols-2 gap-3"></div>
             </div>
 
             <div class="mt-5 pt-4 border-t border-brand-100">
               <button id="goToResultBtn" onclick="app.finishCaptureAndGoToResult(false)" disabled class="w-full py-4 rounded-2xl font-extrabold text-sm sm:text-base transition-all flex items-center justify-center gap-2 bg-slate-200 text-slate-400 cursor-not-allowed">
-                <span>Hoàn Tất & Xuất Ảnh In ✨</span>
+                <span>Finish &amp; Create Print ✨</span>
                 <span>→</span>
               </button>
             </div>
@@ -427,109 +359,71 @@
     <section id="screenResult" class="hidden w-full max-w-6xl my-auto">
       <div class="glass-card rounded-full px-6 py-3.5 mb-6 flex items-center justify-between">
         <button onclick="app.goToScreen('capture')" class="flex items-center gap-1.5 text-sm font-bold text-brand-700 hover:text-brand-900">
-          <span>← Chụp lại</span>
+          <span>← Retake Photos</span>
         </button>
         <div class="font-display-title text-xl sm:text-2xl font-bold bg-gradient-to-r from-brand-700 via-brand-600 to-brand-400 bg-clip-text text-transparent flex items-center gap-2">
-          <span>✨ Tuỳ Chỉnh & Nhận Ảnh ✨</span>
+          <span>✨ Customize &amp; Get Your Photo ✨</span>
         </div>
-        <button onclick="app.confirmNewGuestSession()" class="px-4 py-1.5 rounded-full bg-brand-100 hover:bg-brand-200 text-brand-800 text-xs sm:text-sm font-extrabold transition-all">🔄 Khách tiếp theo</button>
       </div>
 
       <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         <div class="lg:col-span-5 flex flex-col items-center">
           <div class="glass-card rounded-[2rem] p-5 w-full flex flex-col items-center">
             <div class="flex items-center justify-between w-full mb-3 px-1">
-              <span class="text-xs font-extrabold uppercase tracking-wider text-brand-700">Bản Xem Trước Chất Lượng Cao</span>
-              <span class="text-[11px] font-semibold text-slate-500">Kéo thả để di chuyển Sticker</span>
+              <span class="text-xs font-extrabold uppercase tracking-wider text-brand-700">High-Quality Preview</span>
+              <span class="text-[11px] font-semibold text-slate-500">Drag stickers to move them</span>
             </div>
 
             <div class="relative w-full flex items-center justify-center bg-brand-50/70 rounded-2xl p-3 border border-brand-100 overflow-hidden">
               <canvas id="compositeCanvas" class="max-w-full max-h-[62vh] w-auto h-auto rounded-xl shadow-soft-blue cursor-grab active:cursor-grabbing bg-white"></canvas>
             </div>
 
-            <p id="finalPhotoNotice" hidden class="text-sm text-brand-700 mt-3">Ảnh cuối đã được chốt (hoặc đang chờ xác nhận lưu). Không sửa/chụp lại phiên này. Bắt đầu Khách mới nếu cần ảnh khác.</p>
+            <p id="finalPhotoNotice" hidden class="text-sm text-brand-700 mt-3">Your final photo is confirmed or waiting to be saved. This session can no longer be edited or retaken. Start a new session to create another photo.</p>
             <details id="printReadyBox" hidden class="w-full mt-3">
-              <summary class="font-bold text-brand-700 cursor-pointer">Xem bản in có QR (ảnh khách tải cũng là bản này)</summary>
-              <img id="printReadyPreview" alt="Bản in có QR riêng" class="max-w-full max-h-[62vh] mx-auto mt-2" />
-              <a id="printReadyDownload" class="text-brand-700 underline" download>Tải bản in có QR</a>
+              <summary class="font-bold text-brand-700 cursor-pointer">Preview Print Version with QR (also used for downloads)</summary>
+              <img id="printReadyPreview" alt="Print version with a private QR code" class="max-w-full max-h-[62vh] mx-auto mt-2" />
+              <a id="printReadyDownload" class="text-brand-700 underline" download>Download Print Version with QR</a>
             </details>
-            <label class="mt-3 w-full font-bold text-brand-700">Số bản in <select id="printCopies" class="border rounded-xl p-2"><option value="1">1 bản</option></select></label>
-            <p id="printStatus" role="status" class="w-full mt-2 text-sm text-brand-700">Xác nhận & Tạo QR trước khi in.</p>
-            <button type="button" onclick="app.loadPrintConfig()" class="text-xs text-brand-700 underline">Kiểm tra lại máy in</button>
+            <label class="mt-3 w-full font-bold text-brand-700">Print copies <select id="printCopies" class="border rounded-xl p-2"><option value="1">1 copy</option></select></label>
+            <p id="printStatus" role="status" class="w-full mt-2 text-sm text-brand-700">Confirm your photo and create a QR code before printing.</p>
+            <button type="button" onclick="app.loadPrintConfig()" class="text-xs text-brand-700 underline">Check printer status</button>
             <div class="grid grid-cols-2 gap-3 w-full mt-5">
               <button id="printPhotoBtn" disabled onclick="app.triggerPrint()" class="py-4 px-5 rounded-2xl btn-primary-blue font-extrabold text-sm sm:text-base flex items-center justify-center gap-2 shadow-glow-blue">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/>
                 </svg>
-                <span>In ảnh</span>
+                <span>Print Photo</span>
               </button>
               <button onclick="app.downloadCompositeImage()" class="py-4 px-5 rounded-2xl bg-white hover:bg-brand-50 text-brand-700 border-2 border-brand-300 font-extrabold text-sm sm:text-base flex items-center justify-center gap-2 shadow-sm transition-all">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
                 </svg>
-                <span>TẢI ẢNH VỀ</span>
+                <span>DOWNLOAD PHOTO</span>
               </button>
             </div>
           </div>
         </div>
 
         <div class="lg:col-span-7 flex flex-col gap-5">
-          <div class="glass-card rounded-[2rem] p-5 sm:p-6 border-2 border-brand-300 bg-gradient-to-br from-white via-brand-50/50 to-brand-100/40">
-            <div class="flex flex-col sm:flex-row items-center gap-5">
-              <div class="p-3.5 bg-white rounded-2xl border-2 border-brand-200 shadow-md shrink-0 flex flex-col items-center relative">
-                <div id="qrCodeContainer" class="w-36 h-36 flex items-center justify-center relative"></div>
-                <div id="qrLoadingOverlay" class="hidden absolute inset-3.5 bg-white/95 backdrop-blur-xs rounded-xl flex flex-col items-center justify-center gap-2 z-10">
-                  <div class="w-8 h-8 border-3 border-brand-600 border-t-transparent rounded-full animate-spin"></div>
-                  <span class="text-[10px] font-extrabold text-brand-700 text-center px-2">Đang tạo trang Web tải ảnh...</span>
-                </div>
-                <span id="qrStatusBadge" class="mt-2 text-[11px] font-extrabold px-2.5 py-0.5 rounded-full bg-brand-100 text-brand-700">📱 Quét để tải ảnh</span>
-              </div>
-
-              <div class="flex-1 text-center sm:text-left w-full">
-                <div class="flex flex-wrap items-center justify-center sm:justify-start gap-2 mb-2">
-                  <span id="qrReadyPill" class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-100 text-emerald-800 text-xs font-extrabold">
-                    <span>🌐 Đã liên kết Web QR Tải Ảnh</span>
-                  </span>
-                  <select disabled id="qrProviderSelect" onchange="app.setQRProvider(this.value)" class="px-2.5 py-1 rounded-full bg-white border border-brand-200 text-[11px] font-bold text-brand-800 focus:outline-none">
-                    <option value="self_hosted">Backend trên laptop • QR riêng</option>
-                  </select>
-                </div>
-
-                <h3 class="font-display-title text-xl sm:text-2xl font-bold text-brand-900 mb-1">QR Riêng Cho Ảnh Của Bạn</h3>
-                <p id="qrDescriptionText" class="text-xs text-slate-600 font-medium mb-3">Quét mã QR bằng Camera hoặc Zalo trên điện thoại để mở trang web và lưu ảnh về máy!</p>
-                <p id="qrLocalWarning" hidden role="note" class="text-xs font-extrabold text-amber-800 bg-amber-50 border border-amber-200 rounded-xl p-3 mb-3">⚠️ QR localhost chỉ mở trên máy này. Không dùng được trên điện thoại khác.</p>
-                <p id="qrLanWarning" hidden role="note" class="text-xs font-extrabold text-amber-800 bg-amber-50 border border-amber-200 rounded-xl p-3 mb-3">QR LAN chỉ dùng khi điện thoại ở cùng Wi-Fi với laptop. Không dùng qua 4G/5G.</p>
-
-                <div class="flex items-center gap-2 p-2 rounded-xl bg-white border border-brand-200 mb-3 shadow-2xs">
-                  <input id="qrExternalUrlInput" type="text" readonly value="Đang khởi tạo đường dẫn tải ảnh..." class="flex-1 text-xs font-mono text-brand-800 bg-transparent px-2 focus:outline-none truncate" />
-                  <button onclick="app.copyQRLink()" class="px-2.5 py-1.5 rounded-lg bg-brand-50 hover:bg-brand-100 text-brand-700 text-[11px] font-bold shrink-0 transition-all">📋 Copy</button>
-                  <a id="qrExternalOpenBtn" href="#" target="_blank" rel="noopener noreferrer" class="px-3 py-1.5 rounded-lg btn-primary-blue text-white text-[11px] font-extrabold shrink-0 flex items-center gap-1"><span>Mở Web ↗</span></a>
-                </div>
-
-                <div class="flex flex-wrap items-center justify-center sm:justify-start gap-2">
-                  <button id="confirmQRCodeBtn" onclick="app.confirmPhotoAndGenerateQR()" class="px-3.5 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold transition-all shadow-xs flex items-center gap-1.5"><span>✓ Xác nhận &amp; Tạo QR</span></button>
-                  <button onclick="app.openMobilePreviewModal()" class="px-3.5 py-2 rounded-xl bg-white hover:bg-brand-50 text-brand-700 border border-brand-200 text-xs font-bold transition-all">📱 Xem thử giao diện ĐT</button>
-                  <label class="cursor-pointer px-3.5 py-2 rounded-xl bg-white hover:bg-brand-50 text-brand-700 border border-brand-200 text-xs font-bold transition-all">
-                    🖼️ Đổi Frame PNG
-                    <input type="file" accept="image/png,image/webp,image/jpeg" class="hidden" onchange="app.handleCustomFrameUpload(event)" />
-                  </label>
-                </div>
-              </div>
-            </div>
+          <div class="glass-card guest-qr-card rounded-[2rem] p-5 border-2 border-brand-300">
+            <div id="qrCodeContainer" role="status" aria-live="polite"></div>
+            <div id="qrLoadingOverlay" class="hidden text-sm text-brand-700" role="status">Preparing your QR code…</div>
+            <p id="qrExpiryMessage" hidden>Your QR code expires in 24 hours.</p>
+            <p id="qrDescriptionText" role="status" class="text-sm text-brand-700">Confirm your photo to get a QR code.</p>
           </div>
 
           <!-- 4 Pill Customization Tabs -->
           <div class="grid grid-cols-4 gap-2.5">
             <button onclick="app.switchCustomTab('filters')" id="tabBtn_filters" class="py-3 px-3 rounded-full font-extrabold text-xs sm:text-sm flex items-center justify-center gap-1.5 transition-all btn-primary-blue text-white"><span>🎚️ Bộ lọc</span></button>
             <button onclick="app.switchCustomTab('stickers')" id="tabBtn_stickers" class="py-3 px-3 rounded-full font-extrabold text-xs sm:text-sm flex items-center justify-center gap-1.5 transition-all bg-white border border-brand-200 text-brand-800 hover:bg-brand-50"><span>😊 Sticker</span></button>
-            <button onclick="app.switchCustomTab('color')" id="tabBtn_color" class="py-3 px-3 rounded-full font-extrabold text-xs sm:text-sm flex items-center justify-center gap-1.5 transition-all bg-white border border-brand-200 text-brand-800 hover:bg-brand-50"><span>🎨 Màu khung</span></button>
-            <button onclick="app.switchCustomTab('text')" id="tabBtn_text" class="py-3 px-3 rounded-full font-extrabold text-xs sm:text-sm flex items-center justify-center gap-1.5 transition-all bg-white border border-brand-200 text-brand-800 hover:bg-brand-50"><span>🇹 Chữ & Logo</span></button>
+            <button onclick="app.switchCustomTab('color')" id="tabBtn_color" class="py-3 px-3 rounded-full font-extrabold text-xs sm:text-sm flex items-center justify-center gap-1.5 transition-all bg-white border border-brand-200 text-brand-800 hover:bg-brand-50"><span>🎨 Frame Color</span></button>
+            <button onclick="app.switchCustomTab('text')" id="tabBtn_text" class="py-3 px-3 rounded-full font-extrabold text-xs sm:text-sm flex items-center justify-center gap-1.5 transition-all bg-white border border-brand-200 text-brand-800 hover:bg-brand-50"><span>🇹 Text &amp; Logo</span></button>
           </div>
 
           <!-- Tab Content Panel -->
           <div class="glass-card rounded-[2rem] p-6">
             <div id="tabPanel_filters" class="space-y-3">
-              <div class="text-xs font-bold text-slate-500 uppercase tracking-wider">Chọn bộ lọc màu ảnh (Photo Filter)</div>
+              <div class="text-xs font-bold text-slate-500 uppercase tracking-wider">Choose a photo filter</div>
               <div id="filterGridContainer" class="grid grid-cols-3 gap-3"></div>
             </div>
 
@@ -538,20 +432,20 @@
               <div id="stickerItemsGrid" class="grid grid-cols-6 gap-2.5 py-2"></div>
               <div class="pt-3 border-t border-brand-100 flex flex-wrap items-center justify-between gap-2">
                 <label class="cursor-pointer flex-1 py-2.5 px-4 rounded-xl border-2 border-dashed border-brand-300 hover:bg-brand-50 text-brand-700 font-bold text-xs flex items-center justify-center gap-2 transition-all">
-                  <span>↑ Tải Sticker PNG Cá Nhân</span>
+                  <span>↑ Upload a Custom PNG Sticker</span>
                   <input type="file" accept="image/png,image/webp,image/gif" class="hidden" onchange="app.handleCustomStickerUpload(event)" />
                 </label>
-                <button onclick="app.clearAllStickers()" class="py-2.5 px-4 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 font-bold text-xs transition-all">Xoá hết Sticker</button>
+                <button onclick="app.clearAllStickers()" class="py-2.5 px-4 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 font-bold text-xs transition-all">Remove All Stickers</button>
               </div>
             </div>
 
             <div id="tabPanel_color" class="hidden space-y-4">
               <div class="flex items-center justify-between">
-                <span class="text-xs font-bold text-slate-500 uppercase tracking-wider">Màu nền & Viền Khung (Background Color)</span>
+                <span class="text-xs font-bold text-slate-500 uppercase tracking-wider">Background &amp; Frame Color</span>
               </div>
               <div id="colorSwatchesGrid" class="grid grid-cols-6 gap-3"></div>
               <div class="pt-3 border-t border-brand-100 flex items-center gap-4">
-                <span class="text-xs font-bold text-slate-700">Màu tuỳ chọn:</span>
+                <span class="text-xs font-bold text-slate-700">Custom color:</span>
                 <input type="color" id="customColorPicker" value="#1E40AF" oninput="app.setFrameBackgroundColor(this.value)" class="w-11 h-11 rounded-xl cursor-pointer border border-brand-200 p-0.5 bg-white" />
                 <span id="customColorHexLabel" class="text-xs font-mono font-bold text-slate-600">#1E40AF</span>
               </div>
@@ -559,16 +453,16 @@
 
             <div id="tabPanel_text" class="hidden space-y-4">
               <div>
-                <label class="block text-xs font-bold text-slate-600 mb-1.5">Tiêu đề trên (Top Text)</label>
-                <input type="text" id="inputTopText" value="OSA BOOTH" oninput="app.updateCustomTexts()" class="w-full px-4 py-2.5 rounded-xl bg-brand-50/70 border border-brand-200 text-sm font-bold text-brand-900 focus:outline-none focus:ring-2 focus:ring-brand-500" />
+                <label class="block text-xs font-bold text-slate-600 mb-1.5">Top text</label>
+                <input type="text" id="inputTopText" value="AMAZING RACE 2026" oninput="app.updateCustomTexts()" class="w-full px-4 py-2.5 rounded-xl bg-brand-50/70 border border-brand-200 text-sm font-bold text-brand-900 focus:outline-none focus:ring-2 focus:ring-brand-500" />
               </div>
               <div>
-                <label class="block text-xs font-bold text-slate-600 mb-1.5">Tiêu đề chính dưới ảnh (Card Title)</label>
-                <input type="text" id="inputCardTitle" value="Osa first meeting ✨" oninput="app.updateCustomTexts()" class="w-full px-4 py-2.5 rounded-xl bg-brand-50/70 border border-brand-200 text-sm font-bold text-brand-900 focus:outline-none focus:ring-2 focus:ring-brand-500" />
+                <label class="block text-xs font-bold text-slate-600 mb-1.5">Main title below the photo</label>
+                <input type="text" id="inputCardTitle" value="AMAZING RACE 2026 ✨" oninput="app.updateCustomTexts()" class="w-full px-4 py-2.5 rounded-xl bg-brand-50/70 border border-brand-200 text-sm font-bold text-brand-900 focus:outline-none focus:ring-2 focus:ring-brand-500" />
               </div>
               <div>
-                <label class="block text-xs font-bold text-slate-600 mb-1.5">Dòng chữ phụ dưới cùng (Footer Subtext)</label>
-                <input type="text" id="inputBrandingText" value="Osa first meeting - 23/10/2026" oninput="app.updateCustomTexts()" class="w-full px-4 py-2.5 rounded-xl bg-brand-50/70 border border-brand-200 text-sm font-bold text-brand-900 focus:outline-none focus:ring-2 focus:ring-brand-500" />
+                <label class="block text-xs font-bold text-slate-600 mb-1.5">Footer text</label>
+                <input type="text" id="inputBrandingText" value="AMAZING RACE 2026" oninput="app.updateCustomTexts()" class="w-full px-4 py-2.5 rounded-xl bg-brand-50/70 border border-brand-200 text-sm font-bold text-brand-900 focus:outline-none focus:ring-2 focus:ring-brand-500" />
               </div>
             </div>
           </div>

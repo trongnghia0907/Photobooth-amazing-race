@@ -14,6 +14,7 @@ vm.runInNewContext(script + '\nglobalThis.baseline = app;', sandbox);
 const baseline = sandbox.baseline;
 const app = createApp();
 const mapping = JSON.parse(readFileSync(new URL('../../docs/function-map.json', import.meta.url)));
+const activeHtml = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 
 test('original and legacy are byte-identical; all 80 methods mapped and callable', () => {
   assert.deepEqual(Buffer.from(original), preserved);
@@ -38,6 +39,23 @@ test('state is isolated, all 9 filters and sticker library retained; auto print 
   assert.equal(layouts.landscape_4.enabled, true);
 });
 
+test('active guest defaults use event branding while archived source remains intact', () => {
+  assert.match(activeHtml, /<title>AMAZING RACE 2026 — PHOTOBOOTH<\/title>/);
+  assert.doesNotMatch(activeHtml, /OSA BOOTH|Osa first meeting/i);
+  assert.deepEqual(JSON.parse(JSON.stringify(createStore().customTexts)), {
+    topText: 'AMAZING RACE 2026',
+    cardTitle: 'AMAZING RACE 2026 ✨',
+    brandingText: 'AMAZING RACE 2026'
+  });
+  assert.ok(original.includes('OSA BOOTH'));
+});
+
+test('Guest QR is minimal and never presents deployment controls', () => {
+  assert.match(activeHtml, /id="qrExpiryMessage"/);
+  assert.doesNotMatch(activeHtml,/id="qrConnectionMode"|QR Riêng Cho Ảnh Của Bạn/);
+  assert.doesNotMatch(activeHtml, /id="qrProviderSelect"|<select[^>]*qr/);
+});
+
 test('legacy slot coordinates unchanged for portrait, landscape and detected custom frame', () => {
   for (const [w, h] of [[1200,1800], [1800,1200], [1000,1500]]) {
     assert.equal(JSON.stringify(app.getSixSlotCoordinates(w,h)), JSON.stringify(baseline.getSixSlotCoordinates(w,h)));
@@ -60,20 +78,35 @@ test('canvas algorithms produce same drawing calls as baseline', () => {
     };
     const old = calls(), current = calls();
     const args = name === 'drawImageCover' ? [{width:640,height:480},0,0,300,500] : name === 'roundRectPath' ? [1,2,300,500,20] : [1200,1800];
+    const previousTexts = baseline.customTexts;
+    if (name === 'drawBuiltInFrameForegroundTexts') baseline.customTexts = app.customTexts;
     baseline[name](old.ctx,...args);
+    baseline.customTexts = previousTexts;
     app[name](current.ctx,...args);
     assert.deepEqual(current.log,old.log,name);
   }
   for (const hex of ['#ffffff','#000000','#2563EB','#1E40AF']) assert.equal(app.isColorLight(hex),baseline.isColorLight(hex));
 });
 
-test('every original DOM ID remains; styles and dependencies preserved', () => {
+test('legacy DOM IDs preserved except explicitly removed guest controls; styles retained', () => {
   const current = readFileSync(new URL('../index.html',import.meta.url),'utf8');
   const ids = [...original.matchAll(/\bid="([^"]+)"/g)].map(m=>m[1]);
-  for (const id of ids) assert.ok(current.includes(`id="${id}"`),id);
+  const removed=new Set(['stepNavHome','stepNavCapture','stepNavResult','frameCardCustom','customFrameBadge','customFrameSubtext','calibrateSlotsBtn','customFrameInputMain','frameCardGrid3x2','qrProviderSelect','qrStatusBadge','qrReadyPill','qrExternalUrlInput','qrExternalOpenBtn','qrLocalWarning','qrLanWarning','confirmQRCodeBtn']);
+  for (const id of ids) {
+    if(removed.has(id))assert.ok(!current.includes(`id="${id}"`),id+' must be removed');
+    else assert.ok(current.includes(`id="${id}"`),id);
+  }
   const css = ['base','components','print'].map(n=>readFileSync(new URL(`../src/styles/${n}.css`,import.meta.url),'utf8')).join('');
   const legacyCss = original.match(/<style>([\s\S]*?)<\/style>/)[1];
   assert.equal(css.replace(/@tailwind (base|components|utilities);/g,'').replace(/\s/g,''), legacyCss.replace(/\s/g,''));
+});
+
+test('Guest layout selector exposes only portrait 2x3 and landscape 2x2 choices', () => {
+  const current = readFileSync(new URL('../index.html',import.meta.url),'utf8');
+  assert.match(current, /id="setupLayoutChoices"/);
+  assert.match(current, /id="frameCardGrid2x3"[^>]*>[^]*?2×3 dọc/);
+  assert.match(current, /id="frameCardLandscape4"[^>]*>[^]*?2×2 ngang/);
+  assert.doesNotMatch(current, /customFrameInputMain|frameCardGrid3x2|Tải Frame PNG/);
 });
 
 test('clearTimers cancels delayed start/next shot/print/QR and interval overlays', () => {

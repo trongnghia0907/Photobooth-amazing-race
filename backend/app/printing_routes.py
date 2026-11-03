@@ -5,6 +5,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field, StrictInt
 from .routers import Auth, Key
 from .services.admin_auth import COOKIE, COOKIE_PATH
+from .readiness import report as readiness_report
 
 router = APIRouter(prefix='/api')
 admin = APIRouter(prefix='/api/admin')
@@ -71,7 +72,8 @@ def status(request: Request):
                   for name,table in [('sessions','sessions'),('photos','session_finals'),('composites','session_finals')]}
         for state in ('queued','processing','failed'):
             counts[state] = db.execute('SELECT COUNT(*) FROM print_jobs WHERE status=?',(state,)).fetchone()[0]
-    return {'backend':'online',**counts,'printer':request.app.state.printing.config()}
+    return {'backend':'online',**counts,'printer':request.app.state.printing.config(),
+            'readiness':readiness_report(request.app.state.repository,request.app.state.printing,request.app.state.camera)}
 
 
 @admin.get('/sessions',dependencies=[Depends(host)])
@@ -119,9 +121,10 @@ def host_image(request: Request,sid: UUID,kind: Literal['composites','print_read
             raise HTTPException(404,'Không tìm thấy ảnh')
         root = repo.settings.storage_root.resolve()
         path = (root/row['path']).resolve()
+        if kind=='composites' and not path.is_file():repo.drive.local(str(image_id))
         if not path.is_relative_to(root) or not path.is_file():
             raise HTTPException(404,'Không tìm thấy ảnh')
-    return FileResponse(path,media_type='image/png',filename=f'osa-{image_id}.png' if download else None,
+    return FileResponse(path,media_type='image/png',filename=f'amazing-race-2026-{image_id}.png' if download else None,
                         headers={'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'})
 
 

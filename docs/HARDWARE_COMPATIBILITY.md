@@ -1,5 +1,9 @@
 # Camera capability matrix — Phase 5
 
+Event Readiness update: Windows 11 remains primary; macOS is an alternative with shared launchers/CUPS, Linux best-effort. Neither alternative OS was executed here. All physical cameras/printers remain NOT TESTED. Event mode rejects demo/unverified camera capabilities, manual/demo source uploads and MockPrinter. Rehearsal must be explicitly enabled; a webcam frame is never an original camera-generated JPG.
+
+Windows Print Spooler uses the existing GDI adapter. CUPS now has an optional adapter with fake-process discovery/submission/timeout tests; actual macOS/Linux CUPS, drivers, paper and physical output are NOT TESTED. Select devices through environment/Host, then complete [the event checklist](EVENT_DAY_CHECKLIST.md) on the intended OS/architecture. See [configuration](EVENT_CONFIGURATION.md) and [macOS setup](MACOS_SETUP.md).
+
 | Adapter | Host Live View | Capture source | Physical shutter | Camera-original file | Verification |
 |---|---|---|---|---|---|
 | Host Mock | Generated JPEG frames | Deterministic synthetic JPEG, separate from preview | No | No (synthetic bytes are retained) | Automated backend + browser |
