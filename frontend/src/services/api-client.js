@@ -1,9 +1,10 @@
 /** Same-origin only; Vite proxies /api. Never send session credentials to CDN/upload services. */
 import { boothFetch } from './booth-access.js';
-export async function request(path, { token, key, body, method = 'GET' } = {}) {
+export async function request(path, { token, key, body, method = 'GET', preferAsync = false } = {}) {
   const headers = {};
   if (token) headers.Authorization = `Bearer ${token}`;
   if (key) headers['Idempotency-Key'] = key;
+  if (preferAsync) headers.Prefer = 'respond-async';
   if (body && !(body instanceof FormData)) {
     headers['Content-Type'] = 'application/json';
     body = JSON.stringify(body);
@@ -19,6 +20,10 @@ export async function request(path, { token, key, body, method = 'GET' } = {}) {
   catch {
     throw new Error(`The backend returned an invalid response (${response.status}). Please try again.`);
   }
-  if (!response.ok) throw new Error(payload.error?.message || `The backend returned error ${response.status}. Please try again.`);
+  if (!response.ok) {
+    const error = new Error(payload.error?.message || `The backend returned error ${response.status}. Please try again.`);
+    error.status = response.status;
+    throw error;
+  }
   return payload;
 }

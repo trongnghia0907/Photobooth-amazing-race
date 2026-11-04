@@ -115,7 +115,8 @@ def complete(request: Request, session_id: UUID, payload: CompleteSession, owner
 
 @router.post('/sessions/{session_id}/finalize')
 def finalize(request: Request, session_id: UUID, payload: CompleteSession, owner: Auth, key: Key):
-    return request.app.state.repository.sharing.finalize(str(session_id), owner, key, payload.composite_id)
+    return request.app.state.repository.sharing.finalize(str(session_id), owner, key, payload.composite_id,
+        defer_print=request.headers.get('prefer')=='respond-async')
 
 
 @router.get('/sessions/{session_id}/public-status')

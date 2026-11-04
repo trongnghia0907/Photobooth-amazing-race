@@ -1,5 +1,9 @@
 """Immutable derivative: append a separate QR footer, never cover the composite."""
 import hashlib
+import logging
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
 from io import BytesIO
 from PIL import Image, ImageDraw
 from fastapi import HTTPException
@@ -10,6 +14,35 @@ from .repository import now
 class PrintReadyService:
     def __init__(self, repository):
         self.repo = repository
+        self._lock = threading.Lock()
+        self._executor = None
+        self._pending = set()
+
+    def prepare_async(self, final_id):
+        """Optional derivative work must never hold up public QR readiness."""
+        with self._lock:
+            if final_id in self._pending or len(self._pending) >= 8:
+                return
+            if self._executor is None:
+                self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix='print-ready')
+            self._pending.add(final_id)
+            self._executor.submit(self._prepare, final_id)
+
+    def _prepare(self, final_id):
+        started = time.perf_counter()
+        try:
+            self.backfill(final_id)
+            logging.getLogger(__name__).info('print_ready_ms=%.1f', (time.perf_counter()-started)*1000)
+        except Exception as error:
+            # The durable original and share remain available for a later retry.
+            logging.getLogger(__name__).warning('print_ready_failed: %s', type(error).__name__)
+        finally:
+            with self._lock:
+                self._pending.discard(final_id)
+
+    def close(self):
+        if self._executor is not None:
+            self._executor.shutdown(wait=True, cancel_futures=True)
 
     def url(self, db, final_id):
         from .sharing import is_local_origin,is_lan_origin
@@ -18,7 +51,8 @@ class PrintReadyService:
         try:origin=self.repo.sharing.origin()
         except HTTPException:return None
         if not origin.startswith('https://') or is_local_origin(origin) or is_lan_origin(origin):return None
-        return f"{origin}/p/{self.repo.sharing.token(db,row)}"
+        try:return f"{origin}/p/{self.repo.sharing.token(db,row)}"
+        except HTTPException:return None  # Existing bearer links still authorize the durable original.
 
     def current(self,db,final_id):
         url=self.url(db,final_id)

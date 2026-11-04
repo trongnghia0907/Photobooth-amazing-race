@@ -5,12 +5,15 @@ import os
 import threading
 import time
 import uuid
+from dataclasses import replace
 from fastapi import HTTPException
 from .base import CameraError
 from .mock import MockCameraAdapter
 from .uvc_demo import UvcDemoCameraAdapter
 from .vendor import VendorCameraAdapter
 from .sony_zve10 import SonyZvE10CameraAdapter
+from .sony_ptp import SonyPtpDriver
+from .sony_wia import MAX_TRANSFER as SONY_MAX_TRANSFER
 from ..images import atomic_write, validate_image
 from ..repository import now
 
@@ -28,6 +31,7 @@ class CameraController:
         self.state = 'idle'
         self.last_error = None
         self.last_frame_at = None
+        self.frame_diagnostics = {'requests':0,'busy':0,'failures':0,'last_failure':None,'processing_ms':None}
         self.stop_event = threading.Event()
         self.last_diagnostic = None
         self.process_lock = None
@@ -35,10 +39,11 @@ class CameraController:
 
     def make_adapter(self, mode):
         if mode == 'mock':return MockCameraAdapter()
-        if mode == 'sony_zve10':return SonyZvE10CameraAdapter()
+        if mode == 'sony_zve10':return SonyZvE10CameraAdapter(storage_root=self.settings.storage_root,timeout=self.settings.camera_timeout_seconds)
         if mode == 'uvc_demo':
-            if self.settings.app_env != 'development':
-                raise CameraError('demo_only','UVC frame fallback chỉ cho development, không phải shutter thật.',stage='connect')
+            if not (self.settings.demo_hardware_allowed and
+                    (self.settings.app_env=='development' or self.settings.operation_mode=='rehearsal')):
+                raise CameraError('demo_only','UVC DEMO requires Development or explicitly authorized Rehearsal; it is not a real shutter.',stage='connect')
             return UvcDemoCameraAdapter(self.settings.storage_root,self.settings.camera_device_index)
         return VendorCameraAdapter()
 
@@ -100,6 +105,7 @@ class CameraController:
                     'busy':self.capture_lock.locked(),'owned_by_session':bool(sid and self.owner==sid),
                     'lease_active':bool(self.owner),'preview_healthy':fresh,
                     'last_frame_at':self.last_frame_at,'last_error':self.last_error,
+                    'frame_diagnostics':dict(self.frame_diagnostics),
                     'timeout_seconds':self.settings.camera_timeout_seconds,
                     'stale_seconds':self.settings.camera_stale_seconds,
                     'operation_mode':self.settings.operation_mode,'configured_model':self.settings.camera_model}
@@ -192,18 +198,30 @@ class CameraController:
         self.authorize(sid,token)
         with self.control:
             self._owned(sid)
-            if not self.io.acquire(blocking=False):raise CameraError('busy','Đang chụp/truyền ảnh; preview tạm dừng.',stage='preview')
+            self.frame_diagnostics['requests'] += 1
+            if not self.io.acquire(blocking=False):
+                self.frame_diagnostics['busy'] += 1
+                raise CameraError('busy','Đang chụp/truyền ảnh; preview tạm dừng.',stage='preview')
+            started = time.perf_counter()
             try:
                 frame = self.adapter.get_preview_frame()
                 if time.time()-frame.captured_at > self.settings.camera_stale_seconds:
                     self.last_frame_at = None
                     raise CameraError('stale_preview','Live View đã cũ/đứng hình. Kết nối lại camera.',stage='preview')
                 self.last_frame_at = frame.captured_at
+                self.frame_diagnostics['last_failure'] = None
                 self.state = 'previewing';self.last_error = None
                 return frame
             except CameraError as error:
-                self.state = 'error';self.last_error = str(error);self.last_frame_at = None;raise
-            finally:self.io.release()
+                self.frame_diagnostics['failures'] += 1
+                self.frame_diagnostics['last_failure'] = error.code
+                self.state = 'waiting' if error.code=='preview_pending' else 'error'
+                self.last_error = str(error)
+                if error.code!='preview_pending':self.last_frame_at = None
+                raise
+            finally:
+                self.frame_diagnostics['processing_ms'] = round((time.perf_counter()-started)*1000,1)
+                self.io.release()
 
     @staticmethod
     def capture_metadata(row):
@@ -220,6 +238,15 @@ class CameraController:
                 if ack:snapshot = json.loads(ack['result_json'])
             return {'capture':self.capture_metadata(row),'session':snapshot}
 
+    def _capture_replay(self, row, sid, token, slot):
+        if not row:return None
+        if row['slot_index'] != slot:raise HTTPException(409,'Idempotency-Key đã dùng cho slot khác')
+        if row['status']=='captured':return self.result(sid,token,row['id'])
+        if row['status']=='failed' and not (self.mode=='sony_zve10'
+                and isinstance(getattr(self.adapter,'driver',None),SonyPtpDriver)):
+            raise CameraError(row['error_code'] or 'failed',row['error_message'] or 'Capture thất bại.',uncertain=bool(row['uncertain']))
+        return None
+
     def capture(self, sid, token, key, slot):
         session = self.authorize(sid,token)
         with self.control:self._acquire_process()
@@ -228,15 +255,25 @@ class CameraController:
         # never issue another shutter command, including after a restart.
         with self.repo.db.connect() as db:
             old = db.execute('SELECT * FROM camera_captures WHERE session_id=? AND request_key=?',(sid,key)).fetchone()
-        if old:
-            if old['slot_index'] != slot:raise HTTPException(409,'Idempotency-Key đã dùng cho slot khác')
-            if old['status']=='captured':return self.result(sid,token,old['id'])
-            if old['status']=='failed':raise CameraError(old['error_code'] or 'failed',old['error_message'] or 'Capture thất bại.',uncertain=bool(old['uncertain']))
+        replay=self._capture_replay(old,sid,token,slot)
+        if replay is not None:return replay
         self.repo.require_working(session)
-        self.repo.ensure_disk_space(self.settings.max_upload_bytes*2)
+        # Native camera transfer is not a browser upload. Keep HTTP upload limits
+        # unchanged while honoring the Sony transport's bounded original size.
+        camera_settings=replace(self.settings,max_upload_bytes=max(self.settings.max_upload_bytes,SONY_MAX_TRANSFER)) if self.mode=='sony_zve10' else self.settings
+        reserve=camera_settings.max_upload_bytes+self.settings.max_image_pixels*4 if self.mode=='sony_zve10' else self.settings.max_upload_bytes*2
+        self.repo.ensure_disk_space(reserve)
         if not self.capture_lock.acquire(blocking=False):raise CameraError('busy','Một lệnh chụp đang được xử lý. Đọc trạng thái/thử lại cùng key.')
         capture_id = old['id'] if old else str(uuid.uuid4())
         try:
+            # A request may have been descheduled between lookup and lock
+            # acquisition while an identical request completed. Read its ACK
+            # again before inserting an intent or touching the camera.
+            with self.repo.db.connect() as db:
+                old=db.execute('SELECT * FROM camera_captures WHERE session_id=? AND request_key=?',(sid,key)).fetchone()
+            if old:capture_id=old['id']
+            replay=self._capture_replay(old,sid,token,slot)
+            if replay is not None:return replay
             with self.control:
                 # An unused session may have changed layout while this command
                 # was waiting for the controller. Check the current slot bound
@@ -264,6 +301,13 @@ class CameraController:
                     reference = self.adapter.capture_photo(capture_id,deadline)
                     with self.repo.db.connect() as db:
                         db.execute("UPDATE camera_captures SET adapter_reference=?,status='transferring',updated_at=? WHERE id=?",(reference,now(),capture_id))
+                elif old['status']=='failed' and self.mode=='sony_zve10':
+                    # The real Sony driver checks its durable intent first:
+                    # existing intent -> reconcile ONLY; no intent -> preflight
+                    # failed before shutter and the same ID may try once safely.
+                    reference = self.adapter.capture_photo(capture_id,deadline)
+                    with self.repo.db.connect() as db:
+                        db.execute("UPDATE camera_captures SET adapter_reference=?,status='transferring',updated_at=? WHERE id=?",(reference,now(),capture_id))
                 else:reference = old['adapter_reference']
                 self.state = 'transferring'
                 if old and old['native_path']:
@@ -276,7 +320,7 @@ class CameraController:
                     photo = self.adapter.get_captured_photo(reference,deadline)
                     data,mime,source = photo.data,photo.mime,photo.source
                 if time.monotonic()>deadline:raise CameraError('timeout','Hết thời gian truyền ảnh. Thử lại cùng yêu cầu.',stage='transfer')
-                validated = validate_image(data,mime,self.settings)
+                validated = validate_image(data,mime,camera_settings)
                 cap = self.adapter.get_capabilities()
                 if not cap.demo and (source!='camera_original' or mime!='image/jpeg' or not cap.physical_shutter or not cap.original_file):
                     raise CameraError('invalid_provenance','Adapter thật chưa xác nhận shutter/file gốc; từ chối dùng frame thay thế.',stage='transfer')
@@ -286,6 +330,7 @@ class CameraController:
                     db.execute("UPDATE camera_captures SET native_path=?,native_sha256=?,mime=?,status='transferring',updated_at=? WHERE id=?",(relative,hashlib.sha256(data).hexdigest(),mime,now(),capture_id))
                     current = db.execute('SELECT expected_revision FROM camera_captures WHERE id=?',(capture_id,)).fetchone()[0]
                 self.repo.upload_photo(sid,token,'camera_'+capture_id,slot,source,validated,current,capture_id)
+                if isinstance(self.adapter,SonyZvE10CameraAdapter):self.adapter.capture_persisted(capture_id)
             self.state = 'captured';self.last_error = None
             self.lease_until = time.monotonic()+self.settings.camera_lease_seconds
             return self.result(sid,token,capture_id)

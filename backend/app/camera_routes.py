@@ -1,4 +1,5 @@
 from typing import Literal
+import time
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import FileResponse
@@ -32,10 +33,12 @@ def live(request: Request,sid: UUID,owner: Auth,action: Literal['start','stop'])
 
 @router.get('/frame')
 def frame(request: Request,sid: UUID,owner: Auth):
+    started = time.perf_counter()
     result = request.app.state.camera.frame(str(sid),owner)
     return Response(result.data,media_type='image/jpeg',headers={
         'Cache-Control':'no-store','X-Robots-Tag':'noindex, nofollow','X-Content-Type-Options':'nosniff',
-        'X-Frame-Sequence':str(result.sequence),'X-Frame-Time':str(result.captured_at)})
+        'X-Frame-Sequence':str(result.sequence),'X-Frame-Time':str(result.captured_at),
+        'X-Preview-Processing-Ms':f'{(time.perf_counter()-started)*1000:.1f}'})
 
 
 class CaptureRequest(BaseModel):
@@ -70,7 +73,7 @@ def diagnostics(request: Request):
     return {**request.app.state.camera.status(),
             'adapters':[{'id':'mock','label':'Host Mock — DEMO'},
                         {'id':'uvc_demo','label':'Host webcam frame — DEMO, optional OpenCV'},
-                        {'id':'sony_zve10','label':'Sony ZV-E10 — PTP driver not implemented'},
+                        {'id':'sony_zve10','label':'Sony ZV-E10 — Windows WIA/PTP, hardware NOT VERIFIED'},
                         {'id':'vendor','label':'Vendor SDK — BLOCKED BY HARDWARE'}]}
 
 

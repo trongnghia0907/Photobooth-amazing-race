@@ -49,7 +49,7 @@ p[role=status]{color:#365976}p[role=alert]{line-height:1.6}small{color:#4b6580}
 
 @router.get('/{token}/status')
 def photo_status(request:Request,token:str):
-    row=request.app.state.repository.sharing.lookup(token,metadata_only=True)
+    row=request.app.state.repository.sharing.lookup(token,prepare_print=False)
     return JSONResponse({'registered':True,'fingerprint':row['sha256']},headers=PRIVATE_HEADERS)
 
 
@@ -97,8 +97,7 @@ def download(request: Request, token: str):
 @router.get('/{token}/qr.png')
 def qr_image(request: Request, token: str):
     service=request.app.state.repository.sharing
-    row=service.lookup(token)
-    origin=service.temporary_origin()
-    if origin:
-        return Response(service.qr_bytes(f'{origin}/p/{token}'),media_type='image/png',headers=PRIVATE_HEADERS)
-    return FileResponse(service.file(row,qr=True),media_type='image/png',headers=PRIVATE_HEADERS)
+    row=service.lookup(token,metadata_only=True)
+    try:origin=service.origin()
+    except HTTPException:origin=row['public_base_url']
+    return Response(service.qr_bytes(f'{origin}/p/{token}'),media_type='image/png',headers=PRIVATE_HEADERS)

@@ -5,7 +5,9 @@ import {newId} from '../utils/ids.js';
 const storageKey='amazing-race-session-v1';
 
 export function rememberSession(context){
-  try{sessionStorage.setItem(storageKey,JSON.stringify({id:context.id,token:context.token,createKey:context.createKey,slotCount:context.slotCount,layout:context.layout}));}catch{/* Restricted storage: in-memory recovery still works until reload. */}
+  try{sessionStorage.setItem(storageKey,JSON.stringify({id:context.id,token:context.token,createKey:context.createKey,slotCount:context.slotCount,layout:context.layout,
+    ...(context.cameraCapture?{cameraCapture:{slot:context.cameraCapture.slot,key:context.cameraCapture.key,
+      submitted:context.cameraCapture.submitted!==false,completeAfterRecovery:!!context.cameraCapture.completeAfterRecovery,retryNewShot:!!context.cameraCapture.retryNewShot}}:{})}));}catch{/* Restricted storage: in-memory recovery still works until reload. */}
 }
 
 export function forgetRememberedSession(){try{sessionStorage.removeItem(storageKey);}catch{}}
@@ -29,6 +31,10 @@ export async function restoreSavedSession(app){
   if(!/^[A-Za-z0-9_-]{32,128}$/.test(context.token)||!/^[A-Za-z0-9_-]{16,128}$/.test(context.createKey)||context.id&&!/^[0-9a-f-]{36}$/i.test(context.id)||![4,6].includes(context.slotCount)||!['grid2x3','grid3x2','landscape_4'].includes(context.layout)){
     return invalid();
   }
+  const pending=context.cameraCapture;
+  if(pending!==undefined&&(!pending||typeof pending!=='object'||!Number.isInteger(pending.slot)||pending.slot<0||pending.slot>=context.slotCount||!/^[A-Za-z0-9_-]{16,128}$/.test(pending.key)
+      ||typeof pending.completeAfterRecovery!=='boolean'||typeof pending.retryNewShot!=='boolean'
+      ||pending.submitted!==undefined&&typeof pending.submitted!=='boolean'))return invalid();
   app.persistenceBusy=true;app.syncPersistenceUI();
   try{
     app.sessionContext={...context,request:null};
@@ -38,6 +44,7 @@ export async function restoreSavedSession(app){
     app.guestWorkflowActive=state.finalized||state.photos.length>0;
     app.persistenceError='';app.resumeRecoveryPending=false;
     if(state.finalized){
+      delete app.sessionContext.cameraCapture;rememberSession(app.sessionContext);
       const saved=await imageCanvas(app,'composites',state.composite.id),canvas=document.getElementById('compositeCanvas');
       canvas.width=saved.width;canvas.height=saved.height;canvas.getContext('2d').drawImage(saved,0,0);
       app.lastSavedImage=canvas.toDataURL('image/png');app.finalOperation={compositeId:state.composite.id,confirmationStarted:true,finalizeKey:newId()};app.activeShare=state.share||null;app.saveState='saved';
@@ -48,6 +55,11 @@ export async function restoreSavedSession(app){
       for(const photo of state.photos)app.photos[photo.slot_index]=await imageCanvas(app,'photos',photo.id);
       app.saveState=state.photos.length?'capturing':'idle';app.renderSixSlotsGrid();app.renderCaptureDots();
       app.goToScreen(app.photos.every(Boolean)?'result':'home');
+      if(pending){
+        app.hostCaptureOperation={...pending,submitted:pending.submitted!==false};app.guestWorkflowActive=true;
+        app.saveState='error';
+        app.persistenceError='A camera request was interrupted. Select Retry Save to recover the same capture; do not take another photo.';
+      }
       if(state.photos.length)app.showToast('Your captured photos have been restored. Review or adjust them before confirming.','info');
     }
     app.updateFrameSelectionUI();return true;

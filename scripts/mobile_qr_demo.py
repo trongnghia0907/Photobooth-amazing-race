@@ -13,7 +13,7 @@ import subprocess
 import sys
 import time
 from urllib.error import HTTPError, URLError
-from urllib.request import Request, ProxyHandler, build_opener, urlopen
+from urllib.request import Request, ProxyHandler, build_opener
 import uuid
 
 ROOT=Path(__file__).resolve().parents[1]
@@ -22,11 +22,7 @@ from app.runtime_lock import RuntimeLock
 from app.services.images import atomic_write
 from owned_processes import OwnedProcesses
 from host_environment import load_environment
-
-DENIED=['/','/booth','/admin','/admin/assets/dashboard.js','/api/admin/me','/api/admin/login',
-        '/api/admin/sessions','/api/admin/print-jobs','/api/admin/camera','/api/booth/pair',
-        '/api/sessions','/api/print-config','/event-display','/gallery','/runtime/photobooth.sqlite3',
-        '/.env','/docs','/openapi.json','/healthz','/p/invalid','/p/'+'x'*43]
+from app.services.public_gateway import DENIED, GatewayCheckError, verify_isolation
 
 def write_json(path,data):
     atomic_write(path,json.dumps(data,indent=2).encode())
@@ -35,28 +31,21 @@ def write_json(path,data):
 def get(url,timeout=8,local=False):
     request=Request(url,headers={'User-Agent':'AmazingRaceMobileQRTest/1.0','Cache-Control':'no-cache'})
     try:
-        response=(build_opener(ProxyHandler({})).open(request,timeout=timeout) if local else urlopen(request,timeout=timeout))
+        response=build_opener(ProxyHandler({})).open(request,timeout=timeout)
         with response:return response.status,response.read(),{name.lower():value for name,value in response.headers.items()}
     except HTTPError as error:return error.code,error.read(),{name.lower():value for name,value in error.headers.items()}
 
 def denied(base,local):
-    for route in DENIED:
-        status,body,_=get(base+route,local=local)
-        # The separately enabled, read-only gallery is an intentional public
-        # exception. All Host/camera/printing/storage routes remain denied.
-        if route=='/gallery' and status==200 and b'data-photo-gallery' in body:
-            feed_status,feed,_=get(base+'/gallery/api/photos',local=local)
-            data=json.loads(feed) if feed_status==200 else {}
-            if data.get('page_size')!=10 or not isinstance(data.get('items'),list):
-                raise RuntimeError('Public gallery route verification failed')
-            continue
-        if status!=404:raise RuntimeError(f'Isolation failed: {route} returned {status}, expected 404')
-    # Read-only service: mutations must never succeed.
-    try:
-        with build_opener(ProxyHandler({})).open(Request(base+'/p/invalid',method='POST'),timeout=5) as response:
-            raise RuntimeError('Public service unexpectedly accepted POST')
-    except HTTPError as error:
-        if error.code not in (404,405):raise
+    return verify_isolation(base)
+
+
+def wait_for_proof(check,seconds=40):
+    deadline=time.monotonic()+seconds
+    while True:
+        try:return check()
+        except GatewayCheckError as error:
+            if not error.retryable or time.monotonic()>=deadline:raise
+            time.sleep(min(1,max(0,deadline-time.monotonic())))
 
 def find_cloudflared():
     candidates=[shutil.which('cloudflared')]
@@ -110,10 +99,8 @@ def samples(settings,credentials,credentials_path):
             # These operator-owned fixtures alone may migrate from the local
             # demo; never enqueue arbitrary historical/customer sessions here.
             with repo.db.connect() as db:repo.drive.queue(db,state['composite']['id'])
-            for _ in range(90):
-                if repo.drive.ready(state['composite']['id']):break
-                time.sleep(1)
-            else:raise RuntimeError('Drive upload pending/failed. Staging retained; no tunnel started. Check OAuth/privacy and retry.')
+            # The Host worker retries this durable queue independently. A
+            # checksum-verified staged composite is sufficient for sharing.
         if not state.get('share'):
             state=repo.sharing.finalize(sid,owner,str(uuid.uuid4()),state['composite']['id'])
         else:state=repo.get(sid,owner)
@@ -125,7 +112,6 @@ def samples(settings,credentials,credentials_path):
 def verify(base,fixtures,local=False):
     from PIL import Image
     import zxingcpp
-    denied(base,local)
     tokens=[]
     for fixture in fixtures:
         token=fixture['share']['share_url'].rsplit('/',1)[1];tokens.append(token);route='/p/'+token
@@ -174,6 +160,7 @@ def environment(home,credentials,port,require_drive=False):
     return env
 
 def serve(args):
+    started=time.perf_counter();performance={}
     home=args.home;home.mkdir(parents=True,exist_ok=True)
     lease=RuntimeLock(home/'supervisor.lock').acquire()
     run_id=uuid.uuid4().hex;stop=home/'stop';stop.unlink(missing_ok=True)
@@ -236,19 +223,21 @@ def serve(args):
                        '--shutdown-file',str(home/'public.stop')],'public')
         track(public)
         local=f'http://127.0.0.1:{args.public_port}'
-        for _ in range(100):
+        for _ in range(40):
             if stop.exists():raise RuntimeError('Stopped during startup')
             if (private is not None and private.poll() is not None) or public.poll() is not None:raise RuntimeError('Photo service failed; check host.log/public.log. No unrelated process was killed.')
             try:
-                status,data,_=get(f'http://127.0.0.1:{args.host_port}/api/health',local=True)
+                status,data,_=get(f'http://127.0.0.1:{args.host_port}/api/health',timeout=1,local=True)
                 if status==200 and json.loads(data)['sharing'].get('temporary_origin_supported'):
-                    denied(local,local=True);break
+                    break
             except (OSError,ValueError,URLError):pass
             time.sleep(.2)
         else:raise RuntimeError('Local photo-only isolation checks did not pass. Tunnel NOT started.')
+        wait_for_proof(lambda:denied(local,local=True),seconds=15)
         fixtures=existing_photos(settings) if args.attach_host else samples(settings,credentials,credentials_path)
         original_hashes={item['composite_path']:item['sha256'] for item in fixtures}
         verify(local,fixtures,local=True)
+        performance['gateway_start_ms']=round((time.perf_counter()-started)*1000,1)
         write_json(origin_file,{'phase':'connecting','run_id':run_id,'expires_at':time.time()+300})
         # Isolation has passed before cloudflared can expose this loopback port.
         tunnel_log=home/'cloudflared.log'
@@ -261,21 +250,25 @@ def serve(args):
             if tunnel.poll() is not None:raise RuntimeError('Quick Tunnel failed; check cloudflared.log')
             content=tunnel_log.read_bytes()[log_offset:].decode('utf-8',errors='replace')
             matches=re.findall(r'https://[a-z0-9-]+\.trycloudflare\.com',content)
-            if matches:origin=matches[-1];break
+            if matches:origin=matches[-1]
+            if origin and 'Registered tunnel connection' in content:break
             time.sleep(.25)
         if not origin:raise RuntimeError('cloudflared did not return an HTTPS Quick Tunnel URL')
         # Do not advertise a public-ready QR until the live HTTPS gateway is verified.
-        for _ in range(30):
-            try:denied(origin,local=False);break
-            except (OSError,RuntimeError,URLError):time.sleep(1)
-        else:raise RuntimeError('Public HTTPS isolation could not be verified')
-        write_json(origin_file,{'phase':'ready','origin':origin,'run_id':run_id,'expires_at':time.time()+300})
+        proof_started=time.perf_counter()
+        try:
+            wait_for_proof(lambda:denied(origin,local=False))
+        finally:
+            performance['https_verification_ms']=round((time.perf_counter()-proof_started)*1000,1)
+        write_json(origin_file,{'phase':'ready','origin':origin,'run_id':run_id,'expires_at':time.time()+300,'isolation_verified':True})
         fixtures=existing_photos(settings) if args.attach_host else samples(settings,credentials,credentials_path)
-        for _ in range(35):
+        last_error=None
+        for _ in range(3):
             if tunnel.poll() is not None:raise RuntimeError('Tunnel stopped before HTTPS verification')
             try:verify(origin,fixtures);break
-            except (OSError,RuntimeError,URLError):time.sleep(1)
-        else:raise RuntimeError('Public HTTPS verification failed; tunnel will be stopped')
+            except (OSError,RuntimeError,URLError) as error:
+                last_error=error;time.sleep(1)
+        else:raise RuntimeError('Public HTTPS photo verification failed: '+type(last_error).__name__+'. Check direct HTTPS connectivity; tunnel will be stopped.')
         for relative,expected in original_hashes.items():
             if hashlib.sha256((settings.storage_root/relative).read_bytes()).hexdigest()!=expected:raise RuntimeError('Completed composite unexpectedly changed')
         cards=[]
@@ -296,7 +289,7 @@ def serve(args):
                 'verified_photo_count':len(fixtures),
                 'checks':('HTTP isolation, HTTPS pages, image/download, distinct tokens, QR decode, unchanged composites PASS'
                           if fixtures else 'HTTP/HTTPS route isolation PASS; photo/download/QR verification awaits a completed available share'),
-                'phone_scan':'NOT TESTED'}
+                'phone_scan':'NOT TESTED','performance':performance}
         write_json(state,status)
         last_probe=0
         while not stop.exists():
@@ -306,13 +299,13 @@ def serve(args):
                     code,body,_=get(origin+'/p/invalid',timeout=5)
                     if code!=404 or b'AMAZING RACE 2026' not in body:
                         raise RuntimeError('Photo gateway connection lost')
-                    write_json(origin_file,{'phase':'ready','origin':origin,'run_id':run_id,'expires_at':time.time()+35})
+                    write_json(origin_file,{'phase':'ready','origin':origin,'run_id':run_id,'expires_at':time.time()+35,'isolation_verified':True})
                 except (OSError,RuntimeError,URLError):
                     write_json(origin_file,{'phase':'disconnected','run_id':run_id,'expires_at':time.time()+35})
                 last_probe=time.time()
             time.sleep(.5)
     except BaseException as error:
-        write_json(state,{'phase':'error','run_id':run_id,'error':str(error)})
+        write_json(state,{'phase':'error','run_id':run_id,'error':str(error),'performance':performance})
     finally:
         # Only Popen handles created by this supervisor are stopped. Never kill by
         # port, process name, or a PID read from an untrusted/stale manifest.

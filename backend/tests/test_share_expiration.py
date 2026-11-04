@@ -28,6 +28,7 @@ def test_first_verified_public_issuance_expires_once_in_utc_and_preserves_photos
             if not self.healthy:raise httpx.ConnectError('offline')
             return httpx.Response(200,json={'registered':True,'fingerprint':fingerprint})
     monkeypatch.setattr(httpx,'Client',Probe)
+    monkeypatch.setattr(sharing,'verify_isolation',lambda origin: {'routes':22})
     with pytest.raises(Exception):repo.sharing.verify_public(sid,'a'*64)
     assert repo.get(sid,'a'*64)['share']['expires_at'] is None
     Probe.healthy=True;issued=repo.sharing.verify_public(sid,'a'*64)

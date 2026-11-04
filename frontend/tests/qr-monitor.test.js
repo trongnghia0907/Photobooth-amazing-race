@@ -20,9 +20,9 @@ test('public origin polling refreshes an existing share with GET only and preser
   try{
     await refreshPublicQR(app);
     assert.equal(rendered,`https://new-test.trycloudflare.com/p/${token}`);
-    assert.deepEqual(urls,[['/api/sessions/session','GET'],['/api/sessions/session/public-status','GET']]);
+    assert.deepEqual(urls,[['/api/sessions/session/public-status','GET']]);
     assert.equal(app.publicQRChecking,false);
-    app.shareBusy=true;await refreshPublicQR(app);assert.equal(urls.length,2);
+    app.shareBusy=true;await refreshPublicQR(app);assert.equal(urls.length,1);
   }finally{globalThis.document=previous.document;globalThis.fetch=previous.fetch;}
 });
 
@@ -35,8 +35,25 @@ test('QR mode is a truthful status indicator and exposes no network control',()=
     renderQRConnectionMode({}, {configured:true,tunnel_status:'connecting'});
     assert.equal(element.textContent,'Connecting to Cloudflare');
     renderQRConnectionMode({}, {configured:true,temporary:true,tunnel_status:'ready'});
+    assert.equal(element.textContent,'Cloudflare HTTPS • checking');
+    renderQRConnectionMode({}, {configured:true,temporary:true,tunnel_status:'ready',public_origin_verified:true});
     assert.equal(element.textContent,'Cloudflare HTTPS • verified');
     renderQRConnectionMode({}, {configured:false});
     assert.equal(element.textContent,'QR connection not verified');
+  }finally{globalThis.document=previous;}
+});
+
+test('monitor stops requests outside Review and after twelve consecutive failures',async()=>{
+  const previous=globalThis.document;
+  globalThis.document={getElementById:()=>({toDataURL:()=> 'saved',dataset:{},classList:{add(){}}})};
+  let checks=0;
+  const app={currentScreen:'home',lastSavedImage:'saved',serverSession:{status:'completed'},
+    activeShare:{composite_id:'composite'},finalOperation:{compositeId:'composite'},pendingPhotos:[],
+    loadSharingConfig:async()=>{checks++;return {configured:true,local_only:true};}};
+  try{
+    await refreshPublicQR(app);assert.equal(checks,0);
+    app.currentScreen='result';
+    for(let n=0;n<20;n++)await refreshPublicQR(app);
+    assert.equal(checks,12);assert.equal(app.activeShare.public_ready,false);
   }finally{globalThis.document=previous;}
 });

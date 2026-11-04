@@ -80,15 +80,19 @@ def capture(client,base,slot,operation=None):
     return client.post(base+'/captures',headers=headers(operation or key()),json={'slot_index':slot})
 
 
-def test_selectable_but_unimplemented_real_transport_fails_closed(settings):
-    with TestClient(create_app(settings)) as client:
+def test_selectable_real_transport_fails_closed_without_a_camera(settings):
+    app=create_app(settings)
+    def absent(deadline):raise CameraError('disconnected','No Sony WIA camera.',stage='connect')
+    with TestClient(app) as client:
+        app.state.camera.adapter.driver.transport.open=absent
         sid=create(client);base=f'/api/sessions/{sid}/camera'
         state=client.get(base+'/status',headers=headers()).json()
         assert state['capabilities']['adapter']=='sony_zve10'
-        assert not any(state['capabilities'][flag] for flag in ['demo','capture','live_view','physical_shutter','original_file','hardware_verified'])
+        assert state['capabilities']['capture'] and state['capabilities']['original_file']
+        assert not state['capabilities']['demo'] and not state['capabilities']['hardware_verified']
         result=client.post(base+'/connect',headers=headers())
-        assert result.status_code==503 and result.json()['error']['code']=='unsupported'
-        assert 'No shutter' in result.json()['error']['message']
+        assert result.status_code==503 and result.json()['error']['code']=='disconnected'
+        assert 'No Sony WIA camera' in result.json()['error']['message']
         assert client.get('/api/admin/camera').status_code==401
         csrf=login(client,settings)
         assert any(row['id']=='sony_zve10' for row in client.get('/api/admin/camera').json()['adapters'])
@@ -183,4 +187,59 @@ def test_fake_deadline_prevents_late_shutter_and_event_mode_stays_unverified(set
     production=replace(settings,app_env='production',operation_mode='event')
     controller=CameraController(Repository(production),adapter)
     with pytest.raises(CameraError,match='SDK'):controller.check_event_capabilities()
+    adapter.disconnect()
+
+
+@pytest.mark.parametrize('invalid',['missing','truncated'])
+def test_adapter_rejects_incomplete_driver_jpeg(invalid,monkeypatch):
+    driver=FakeSonyCommandDriver();adapter=SonyZvE10CameraAdapter(driver);adapter.connect()
+    reference=adapter.capture_photo(key(),time.monotonic()+5)
+    original=driver.get_captured_photo(reference,time.monotonic()+5)
+    broken=None if invalid=='missing' else CapturedPhoto(original.data[:-100],'image/jpeg','camera_original')
+    monkeypatch.setattr(driver,'get_captured_photo',lambda *args:broken)
+    with pytest.raises(CameraError) as failure:adapter.get_captured_photo(reference,time.monotonic()+5)
+    assert failure.value.stage=='transfer' and failure.value.code=='transfer'
+    adapter.disconnect()
+
+
+def test_connection_error_survives_cleanup_error(monkeypatch):
+    driver=FakeSonyCommandDriver();driver.missing=True
+    adapter=SonyZvE10CameraAdapter(driver)
+    def stop_failure():raise OSError('FAKE cleanup failure')
+    monkeypatch.setattr(driver,'stop_live_view',stop_failure)
+    with pytest.raises(CameraError,match='unavailable'):adapter.connect()
+    assert not adapter.connected and driver.disconnects==1
+
+
+def test_original_save_failure_retries_transfer_without_another_shutter(settings,monkeypatch):
+    from app.services.camera import controller
+    app,driver=attached(settings)
+    with TestClient(app) as client:
+        install_fake(app,driver);sid=create(client);base=connect(client,sid)
+        old=capture(client,base,0).json()['session']['photos'][0]['id']
+        def failed_write(*args):raise OSError('FAKE storage unavailable')
+        operation=key()
+        with monkeypatch.context() as patch:
+            patch.setattr(controller,'atomic_write',failed_write)
+            failed=capture(client,base,0,operation)
+        assert failed.status_code==503
+        assert driver.attempts==2
+        assert client.get('/api/sessions/'+sid,headers=headers()).json()['photos'][0]['id']==old
+        recovered=capture(client,base,0,operation)
+        assert recovered.status_code==200 and driver.attempts==2
+        assert recovered.json()['session']['photos'][0]['id']!=old
+
+
+def test_jpeg_validation_preserves_original_bytes_resolution_and_exif(monkeypatch):
+    from io import BytesIO
+    from PIL import Image
+    driver=FakeSonyCommandDriver();adapter=SonyZvE10CameraAdapter(driver);adapter.connect()
+    buffer=BytesIO();exif=Image.Exif();exif[274]=6
+    Image.new('RGB',(320,240),'blue').save(buffer,'JPEG',exif=exif)
+    original=buffer.getvalue()
+    monkeypatch.setattr(driver,'get_captured_photo',lambda *args:CapturedPhoto(original,'image/jpeg','camera_original'))
+    photo=adapter.get_captured_photo('fake-durable-reference',time.monotonic()+5)
+    assert photo.data==original
+    with Image.open(BytesIO(photo.data)) as image:
+        assert image.size==(320,240) and image.getexif()[274]==6
     adapter.disconnect()

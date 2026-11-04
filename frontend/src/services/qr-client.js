@@ -20,12 +20,10 @@ function confirmedSnapshot(app) {
 function showNextStep(app) {
   if (confirmedSnapshot(app)) {
     const missingPublicOrigin=app.shareError?.includes('PUBLIC_BASE_URL');
-    const pendingDrive=app.shareError?.includes('đồng bộ Google Drive');
-    const message=pendingDrive?'Your photo is saved locally and is waiting to sync with Google Drive. The QR code will be ready when the image is available online.'
-      :missingPublicOrigin?'A public HTTPS address is not configured yet. Your photo is safe; ask event staff to complete setup before creating a QR code.'
+    const message=missingPublicOrigin?'A public HTTPS address is not configured yet. Your photo is safe; ask event staff to complete setup before creating a QR code.'
       :app.shareError?'Your photo is saved, but the QR code is not ready. The system will retry automatically; please ask event staff if it remains unavailable.'
       :'Your photo is saved. Select “Confirm & Create QR” to try again.';
-    showQRUnavailable(app,message,missingPublicOrigin?'configuration_error':pendingDrive?'processing':'error');
+    showQRUnavailable(app,message,missingPublicOrigin?'configuration_error':'error');
   } else {
     const config=app.sharingConfig;
     const hint=config && !config.configured ? ` ${config.message}` : '';
@@ -47,21 +45,27 @@ export function loadSharingConfig(app, force=false) {
     return app.sharingConfig;
   }).finally(()=>{
     app.sharingConfigRequest=null;
-    if(app.currentScreen==='result' && !app.persistenceBusy && !app.shareBusy && !app.publicQRChecking) app.generateQRCodeForCurrentPhoto(false);
   });
   return app.sharingConfigRequest;
 }
 
 /** Read-only polling: never saves a composite or creates/rotates a share token. */
 export async function refreshPublicQR(app) {
-  if(app.publicQRChecking||app.persistenceBusy||app.shareBusy||app.captureBusy)return;
+  if(app.currentScreen!=='result'||!confirmedSnapshot(app)||(app.qrRetryFailures||0)>=12
+      ||app.publicQRChecking||app.persistenceBusy||app.shareBusy||app.captureBusy)return;
+  if(!currentShare(app))return generateQRCodeForCurrentPhoto(app,true,true);
   app.publicQRChecking=true;
   try{
     const configuration=await app.loadSharingConfig(true);
     if(app.currentScreen!=='result'||!currentShare(app))return;
-    if(!configuration.configured){showQRUnavailable(app,'A public photo link is not configured yet. Your photo is saved; ask event staff to check the QR setup.','tunnel_disconnected');return;}
+    if(!configuration.configured||configuration.local_only||configuration.lan_only){
+      app.qrRetryFailures=(app.qrRetryFailures||0)+1;
+      app.activeShare.public_ready=false;
+      showQRUnavailable(app,'','configuration_error');return;
+    }
     if(['connecting','disconnected'].includes(configuration.tunnel_status)){
       app.activeShare.public_ready=false;app.syncPrintUI?.();
+      app.qrRetryFailures=(app.qrRetryFailures||0)+1;
       showQRUnavailable(app,configuration.tunnel_status==='connecting'
         ? 'Connecting to Cloudflare. Your photo is saved; the phone QR will update when HTTPS is ready.'
         : 'The tunnel is disconnected. Your photo is still saved; restart the mobile QR script to get a new HTTPS address.',
@@ -69,18 +73,20 @@ export async function refreshPublicQR(app) {
       return;
     }
     const context=app.sessionContext,operation=app.finalOperation;
-    const state=await request(`/sessions/${context.id}`,{token:context.token});
+    const share=await request(`/sessions/${context.id}/public-status`,{token:context.token});
     if(app.sessionContext!==context||app.finalOperation!==operation||!currentShare(app))return;
-    let share=state.share;
     if(!share){app.activeShare.public_ready=false;showQRUnavailable(app,'This QR code has expired or was revoked.','expired');app.syncPrintUI?.();return;}
     if(share?.composite_id!==operation.compositeId)return;
     if(share.share_url.split('/p/')[1]!==app.activeShare.share_url.split('/p/')[1])throw new Error('Share token changed unexpectedly');
-    if(!share.local_only&&!share.lan_only){
-      share=await request(`/sessions/${context.id}/public-status`,{token:context.token});
-      if(app.sessionContext!==context||app.finalOperation!==operation)return;
-    }
     app.activeShare=share;
+    app.qrRetryFailures=0;
     app.renderQRCodeVisual(share.share_url);
+    app.syncPrintUI?.();
+  }catch(error){
+    app.qrRetryFailures=(app.qrRetryFailures||0)+1;
+    if(app.activeShare)app.activeShare.public_ready=false;
+    if(error.status===404)app.qrRetryFailures=12;
+    showQRUnavailable(app,'',error.status===404?'expired':app.qrRetryFailures>=12?'unavailable':'error');
     app.syncPrintUI?.();
   }finally{app.publicQRChecking=false;}
 }
@@ -115,7 +121,7 @@ export async function confirmPhotoAndGenerateQR(app) {
   return app.generateQRCodeForCurrentPhoto(true);
 }
 
-export async function generateQRCodeForCurrentPhoto(app, forceNotify=false) {
+export async function generateQRCodeForCurrentPhoto(app, forceNotify=false, automatic=false) {
   if(currentShare(app)&&!forceNotify) {
     app.renderQRCodeVisual(app.activeShare.share_url);
     return;
@@ -126,6 +132,8 @@ export async function generateQRCodeForCurrentPhoto(app, forceNotify=false) {
     return;
   }
   if(app.shareBusy) return;
+  if(!automatic)app.qrRetryFailures=0;
+  if(!app.qrStartedAt)app.qrStartedAt=performance.now();
   app.shareBusy=true;
   app.syncPersistenceUI();
   operation.finalizeKey ||= newId();
@@ -134,7 +142,7 @@ export async function generateQRCodeForCurrentPhoto(app, forceNotify=false) {
     const configuration=await app.loadSharingConfig(true);
     if(!configuration.configured) throw new Error(configuration.message);
     const result=await request(`/sessions/${app.sessionContext.id}/finalize`,{
-      method:'POST',token:app.sessionContext.token,key:operation.finalizeKey,
+      method:'POST',token:app.sessionContext.token,key:operation.finalizeKey,preferAsync:true,
       body:{composite_id:operation.compositeId},
     });
     let share=result.share;
@@ -147,28 +155,27 @@ export async function generateQRCodeForCurrentPhoto(app, forceNotify=false) {
     if(!share || share.composite_id!==operation.compositeId || !allowed
         || !share.qr_image_url?.startsWith('/p/')) throw new Error('The backend did not confirm a valid share URL.');
     app.activeShare=share;
+    if(share.local_only||share.lan_only||['connecting','disconnected'].includes(configuration.tunnel_status)){
+      app.qrRetryFailures=(app.qrRetryFailures||0)+1;
+      showQRUnavailable(app,'',configuration.tunnel_status==='connecting'?'tunnel_connecting':
+        configuration.tunnel_status==='disconnected'?'tunnel_disconnected':'configuration_error');
+      return;
+    }
     if(!share.local_only&&!share.lan_only){
-      showQRUnavailable(app,'Checking this session’s HTTPS photo page…','processing');
+      if(app.qrPhase!=='ready')showQRUnavailable(app,'Checking this session’s HTTPS photo page…','processing');
       share=await request(`/sessions/${app.sessionContext.id}/public-status`,{token:app.sessionContext.token});
       app.activeShare=share;
     }
     app.shareError='';
+    app.qrRetryFailures=0;
     app.renderQRCodeVisual(share.share_url);
   } catch(error) {
     if(app.activeShare)app.activeShare.public_ready=false;
     app.shareError=error.message;
-    const pendingDrive=error.message.includes('đồng bộ Google Drive');
     const missingPublicOrigin=error.message.includes('PUBLIC_BASE_URL');
-    const displayMessage=pendingDrive?'Your photo is saved locally and is waiting to sync with Google Drive. The QR code will be ready when the image is available online.'
-      :missingPublicOrigin?'A public HTTPS address is not configured yet. Your photo is safely saved; ask event staff to complete setup.'
-      :'Your photo is saved, but the QR code could not be prepared. Check the connection and ask event staff for help if it remains unavailable.';
-    showQRUnavailable(app,displayMessage,pendingDrive?'processing':missingPublicOrigin?'configuration_error':'error');
-    if(!/hết hạn|thu hồi/.test(error.message)){
-      clearTimeout(app.qrUpdateDebounceTimer);
-      app.qrUpdateDebounceTimer=setTimeout(()=>{
-        if(app.currentScreen==='result'&&app.finalOperation===operation)app.generateQRCodeForCurrentPhoto(true);
-      },5000);
-    }
+    app.qrRetryFailures=(app.qrRetryFailures||0)+1;
+    if(/hết hạn|thu hồi/.test(error.message)||error.status===404)app.qrRetryFailures=12;
+    showQRUnavailable(app,'',missingPublicOrigin?'configuration_error':app.qrRetryFailures>=12?'unavailable':'error');
   } finally {
     app.shareBusy=false;
     app.syncPersistenceUI();

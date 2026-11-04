@@ -1,11 +1,16 @@
 import {test,expect,request} from '@playwright/test';
 let cookies;
+const closingPages=new WeakSet();
 test.beforeAll(async()=>{
   const client=await request.newContext({baseURL:'http://127.0.0.1:5188'});
   const paired=await client.post('/api/booth/pair',{headers:{'X-OSA-Pair':'1'},data:{key:'preview-only-disposable-pairing-key'}});
   expect(paired.ok()).toBe(true);cookies=(await client.storageState()).cookies;await client.dispose();
 });
-test.afterEach(async({page})=>{await page.evaluate(async()=>{app.releaseHostCamera();await app.hostReleaseRequest;}).catch(()=>{});});
+test.afterEach(async({page})=>{
+  closingPages.add(page);
+  await page.evaluate(async()=>{app.releaseHostCamera();await app.hostReleaseRequest;}).catch(()=>{});
+  await page.unrouteAll({behavior:'ignoreErrors'});
+});
 
 test('lost first frame and temporary preview disconnect retry reads without reconnecting camera',async({page,context})=>{
   await context.addCookies(cookies);
@@ -49,8 +54,14 @@ for(const origin of ['http://172.20.10.2:8000','http://192.168.43.23:8000'])test
   // backend. There is no Vite or localhost URL in the browser's Guest traffic.
   await page.route(origin+'/**',async route=>{
     const url=new URL(route.request().url());
-    const response=await route.fetch({url:'http://127.0.0.1:8028'+url.pathname+url.search});
-    await route.fulfill({response});
+    try{
+      const response=await route.fetch({url:'http://127.0.0.1:8028'+url.pathname+url.search});
+      await route.fulfill({response});
+    }catch(error){
+      // releaseHostCamera aborts an in-flight frame during teardown; its proxy
+      // response may already be disposed. Keep failures during the test visible.
+      if(!closingPages.has(page))throw error;
+    }
   });
   await page.goto(origin+'/booth');
   await page.locator('#boothPairKey').fill('preview-only-disposable-pairing-key');

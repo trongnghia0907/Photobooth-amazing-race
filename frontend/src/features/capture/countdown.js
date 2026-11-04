@@ -1,23 +1,27 @@
 /** Extracted from legacy; explicit app context supplied by bootstrap. */
 
+export function setCapturePaused(app,paused) {
+  app.sequencePaused=paused;
+  const state=app.countdownState;
+  if(state){
+    if(paused){
+      state.remainingMs=Math.max(0,state.deadline-performance.now());
+      clearTimeout(app.countdownTimerId);clearTimeout(app.sequenceTimerId);
+      app.countdownTimerId=null;app.sequenceTimerId=null;
+      document.getElementById('countdownOverlay')?.classList.add('hidden');
+    }else{
+      if(state.kind==='countdown')document.getElementById('countdownOverlay')?.classList.remove('hidden');
+      state.resume();
+    }
+  }
+  app.updateCaptureScreenUI();
+}
+
 export async function startOrContinueSequence(app) {
   app.ensureAudio();
   if(app.persistenceBusy||app.captureBusy||app.sequenceStarting)return;
   if (app.isCapturingSequence) {
-    app.sequencePaused=!app.sequencePaused;
-    const state=app.countdownState;
-    if(state){
-      if(app.sequencePaused){
-        state.remainingMs=Math.max(0,state.deadline-performance.now());
-        clearTimeout(app.countdownTimerId);clearTimeout(app.sequenceTimerId);
-        app.countdownTimerId=null;app.sequenceTimerId=null;
-        document.getElementById('countdownOverlay')?.classList.add('hidden');
-      }else{
-        if(state.kind==='countdown')document.getElementById('countdownOverlay')?.classList.remove('hidden');
-        state.resume();
-      }
-    }
-    app.updateCaptureScreenUI();
+    setCapturePaused(app,!app.sequencePaused);
     return;
   }
 

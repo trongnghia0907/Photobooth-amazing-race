@@ -200,7 +200,8 @@ def test_development_localhost_uses_real_saved_share_with_warning(tmp_path,origi
         path=urlsplit(state['share']['share_url']).path
         downloaded=client.get(path+'/download')
         assert downloaded.status_code==200
-        assert hashlib.sha256(downloaded.content).hexdigest()==state['share']['print_ready']['sha256']
+        assert state['share']['print_ready'] is None  # Never embed localhost in a print-ready QR.
+        assert hashlib.sha256(downloaded.content).hexdigest()==state['composite']['sha256']
         qr=Image.open(BytesIO(client.get(path+'/qr.png').content))
         assert zxingcpp.read_barcode(qr).text==state['share']['share_url']
         assert client.post(f'/api/sessions/{sid}/finalize',headers=headers(operation),json={'composite_id':state['composite']['id']}).json()==state

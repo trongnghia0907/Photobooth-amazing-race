@@ -1,25 +1,22 @@
-"""Original ZV-E10 boundary, NOT a Sony PTP implementation.
+"""Original ZV-E10 adapter; real Windows WIA/PTP driver by default.
 
-Sony lists ZV-E10 under Camera Remote Command, not Camera Remote SDK.
-https://support.d-imaging.sony.co.jp/app/cameraremotecommand/en/index.html
-The licensed command reference/sample is not present in this repository. Real
-operations fail closed until a driver based on its per-model command matrix is
-implemented. `driver` is dependency injection of our existing CameraAdapter
-contract for fake tests/future integration, never a guessed Sony API or opcode.
-Native I/O deadlines must be enforced by that future driver; this boundary only
-checks deadlines before/after calls and cannot cancel a hung USB driver.
+Explicit driver injection remains available for contract tests. Neither protocol
+tests nor an implemented transport constitute physical hardware verification.
 """
 from dataclasses import replace
 from io import BytesIO
 import time
 import uuid
 from PIL import Image, UnidentifiedImageError
-from .base import CameraCapabilities, CameraError
+from .base import CameraCapabilities, CameraError, CapturedPhoto
+from .sony_ptp import SonyPtpDriver
+
+_DEFAULT_DRIVER = object()
 
 
 class SonyZvE10CameraAdapter:
-    def __init__(self, driver=None):
-        self.driver=driver
+    def __init__(self, driver=_DEFAULT_DRIVER, *, storage_root=None, timeout=15):
+        self.driver=SonyPtpDriver(storage_root,timeout) if driver is _DEFAULT_DRIVER else driver
         self.connected=False
 
     def get_capabilities(self):
@@ -29,7 +26,7 @@ class SonyZvE10CameraAdapter:
         cap=self.driver.get_capabilities()
         if cap.demo or not (cap.capture and cap.physical_shutter and cap.original_file) or cap.capture_kind!='camera_original':
             raise CameraError('unsupported','Sony requires a real shutter/original-JPEG driver; DEMO/preview substitution is forbidden.',stage='connect')
-        return replace(cap,adapter='sony_zve10',name='Sony ZV-E10 — PTP boundary, hardware NOT VERIFIED',hardware_verified=False)
+        return replace(cap,adapter='sony_zve10',name='Sony ZV-E10 — Windows WIA/PTP, hardware NOT VERIFIED',hardware_verified=False)
 
     def get_status(self):
         if self.driver is None:
@@ -69,8 +66,10 @@ class SonyZvE10CameraAdapter:
             if not state.get('connected'):
                 raise CameraError('disconnected','Sony ZV-E10 was not found or could not connect.',stage='connect')
             self.connected=True
-        except Exception:
-            self.disconnect();raise
+        except Exception as error:
+            try:self.disconnect()
+            except Exception as cleanup_error:raise error from cleanup_error
+            raise
 
     def disconnect(self):
         try:
@@ -101,18 +100,38 @@ class SonyZvE10CameraAdapter:
             raise CameraError('capture','Sony did not return a durable capture reference.',uncertain=True)
         return reference
 
+    def recover_capture(self, capture_id, deadline):
+        driver=self._ready('transfer')
+        self._deadline(deadline,'transfer')
+        recovery=getattr(driver,'recover_capture',None)
+        if recovery is None:
+            raise CameraError('recovery_required','This driver cannot reconcile an uncertain capture; no new shutter was sent.',stage='transfer',uncertain=True)
+        return recovery(capture_id,deadline)
+
+    def capture_persisted(self, capture_id):
+        if isinstance(self.driver,SonyPtpDriver):self.driver.capture_persisted(capture_id)
+
     def get_captured_photo(self, reference, deadline):
         driver=self._ready('transfer');self._deadline(deadline,'transfer')
         try:photo=driver.get_captured_photo(reference,deadline)
         except TimeoutError:
             raise CameraError('timeout','Sony JPEG transfer timed out; retry the same capture reference.',stage='transfer') from None
+        except CameraError as error:
+            # A native transport defaults to stage=capture. At this boundary a
+            # shutter receipt already exists: the UI must retry the same transfer.
+            error.stage='transfer'
+            raise
         self._deadline(deadline,'transfer')
-        if photo.mime!='image/jpeg' or photo.source!='camera_original':
+        if (not isinstance(photo,CapturedPhoto) or not isinstance(photo.data,bytes) or not photo.data
+                or photo.mime!='image/jpeg' or photo.source!='camera_original'):
             raise CameraError('transfer','Sony requires the original camera JPEG, never a preview/webcam image.',stage='transfer')
         try:
             with Image.open(BytesIO(photo.data)) as image:
                 if image.format!='JPEG':raise ValueError('Not JPEG')
-                image.verify()
-        except (UnidentifiedImageError,OSError,ValueError):
+                # JPEG verify() alone accepts truncated pixel data. Decode it,
+                # but retain the original bytes/EXIF rather than re-encoding.
+                image.load()
+        except (UnidentifiedImageError,OSError,ValueError,Image.DecompressionBombError):
             raise CameraError('transfer','Sony returned an invalid JPEG; the photo slot was not replaced.',stage='transfer') from None
+        self._deadline(deadline,'transfer')
         return photo  # unchanged original bytes; persistence belongs to CameraController

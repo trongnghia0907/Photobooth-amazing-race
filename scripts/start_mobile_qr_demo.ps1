@@ -1,4 +1,4 @@
-param([int]$HostPort = 8000, [int]$PublicPort = 8001, [switch]$RequireDrive,
+param([int]$HostPort = 8000, [int]$PublicPort = 8011, [switch]$RequireDrive,
       [switch]$StandaloneDemo, [string]$StorageRoot, [string]$EnvFile)
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot

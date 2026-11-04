@@ -78,6 +78,7 @@ def create_app(settings: Settings | None = None):
             if settings.frontend_dist:
                 cleanup.callback(RuntimeLock(settings.storage_root/'.host-app.lock').acquire().close)
             app.state.repository = Repository(settings)
+            cleanup.callback(app.state.repository.print_ready.close)
             app.state.booth_access = BoothAccess(app.state.repository)
             app.state.event_display = EventDisplay(app.state.repository)
             app.state.admin_auth = AdminAuth(app.state.repository)

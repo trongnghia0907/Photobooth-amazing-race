@@ -22,6 +22,8 @@ export function renderQRCodeVisual(app,targetUrl) {
       return;
     }
     app.qrPhase='ready';
+    clearTimeout(app.qrImageTimer);app.qrImageTimer=null;
+    if(app.qrStartedAt){app.qrDisplayMs=Math.round(performance.now()-app.qrStartedAt);app.qrStartedAt=null;}
     app.shareError='';
     container.dataset.phase='ready';
     app.lastUploadedUrl=targetUrl;
@@ -53,5 +55,9 @@ export function renderQRCodeVisual(app,targetUrl) {
     app.syncPersistenceUI();
   };
   container.appendChild(image);
+  clearTimeout(app.qrImageTimer);
+  app.qrImageTimer=setTimeout(()=>{
+    if(image.isConnected && app.activeShare?.share_url===targetUrl && app.qrPhase==='loading')image.onerror();
+  },10000);
   image.src=share.qr_image_url+'?origin='+encodeURIComponent(new URL(targetUrl).origin);
 }

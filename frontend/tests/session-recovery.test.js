@@ -22,3 +22,26 @@ test('corrupt recovery data blocks capture instead of silently starting a replac
     assert.equal(await restoreSavedSession(app),true);assert.equal(app.sessionContext,undefined);
   }finally{if(previous)Object.defineProperty(globalThis,'sessionStorage',previous);else delete globalThis.sessionStorage;}
 });
+
+test('pending camera recovery keeps its idempotency key, never caches photo bytes or private paths',()=>{
+  const previous=Object.getOwnPropertyDescriptor(globalThis,'sessionStorage');let cached;
+  Object.defineProperty(globalThis,'sessionStorage',{configurable:true,value:{setItem:(_,value)=>{cached=JSON.parse(value);}}});
+  try{
+    rememberSession({id:'session',token:'owner',createKey:'operation',slotCount:4,layout:'landscape_4',
+      cameraCapture:{slot:2,key:'same-camera-request',completeAfterRecovery:true,retryNewShot:false,photoBytes:'SECRET',privatePath:'PRIVATE'}});
+    assert.deepEqual(cached.cameraCapture,{slot:2,key:'same-camera-request',submitted:true,completeAfterRecovery:true,retryNewShot:false});
+    assert.ok(!JSON.stringify(cached).includes('SECRET')&&!JSON.stringify(cached).includes('PRIVATE'));
+  }finally{if(previous)Object.defineProperty(globalThis,'sessionStorage',previous);else delete globalThis.sessionStorage;}
+});
+
+test('invalid pending camera slots or receipts block recovery before any request',async()=>{
+  const previous=Object.getOwnPropertyDescriptor(globalThis,'sessionStorage');let pending;
+  Object.defineProperty(globalThis,'sessionStorage',{configurable:true,value:{getItem:()=>JSON.stringify({
+    token:'a'.repeat(64),createKey:'b'.repeat(32),id:'0'.repeat(8)+'-0000-0000-0000-'+'0'.repeat(12),slotCount:4,layout:'landscape_4',cameraCapture:pending})}});
+  try{
+    for(pending of [null,false,{}, {slot:4,key:'x'.repeat(32),completeAfterRecovery:true,retryNewShot:false}]){
+      const app={syncPersistenceUI(){},ensureSession(){assert.fail('No capture/session request allowed');}};
+      assert.equal(await restoreSavedSession(app),true);assert.equal(app.resumeRecoveryPending,true);assert.equal(app.sessionContext,undefined);
+    }
+  }finally{if(previous)Object.defineProperty(globalThis,'sessionStorage',previous);else delete globalThis.sessionStorage;}
+});

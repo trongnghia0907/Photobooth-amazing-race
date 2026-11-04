@@ -25,7 +25,10 @@ def create_public_app(settings=None):
         lease=RuntimeLock(settings.storage_root/'.public-app.lock').acquire()
         try:
             app.state.repository=Repository(settings)
-            yield
+            try:
+                yield
+            finally:
+                app.state.repository.print_ready.close()
         finally:lease.close()
     app=FastAPI(title='AMAZING RACE 2026 Guest Photo',docs_url=None,redoc_url=None,openapi_url=None,lifespan=lifespan)
     app.include_router(router)

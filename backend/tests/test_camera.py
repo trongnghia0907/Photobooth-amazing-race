@@ -297,20 +297,13 @@ def test_real_adapter_contract_preserves_native_file_without_preview_substitutio
 
 def test_optional_uvc_adapter_uses_driver_frames_and_reports_demo_only(settings,monkeypatch):
     import sys
-    from types import SimpleNamespace
+    from test_uvc_preview import FakeCv,wait_preview
     from app.services.camera.uvc_demo import UvcDemoCameraAdapter
-    calls=[]
-    class Device:
-        def isOpened(self):return True
-        def read(self):calls.append('frame');return True,object()
-        def release(self):calls.append('release')
-    class Encoded:
-        def tobytes(self):return b'fake-driver-jpeg'
-    monkeypatch.setitem(sys.modules,'cv2',SimpleNamespace(VideoCapture=lambda *args:Device(),CAP_DSHOW=700,CAP_ANY=0,imencode=lambda *args:(True,Encoded())))
+    source=FakeCv();monkeypatch.setitem(sys.modules,'cv2',source)
     adapter=UvcDemoCameraAdapter(settings.storage_root)
-    adapter.connect();adapter.start_live_view();assert adapter.get_preview_frame().data==b'fake-driver-jpeg'
+    adapter.connect();adapter.start_live_view();assert wait_preview(adapter).data
     reference=adapter.capture_photo(key(),time.monotonic()+5)
     captured=adapter.get_captured_photo(reference,time.monotonic()+5)
     assert captured.source=='webcam_frame'
     assert not adapter.get_capabilities().physical_shutter and not adapter.get_capabilities().original_file
-    adapter.disconnect();assert calls==['frame','frame','release']
+    adapter.disconnect();assert len(source.devices[0].releases)==1

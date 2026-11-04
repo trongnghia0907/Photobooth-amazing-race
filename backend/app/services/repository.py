@@ -116,7 +116,7 @@ class Repository:
             result['share'] = share
         return result
 
-    def get(self, sid, token):
+    def get(self, sid, token, *, prepare_print=True):
         with self.db.connect() as db:
             db.execute('BEGIN')
             self.authorize(db, sid, token)
@@ -125,7 +125,7 @@ class Repository:
             # The snapshot uses a read transaction. Generate/refresh a derived
             # footer only after that transaction ends (e.g. tunnel URL changed).
             share=result.get('share')
-            if share and not share.get('print_ready'):
+            if prepare_print and share and not share.get('print_ready'):
                 self.print_ready.backfill(share['final_id'])
                 result['share']=self.sharing.metadata(db,result['composite']['id'])
             return result
