@@ -67,8 +67,8 @@ class Settings:
             raise ValueError('Invalid guest idle, gallery polling or disk reserve configuration')
         if self.log_level not in ('debug','info','warning','error','critical'):
             raise ValueError('Invalid LOG_LEVEL')
-        if self.camera_adapter not in ('mock','uvc_demo','vendor'):
-            raise ValueError('CAMERA_ADAPTER must be mock, uvc_demo or vendor')
+        if self.camera_adapter not in ('mock','uvc_demo','vendor','sony_zve10'):
+            raise ValueError('CAMERA_ADAPTER must be mock, uvc_demo, vendor or sony_zve10')
         if not (1 <= self.camera_timeout_seconds <= 120 and 3 <= self.camera_lease_seconds <= 300 and 1 <= self.camera_stale_seconds <= 10):
             raise ValueError('Invalid camera timeouts')
         if self.camera_device_index < 0:

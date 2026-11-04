@@ -10,6 +10,7 @@ from .base import CameraError
 from .mock import MockCameraAdapter
 from .uvc_demo import UvcDemoCameraAdapter
 from .vendor import VendorCameraAdapter
+from .sony_zve10 import SonyZvE10CameraAdapter
 from ..images import atomic_write, validate_image
 from ..repository import now
 
@@ -34,6 +35,7 @@ class CameraController:
 
     def make_adapter(self, mode):
         if mode == 'mock':return MockCameraAdapter()
+        if mode == 'sony_zve10':return SonyZvE10CameraAdapter()
         if mode == 'uvc_demo':
             if self.settings.app_env != 'development':
                 raise CameraError('demo_only','UVC frame fallback chỉ cho development, không phải shutter thật.',stage='connect')
@@ -116,13 +118,22 @@ class CameraController:
             checked_at = now()
             connected = bool(adapter_status.get('connected'))
             live_supported = bool(capabilities.live_view)
+            preview_checked = bool(connected and adapter_status.get('previewing') and self.last_frame_at is not None)
+            preview_fresh = bool(preview_checked and time.time()-self.last_frame_at <= self.settings.camera_stale_seconds)
+            preview_result = ('UNSUPPORTED' if not live_supported else
+                              'NOT_TESTED' if not preview_checked else 'PASS' if preview_fresh else 'FAIL')
             checks = [
                 {'name': 'connection', 'status': 'PASS' if connected else 'FAIL',
                  'detail': 'Camera adapter đang kết nối.' if connected else 'Chưa kết nối camera host.',
-                 'suggestion': None if connected else 'Kết nối camera hoặc chọn adapter DEMO trong Host Dashboard.'},
-                {'name': 'live_preview', 'status': 'PASS' if live_supported else 'UNSUPPORTED',
-                 'detail': 'Live Preview được adapter hỗ trợ.' if live_supported else 'Adapter không hỗ trợ Live Preview.',
-                 'suggestion': None if live_supported else 'Chọn adapter có khả năng preview hoặc kiểm tra SDK.'},
+                 'suggestion': None if connected else 'Kiểm tra kết nối USB, PC Remote và driver của adapter đã chọn.'},
+                {'name': 'live_preview', 'status': preview_result,
+                 'detail': ('Adapter không hỗ trợ Live Preview.' if not live_supported else
+                            'Đã nhận frame Live Preview còn mới.' if preview_fresh else
+                            'Frame Live Preview đã cũ; chưa xác nhận camera bị ngắt kết nối.' if preview_checked else
+                            'Chưa nhận frame từ Live Preview đang hoạt động; capability không phải kết quả kiểm thử.'),
+                 'suggestion': (None if preview_fresh else
+                                'Kiểm tra driver/SDK hỗ trợ Live Preview.' if not live_supported else
+                                'Mở preview ở Booth, kiểm tra kết nối laptop rồi làm mới chẩn đoán.')},
                 {'name': 'physical_shutter', 'status': 'UNSUPPORTED' if not capabilities.physical_shutter else 'NOT_TESTED',
                  'detail': ('Adapter không khai báo shutter vật lý.' if not capabilities.physical_shutter else
                             'Có capability shutter; chưa phát lệnh shutter trong chẩn đoán an toàn.'),
@@ -188,6 +199,7 @@ class CameraController:
                     self.last_frame_at = None
                     raise CameraError('stale_preview','Live View đã cũ/đứng hình. Kết nối lại camera.',stage='preview')
                 self.last_frame_at = frame.captured_at
+                self.state = 'previewing';self.last_error = None
                 return frame
             except CameraError as error:
                 self.state = 'error';self.last_error = str(error);self.last_frame_at = None;raise

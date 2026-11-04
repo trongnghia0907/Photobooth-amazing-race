@@ -189,7 +189,7 @@ async function loadStoredPhoto(app,result,operation){
 export async function captureHostPhoto(app,slot){
   let operation=app.hostCaptureOperation;
   if(operation&&operation.slot!==slot)throw new Error('A camera request is still in progress. Retry saving before changing slots.');
-  if(!operation){operation={slot,key:newId()};app.hostCaptureOperation=operation;}
+  if(!operation){operation={slot,key:newId(),completeAfterRecovery:app.singleRetakeIndex!==null||app.isCapturingSequence};app.hostCaptureOperation=operation;}
   try{
     // A failed safe capture is retried only by an explicit user action. A lost
     // response/transfer failure keeps its key so it cannot trigger another shot.
@@ -213,9 +213,10 @@ export async function retryHostCapture(app){
   if(app.captureBusy||!app.hostCaptureOperation)return;
   app.captureBusy=true;app.syncHostCaptureUI();
   try{
-    const slot=app.hostCaptureOperation.slot;
+    const operation=app.hostCaptureOperation,slot=operation.slot;
     await app.captureHostPhoto(slot);app.singleRetakeIndex=null;
-    if(app.photos.every(Boolean))app.onAllSixShotsCompleted();
+    app.retakeReturnToReview=false;
+    if(app.photos.every(Boolean)&&operation.completeAfterRecovery)app.onAllSixShotsCompleted();
   }catch(error){app.reportSaveError(error);}
   finally{app.captureBusy=false;app.syncPersistenceUI();app.updateCaptureScreenUI();}
 }

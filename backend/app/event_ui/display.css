@@ -11,3 +11,26 @@ main{flex:1;min-height:0}#displayPresentation{position:relative;height:100%;min-
 #displayLogin{display:grid;place-items:center;height:100%;overflow:auto}form{width:min(100%,460px);padding:28px;border:1px solid #334966;border-radius:20px;background:#101a2c}form p{color:#b3c9e8;line-height:1.6}form label,form input,form button{display:block;width:100%;margin:12px 0}button,input{font:inherit;min-height:44px;border-radius:10px;border:1px solid #405778;background:#17253c;color:#eef4ff;padding:9px 14px}button{cursor:pointer}button:disabled{opacity:.5;cursor:wait}button:focus-visible,input:focus-visible{outline:3px solid #fbbf24;outline-offset:3px}#displayLoginError{color:#fda4af}
 @media(max-width:760px){body{padding:12px}header{margin-bottom:8px}#photoWall{gap:12px;grid-template-columns:minmax(0,1fr) minmax(0,.6fr) minmax(0,1fr)}#photoWall figure{padding:4px;border-radius:8px}}
 @media(prefers-reduced-motion:reduce){#photoWall figure{transition:none}}
+
+/* Full-viewport poster; the middle band stays clear for the artwork title. */
+:root{color-scheme:light;color:#16365b;background:#ccf1fc}
+body{position:relative;padding:2vh 1.5vw;background:#64c6f6;isolation:isolate}
+body>header{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);margin:0}
+.official-event-art{position:absolute;inset:0;background:linear-gradient(110deg,#70d5f3,#51b7fa);pointer-events:none;z-index:0}
+.official-event-art::before{content:"";position:absolute;inset:0;background:url('/p/assets/theme.png') center calc(50dvh - 19vw)/100% auto no-repeat;mask-image:linear-gradient(to bottom,transparent calc(50dvh - 19vw),#000 calc(50dvh - 19vw + 32px))}
+main{position:relative;z-index:1}
+#displayPresentation{width:100%;margin:0}
+#photoWall{grid-template-columns:minmax(0,1fr) minmax(0,.9fr) minmax(0,1fr);grid-template-rows:minmax(0,1fr) minmax(0,1.1fr) minmax(0,1fr);gap:clamp(12px,2vh,24px) clamp(16px,2vw,40px)}
+#photoWall figure:nth-child(3){grid-area:3/1}#photoWall figure:nth-child(4){grid-area:3/3}
+#photoWall figure{background:transparent;border:0;border-radius:0;padding:0;box-shadow:none}
+#photoWall img{filter:drop-shadow(0 4px 9px #123c8350)}
+#displayStatus{left:36%;right:36%;bottom:0;color:#16365b;background:#e9f9ffd9;border-radius:12px;padding:4px 8px}
+#displayStatus:empty{display:none}
+#displayEmpty{top:auto;bottom:5vh;left:28%;right:28%;color:#244c65;background:#fafffff0;border:1px solid #b3dce9;border-radius:16px;padding:10px}
+#displayEmpty h2{font-size:clamp(16px,1.5vw,26px);margin:0 0 6px}#displayEmpty p{margin:0;line-height:1.5}
+form{background:#fffffff5;border-color:#a9d6e7;box-shadow:0 8px 24px #17648a14;color:#16365b}form p{color:#496780}
+button,input{background:#fff;color:#16365b;border-color:#a7cddd}button{background:linear-gradient(110deg,#086b94,#08788b);color:white;border:0;font-weight:700}#displayLoginError{color:#a32445}
+button:focus-visible,input:focus-visible{outline-color:#9355a8}
+body:has(#displayPresentation[hidden]) .official-event-art{position:relative;inset:auto;flex:none;width:min(360px,70vw);aspect-ratio:1630/965;background:url('/p/assets/theme.png') center/contain no-repeat;margin:0 auto 12px}
+body:has(#displayPresentation[hidden]) .official-event-art::before{display:none}
+@media(max-width:760px){body{padding:12px}#photoWall{grid-template-columns:minmax(0,1fr) minmax(0,.6fr) minmax(0,1fr);gap:12px}#photoWall figure{padding:0;border-radius:0}#displayEmpty{padding:6px;bottom:7vh}#displayStatus{left:28%;right:28%;font-size:10px}}

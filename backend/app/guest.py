@@ -1,5 +1,6 @@
 """Minimal mobile guest page. No booth controls, identifiers or gallery links."""
 import secrets
+from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
@@ -9,6 +10,13 @@ PRIVATE_HEADERS = {
     'Cache-Control':'no-store', 'X-Robots-Tag':'noindex, nofollow',
     'Referrer-Policy':'no-referrer', 'X-Content-Type-Options':'nosniff',
 }
+
+
+@router.get('/assets/theme.png')
+def theme_artwork():
+    # Public, fixed presentation asset only; never resolve user input/storage paths.
+    return FileResponse(Path(__file__).resolve().parents[2]/'frontend/public/assets/official-theme.png',
+                        media_type='image/png',headers={'Cache-Control':'public, max-age=86400','X-Content-Type-Options':'nosniff'})
 
 
 def page(content, status=200, script=''):
@@ -23,7 +31,17 @@ main{width:min(100%,640px);margin:0 auto;padding:24px 16px 48px;text-align:cente
 section{background:white;padding:20px;border:1px solid #bae0fd;border-radius:24px}
 h1{font-size:24px;color:#1e40af}p{line-height:1.6}img{width:100%;height:auto;border-radius:12px;display:block;margin:16px 0}
 [hidden]{display:none!important}a{display:block;border-radius:16px;background:#2563eb;color:white;padding:16px;text-decoration:none;font-weight:700}
-.error{color:#b91c1c}small{color:#64748b}</style></head><body><main><h1>AMAZING RACE 2026</h1><section>'''+content+'</section><p><small>Ảnh sự kiện của bạn • Giữ link riêng để xem lại</small></p></main>'
+.error{color:#b91c1c}small{color:#64748b}
+body{background:linear-gradient(145deg,#e1f6ff,#fff3dd 55%,#f6eaff);color:#16365b}
+main{padding-top:16px}main>h1{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+.official-event-art{width:min(100%,480px);aspect-ratio:1630/965;margin:0 auto 18px;background:url('/p/assets/theme.png') center/contain no-repeat;border-radius:18px}
+section{border-color:#a9d9ec;box-shadow:0 8px 24px #17648a12;background:#fffffff5}
+h2{color:#163c66;font-size:22px}#guestPhoto{background:#f2fbff;border:1px solid #c6e2ef;border-radius:14px}
+a{min-height:50px;background:linear-gradient(110deg,#086b94,#08788b);box-shadow:0 4px 12px #086b9420}
+a:focus-visible{outline:3px solid #9b429c;outline-offset:4px}a:hover{background:#075f80}.error{color:#a32445}
+p[role=status]{color:#365976}p[role=alert]{line-height:1.6}small{color:#4b6580}
+@media(max-width:420px){main{padding:12px 12px 28px}section{padding:16px;border-radius:18px}.official-event-art{margin-bottom:14px}}
+</style></head><body><main><div class="official-event-art" role="img" aria-label="AMAZING RACE 2026 official artwork with BK and Monash University logos"></div><h1>AMAZING RACE 2026</h1><section>'''+content+'</section><p><small>Ảnh sự kiện của bạn • Giữ link riêng để xem lại</small></p></main>'
     if script:
         html+=f'<script nonce="{nonce}">{script}</script>'
     return HTMLResponse(html+'</body></html>',status_code=status,headers=headers)

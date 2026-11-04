@@ -4,15 +4,15 @@ import {startOrContinueSequence,runNextShotCountdown} from '../src/features/capt
 import {updateCaptureScreenUI,onAllSixShotsCompleted,captureCurrentFrameImmediately,completePausedCapture} from '../src/features/capture/capture.js';
 import {triggerSingleRetake,cancelSingleRetake,resetSessionShots} from '../src/features/capture/retake.js';
 import {confirmResetShots} from '../src/features/home/kiosk.js';
-import {syncHostCaptureUI} from '../src/services/host-camera.js';
+import {syncHostCaptureUI,captureHostPhoto,retryHostCapture} from '../src/services/host-camera.js';
 import {clearTimers} from '../src/utils/timing.js';
 import {readFileSync} from 'node:fs';
 
 async function scenario(count,action){
   const originals={document:globalThis.document,window:globalThis.window,setTimeout:globalThis.setTimeout,clearTimeout:globalThis.clearTimeout,clearInterval:globalThis.clearInterval,performance:globalThis.performance};
   let now=0,serial=0;const timers=new Map(),nodes={};
-  const node=()=>{const classes=new Set();return {textContent:'',classList:{add:c=>classes.add(c),remove:c=>classes.delete(c),contains:c=>classes.has(c),toggle:(c,on)=>on?classes.add(c):classes.delete(c)},setAttribute(name,value){this[name]=value;}};};
-  for(const id of ['countdownOverlay','countdownNumber','countdownLabel','autoGraceOverlay','mainCaptureBtn','mainCaptureBtnText','hostShotProgress','captureProgressTitle','retakeBanner','retakeSlotNumber','cancelRetakeBtn','manualInstantSnapBtn','completeCaptureBtn','resetAllShotsBtn'])nodes[id]=node();
+  const node=()=>{const classes=new Set();return {textContent:'',dataset:{},classList:{add:c=>classes.add(c),remove:c=>classes.delete(c),contains:c=>classes.has(c),toggle:(c,on)=>on?classes.add(c):classes.delete(c)},setAttribute(name,value){this[name]=value;}};};
+  for(const id of ['countdownOverlay','countdownNumber','countdownLabel','autoGraceOverlay','mainCaptureBtn','mainCaptureBtnText','hostShotProgress','hostCameraStatus','captureProgressTitle','retakeBanner','retakeSlotNumber','cancelRetakeBtn','manualInstantSnapBtn','completeCaptureBtn','resetAllShotsBtn'])nodes[id]=node();
   globalThis.document={getElementById:id=>nodes[id],body:node()};
   globalThis.performance={now:()=>now};
   globalThis.setTimeout=(fn,delay)=>{const id=++serial;timers.set(id,{fn,at:now+delay});return id;};
@@ -148,4 +148,32 @@ for(const count of [4,6])test(`${count} slots: Resume after a paused manual shot
   await start();await advance(30000);
   assert.deepEqual(shots,Array.from({length:count},(_,index)=>index));
   assert.equal(app.photos[0],first);assert.equal(reviews(),1);
+}));
+
+for(const count of [4,6])for(const paused of [true,false])test(`${count} manual shots, paused=${paused}: failed final transfer retry waits for Complete`,()=>scenario(count,async({app,reviews,nodes})=>{
+  app.photos=Array.from({length:count},(_,index)=>index===count-1?null:{slot:index});
+  app.cameraSource='host';app.sequencePaused=paused;app.hostPreviewHealthy=false;
+  app.prepareHostCamera=async()=>{throw new Error('Test-only camera connection failure');};
+  await assert.rejects(captureHostPhoto(app,count-1),/connection failure/);
+  app.captureHostPhoto=async slot=>{app.photos[slot]={slot,saved:true};app.hostCaptureOperation=null;};
+  await retryHostCapture(app);
+  assert.equal(app.currentScreen,'capture');assert.equal(reviews(),0);assert.equal(app.sequencePaused,paused);
+  assert.equal(nodes.completeCaptureBtn.disabled,false);
+  assert.deepEqual(app.photos.map(photo=>photo.slot),Array.from({length:count},(_,index)=>index));
+  completePausedCapture(app);assert.equal(reviews(),1);
+}));
+
+for(const retake of [false,true])test(`saved capture retry preserves ${retake?'retake':'automatic'} completion intent`,()=>scenario(4,async({app,reviews})=>{
+  app.photos=Array.from({length:4},(_,index)=>index===3?null:{slot:index});app.cameraSource='host';
+  app.isCapturingSequence=!retake;app.singleRetakeIndex=retake?3:null;
+  app.prepareHostCamera=async()=>{throw new Error('Test-only transfer failure');};
+  await assert.rejects(captureHostPhoto(app,3),/transfer failure/);
+  app.isCapturingSequence=false;
+  app.captureHostPhoto=async slot=>{app.photos[slot]={slot,saved:true};app.hostCaptureOperation=null;};
+  await retryHostCapture(app);assert.equal(reviews(),1);assert.equal(app.singleRetakeIndex,null);
+}));
+
+for(const count of [4,6])for(const seconds of [3,5,7,10])test(`${count} photos with ${seconds}s countdown capture once per slot`,()=>scenario(count,async({app,advance,start,shots,reviews})=>{
+  app.countdownSeconds=seconds;await start();await advance((seconds*1000+1000)*count);
+  assert.deepEqual(shots,Array.from({length:count},(_,index)=>index));assert.equal(reviews(),1);
 }));

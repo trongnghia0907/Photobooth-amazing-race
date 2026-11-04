@@ -52,7 +52,7 @@ def main():
     parser.add_argument('--public-url')
     parser.add_argument('--public-gateway',action=argparse.BooleanOptionalAction,default=None,help='Start photo-only gateway on loopback; does not expose Internet')
     parser.add_argument('--public-port',type=int)
-    parser.add_argument('--camera',choices=['mock','vendor','uvc_demo'])
+    parser.add_argument('--camera',choices=['mock','vendor','uvc_demo','sony_zve10'])
     parser.add_argument('--printer',choices=['mock','windows','cups'])
     parser.add_argument('--enable-physical-printing',action=argparse.BooleanOptionalAction,default=None)
     parser.add_argument('--ssl-certfile',type=Path)
@@ -229,14 +229,15 @@ def main():
             gallery_url='/gallery on the configured HTTPS origin'
         else:
             private_host=args.lan_ip if args.profile=='lan' else args.tls_host if tls else 'localhost'
-            print(f'Booth: {scheme}://{private_host}:{args.port}/booth',flush=True)
-            if args.profile=='lan':print(f'Booth on laptop: http://localhost:{args.port}/booth; connect iPad to the same hotspot and pair it.',flush=True)
             print(f'Host Dashboard (laptop only): {scheme}://localhost:{args.port}/admin',flush=True)
             print(f'Event display (separate Host-issued code): {scheme}://{private_host}:{args.port}/event-display',flush=True)
             gallery_url=f'{scheme}://{private_host}:{args.port}/gallery'
         gallery_status='enabled' if env_flag('PUBLIC_GALLERY_ENABLED') else 'disabled; set PUBLIC_GALLERY_ENABLED=true and restart'
         print(f'Photo Gallery: {gallery_url} ({gallery_status})',flush=True)
         print(f'Camera: {args.camera}; Printer: {args.printer}. Mock never means hardware verified.',flush=True)
+        if not args.behind_proxy:
+            print(f'Booth: {scheme}://{private_host}:{args.port}/booth',flush=True)
+            if args.profile=='lan':print(f'Booth on laptop: http://localhost:{args.port}/booth',flush=True)
         print('Ctrl+C or python scripts/stop_host.py to stop. No public tunnel was started.',flush=True)
         network_check=time.monotonic()+10
         while all(p.poll() is None for p,_,_ in children):

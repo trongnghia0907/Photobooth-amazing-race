@@ -70,11 +70,12 @@ def diagnostics(request: Request):
     return {**request.app.state.camera.status(),
             'adapters':[{'id':'mock','label':'Host Mock — DEMO'},
                         {'id':'uvc_demo','label':'Host webcam frame — DEMO, optional OpenCV'},
+                        {'id':'sony_zve10','label':'Sony ZV-E10 — PTP driver not implemented'},
                         {'id':'vendor','label':'Vendor SDK — BLOCKED BY HARDWARE'}]}
 
 
 class Configuration(BaseModel):
-    adapter: Literal['mock','uvc_demo','vendor'] | None=None
+    adapter: Literal['mock','uvc_demo','vendor','sony_zve10'] | None=None
     guest_enabled: bool | None=None
 
 

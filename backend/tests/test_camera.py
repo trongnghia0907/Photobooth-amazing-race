@@ -203,10 +203,30 @@ def test_host_camera_diagnostics_are_structured_safe_and_authenticated(settings)
         assert body['last_checked_at'] and body['physical_test']['status']=='NOT_TESTED'
         checks={item['name']:item for item in body['checks']}
         assert checks['connection']['status']=='FAIL'
-        assert checks['live_preview']['status']=='PASS'
+        assert checks['live_preview']['status']=='NOT_TESTED'
         assert checks['physical_shutter']['status']=='UNSUPPORTED'
         assert checks['original_file']['status']=='UNSUPPORTED'
         assert app.state.camera.adapter.shutter_calls==0
+
+
+def test_diagnostics_require_a_fresh_preview_frame(settings):
+    app=create_app(settings)
+    with TestClient(app) as client:
+        sid=create(client);base=connect(client,sid);csrf=login(client,settings)
+        def preview_check():
+            result=client.post('/api/admin/camera/diagnostic',headers=csrf)
+            assert result.status_code==200
+            return next(check for check in result.json()['checks'] if check['name']=='live_preview')['status']
+        assert preview_check()=='PASS'
+        camera=app.state.camera
+        camera.last_frame_at=time.time()-settings.camera_stale_seconds-1
+        assert preview_check()=='FAIL'
+        assert client.post(base+'/live-view/stop',headers=headers()).status_code==200
+        assert preview_check()=='NOT_TESTED'
+        assert client.post(base+'/live-view/start',headers=headers()).status_code==200
+        assert preview_check()=='NOT_TESTED'
+        assert client.get(base+'/frame',headers=headers()).status_code==200
+        assert preview_check()=='PASS'
 
 
 def test_controller_os_lock_prevents_other_process_owner(settings):

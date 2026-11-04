@@ -1,222 +1,233 @@
 # AMAZING RACE 2026 Photobooth
 
-[Quick Start](#4-quick-start) · [iPad and device connections](#5-device-connections) · [Troubleshooting](#8-troubleshooting)
+## 1. Build & Installation
 
-## 1. Project Overview
+### Install once
 
-Capture four or six photos, review and customize them, then confirm one final composite for display, download and printing. The Host laptop runs FastAPI, SQLite, camera control and the print queue. An iPad can operate the Guest UI over the same Wi-Fi or phone hotspot.
+This guide uses **Windows 11 and PowerShell** as the primary setup environment. Windows 11 is not enforced by the application; Windows 10 and other platforms require separate startup, dependency and hardware-driver validation. For macOS, see [macOS setup](docs/MACOS_SETUP.md).
 
-The default camera and printer are **Mock** devices for software testing. Real DSLR/mirrorless capture is not implemented; physical camera, printer and iPad behavior must be tested on the intended hardware.
+Install Git, **Python 3.12** and **Node.js 22.12 or newer with npm**. Camera hardware, a printer and Internet access are optional for Mock testing.
 
-## 2. Requirements
-
-- **Windows 11 and PowerShell:** primary development/test platform.
-- **Python 3.12**, **Node.js 22.12 or newer**, npm and Git.
-- **Laptop:** runs the Host; keep it powered on and awake.
-- **iPad with Safari:** optional for remote Guest operation; use the laptop browser otherwise.
-- **Camera:** Mock needs no hardware; a laptop/USB webcam can use experimental UVC DEMO.
-- **Printer:** optional, connected to the Host with its operating-system driver installed.
-- **Internet:** needed for optional Google Drive uploads and Cloudflare public access.
-- **Chrome/Chromium:** needed for automated browser tests.
-
-macOS has [separate setup instructions](docs/MACOS_SETUP.md); startup, camera and printing have not been verified on a Mac. Linux is best-effort. No Docker or cloud server is required for local operation.
-
-## 3. Installation
-
-1. Clone the repository and enter its root directory:
+1. Clone and open the project:
 
    ```powershell
    git clone https://github.com/trongnghia0907/Photobooth-amazing-race.git
    Set-Location Photobooth-amazing-race
    ```
 
-   If you already have the repository, open its folder instead. All following commands start from the root containing `backend/`, `frontend/` and `scripts/`.
+   Run the following commands from this root folder, which contains `backend`, `frontend` and `scripts`.
 
-2. Create the backend environment and install locked dependencies:
+2. Create the Python environment and install backend dependencies:
 
    ```powershell
    py -3.12 -m venv backend/.venv
    & ./backend/.venv/Scripts/python.exe -m pip install -r backend/requirements.lock.txt
+   & ./backend/.venv/Scripts/python.exe -m pip check
    ```
 
-3. Install and build the frontend:
+   Activation is unnecessary: the commands use the virtual environment directly.
+
+3. Install frontend dependencies, then build the Host UI:
 
    ```powershell
    Push-Location frontend
    npm.cmd ci
    npm.cmd run build:host
    Pop-Location
+   Test-Path frontend/dist-host/index.html
    ```
 
-These installation steps are not required on every launch. Reinstall dependencies when their lockfiles change. Rebuild the frontend after UI changes.
+   The final command should print `True`. Installation downloads dependencies; building creates the frontend served by the Host. Repeat installation when lockfiles change and rebuild after frontend changes.
 
-## 4. Quick Start
+4. Prepare storage and enable the All-Photos Gallery in this terminal:
 
-### Terminal 1 — start the Host
+   ```powershell
+   New-Item -ItemType Directory -Path runtime -Force | Out-Null
+   $env:PUBLIC_GALLERY_ENABLED="true"
+   ```
 
-For laptop-only testing:
+   The Host creates SQLite, photo folders and logs automatically inside `runtime`. Keep this directory private and backed up; do not delete it to fix startup errors. Each laptop needs its own installation and authorization.
 
-```powershell
-$env:PUBLIC_GALLERY_ENABLED="true"
-& ./backend/.venv/Scripts/python.exe scripts/run_host.py --profile local
-```
+5. Check that the launcher is available:
 
-For an iPad/display computer on the same Wi-Fi or hotspot, use this **instead**:
+   ```powershell
+   & ./backend/.venv/Scripts/python.exe scripts/run_host.py --help
+   ```
 
-```powershell
-$env:PUBLIC_GALLERY_ENABLED="true"
-& ./backend/.venv/Scripts/python.exe scripts/run_host.py --profile lan --lan-ip auto
-```
+No `.env` file is required for the basic setup. The launcher asks for a Host username, a password of at least **12 characters**, and a kiosk pairing code of at least **16 characters**. There are no default credentials. Save and reuse your chosen credentials; do not put secrets in Git or command arguments.
 
-Run only one Host. Enter a Host username, password of at least **12 characters**, and kiosk pairing code of at least **16 characters**. Password/code entry is hidden. There are no default credentials; keep and reuse your credentials on later launches. **Leave this terminal open.**
+Environment variables apply to the current PowerShell terminal. Configuration files are loaded only when explicitly passed with `--env-file`; existing environment variables override file values. Do not copy the production settings in `backend/.env.example` unchanged into a local/LAN setup. Google Drive and Cloudflare setup is optional and described in section 3.
 
-The Host serves the built frontend and API together on port **8000**. No separate Vite server is needed. Add `--build` to the Host command when you want to rebuild the UI before starting.
+## 2. Camera Connection
 
-### Open the five interfaces
+### Current camera support
 
-Use `http://localhost:8000` on the laptop. For LAN devices, use the laptop IP printed by the launcher.
+- **Mock (`mock`):** working synthetic preview and saved test images. No physical shutter or camera JPEG.
+- **Webcam (`uvc_demo`):** optional OpenCV video-frame capture in development mode. It is DEMO, not a replacement for original photographs from a mirrorless camera.
+- **Sony ZV-E10 (`sony_zve10`):** selectable, but **BLOCKED: no real USB/PTP driver is implemented**. Connection fails explicitly without switching to Mock. Fake-driver tests do not verify a real Sony shutter, Live View or JPEG transfer.
 
-| Interface | Path | Access |
-| --- | --- | --- |
-| Guest Photobooth | `/booth` | Kiosk pairing code |
-| Host Dashboard | `/admin` | Host login, laptop localhost only |
-| Event Display | `/event-display` | Separate display code issued by Host |
-| All-Photos Gallery | `/gallery` | Requires the Gallery flag; eligible published photos only |
-| Guest Photo Page | `/p/{token}` | Open the generated QR/share URL; do not type the placeholder |
+Sony lists the original ZV-E10 under [Camera Remote Command](https://support.d-imaging.sony.co.jp/app/cameraremotecommand/en/index.html). The separate [Camera Remote SDK](https://support.d-imaging.sony.co.jp/app/sdk/en/index.html) lists ZV-E10M2, not the original ZV-E10. The Command Reference, example code and per-model compatibility information are needed before implementing the missing transport. There is currently no verified Sony driver installation command for this project.
 
-`/` also opens the Guest UI. Check `http://localhost:8000/api/health` for `status: "ok"`. API documentation at `/docs` is disabled in the built Host application.
+### Prepare the original Sony ZV-E10
 
-Open Booth, pair it, select a layout/timer and press **Start Capturing**. Review the photos and click **Confirm, Display Photo & Get QR** when ready. Use **New Session** for the next guest.
+The intended connection is:
 
-### Terminal 2 — optional Internet QR and Gallery
+**Sony ZV-E10 -> USB data cable -> Windows Host -> Wi-Fi/phone hotspot -> iPad.**
 
-Local/LAN startup does **not** start a public tunnel. For smartphone access over 4G/5G, first configure Drive if required (section 7), keep Terminal 1 running, then open another PowerShell at the repository root:
+The iPad does not connect to the camera by USB or use its own camera in Host mode.
 
-```powershell
-$env:PUBLIC_GALLERY_ENABLED="true"
-& ./backend/.venv/Scripts/python.exe scripts/mobile_qr_demo.py start --attach-host --host-port 8000 --public-port 8011 --storage-root runtime --require-drive
-```
+1. Use the first-generation **ZV-E10**, a charged/powered camera and a USB data cable. A charge-only cable is insufficient.
+2. On the camera, set **Network > Smartphone Connect > Smartphone Connection > Off**.
+3. Set **Network > PC Remote Function > PC Remote > On** and **PC Remote Cnct Method > USB**.
+4. For original-file testing, choose **Still Img. Save Dest. > PC+Camera**, insert a writable memory card, and select **PC Save Image Size > Original**. If shooting RAW & JPEG, choose **RAW+J PC Save Img > JPEG Only**.
+5. Independently check USB detection, Live View and one photograph with Sony's official [Imaging Edge Desktop](https://support.d-imaging.sony.co.jp/app/imagingedge/en/). Then close Remote and other camera applications before Photobooth testing so they do not compete for the device.
 
-This attaches to the existing Host and starts/reuses a photo gateway on **8011**. Omit `--require-drive` for a local-storage-only test. Do not launch a second Host or a separate standalone demo.
+These settings come from the [ZV-E10 PC Remote guide](https://helpguide.sony.net/ilc/2070/v1/en/contents/TP0002392805.html). Imaging Edge working does not supply this project's missing driver. Do not replace Windows USB drivers blindly or install SDK components intended only for ZV-E10 II.
 
-Wait for the actual HTTPS URL, complete a **new** photo session, confirm it and keep the result screen open for public URL verification. Scan only when the UI reports QR ready; test the correct image and Download on your phone. Public Gallery uses that HTTPS origin plus `/gallery`.
+### Select an adapter
 
-A stale `running` status file is not proof of connectivity. The live HTTPS photo URL must work. An existing tunnel with different settings must be stopped before starting a replacement.
+Use the Host command in section 3 with `--camera mock` for the first software test.
 
-### Stop or restart
-
-Stop the Host with **Ctrl+C** in Terminal 1, or from another terminal:
-
-```powershell
-& ./backend/.venv/Scripts/python.exe scripts/stop_host.py
-```
-
-If you started the tunnel, stop it separately:
-
-```powershell
-./scripts/stop_mobile_qr_demo.ps1
-```
-
-Do not run stop commands when services are already stopped. For a restart, use the same Host credentials and runtime; add `--build` only when the UI needs rebuilding.
-
-## 5. Device Connections
-
-- **Camera → Host laptop:** connect a supported webcam by USB or use its built-in camera. A USB connection alone does not enable DSLR shutter control.
-- **iPad → local network:** connect the iPad and laptop to the same Wi-Fi/phone hotspot. Run the LAN command in section 4 and open the printed Booth URL in Safari.
-- **Printer → Host laptop:** connect it and install its driver. Configure/select it through the Host before enabling physical printing.
-- **Auditorium display → laptop or another computer:** connect a projector/LED by HDMI/USB-C, or open Event Display on a computer on the same LAN. Create a display code in Host, enter it on the display page and use fullscreen (F11 on Windows).
-
-For LAN access, replace `LAPTOP_IP` with the current Wi-Fi IPv4 from `ipconfig`:
-
-- Booth: `http://LAPTOP_IP:8000/booth`
-- Event Display: `http://LAPTOP_IP:8000/event-display`
-- Gallery: `http://LAPTOP_IP:8000/gallery`
-
-Do not use `localhost` on the iPad. If automatic detection selects a VPN interface, supply the correct address with `--lan-ip LAPTOP_IP`. When DHCP changes the address, reopen the new URL; an existing browser session does not automatically migrate between origins.
-
-### Camera modes
-
-- **Mock:** implemented synthetic preview/capture for testing; no physical camera required.
-- **UVC DEMO:** experimental OpenCV webcam frames; physical device compatibility is not guaranteed.
-- **Vendor SDK:** blocked placeholder. DSLR/mirrorless shutter and original-JPG retrieval require model-specific integration and hardware verification.
-
-To try the Host webcam, install the optional dependency, stop the Host, and restart it with UVC:
+To try a webcam, install its optional dependency once, then replace `--camera mock` with `--camera uvc_demo` in that Host command:
 
 ```powershell
 & ./backend/.venv/Scripts/python.exe -m pip install -r backend/requirements-camera-optional.txt
-& ./backend/.venv/Scripts/python.exe scripts/run_host.py --profile local --camera uvc_demo
 ```
 
-Use `--profile lan --lan-ip auto` instead of `--profile local` for iPad access. Close competing camera apps and allow desktop camera access in Windows. See [hardware compatibility](docs/HARDWARE_COMPATIBILITY.md) for limits and physical-device acceptance.
+To inspect the Sony integration's current blocked state, use `--camera sony_zve10` instead. Do not start a second Host. On the laptop, open `/admin`, sign in and open Camera Settings. Refresh diagnostics and inspect connection, preview, physical shutter and original-file results separately. The current Sony adapter reports the missing driver; it cannot complete a real capture.
 
-## 6. Main Features
+Once a verified driver is delivered, the hardware acceptance sequence is: connect Sony, check laptop preview, check iPad preview, use **Capture Now**, and inspect the saved original JPEG before confirming the composite. Originals are stored under `runtime/camera_originals/<session-id>/`; successful finalization may clean them up later. Verify the captured slot, then test four/six photos, Pause, Resume, Complete and Retake. These physical Sony steps remain **blocked**, not hardware-verified.
 
-Implemented software workflows, testable with Mock devices:
+If connection fails, check USB data support, camera power, PC Remote settings and competing applications. For UVC, also check Windows camera permissions and the device index. For a preview timeout, check the Host/network first; it does not by itself prove a USB disconnect. Read the launcher error and `runtime/logs/`; keep existing photos and retry the same pending save rather than repeatedly triggering the shutter.
 
-- **Layouts:** portrait 2×3 (six photos) and landscape 2×2 (four photos).
-- **Capture:** countdown, pause/resume, Capture Now and individual-slot retake. After paused manual capture fills every saved slot, **Complete** opens Review without confirming or publishing.
-- **Review:** filters, stickers, frames and text; finalization requires explicit guest confirmation.
-- **Storage:** one official composite per session; temporary captures retained until safe cleanup. Optional private Drive upload runs asynchronously.
-- **Printing:** persistent queue and Mock adapter; Windows GDI and optional CUPS adapters need configured drivers and physical testing.
-- **QR sharing:** session-specific photo page/download, after successful public URL verification. QR expiry starts at the first successful verification and lasts **24 hours**; restarting a tunnel does not renew it.
-- **Event Display:** four-corner presentation of published composites; polls automatically, independent of Drive upload completion.
-- **All-Photos Gallery:** approved/published finals only, with an already-issued, unexpired QR; hidden/revoked images are excluded.
+## 3. Running the Complete Photobooth System
 
-Confirmation explicitly discloses display publication. Host can hide photos; historical private sessions are not automatically published. Gallery may be empty even when Event Display has photos, because its QR/expiry requirements are stricter.
+### A. Terminal 1: start the Host
 
-## 7. Configuration
-
-Environment variables apply to the terminal and its child processes. Set them **before** startup; enable Gallery in both Host and tunnel terminals if both should serve it.
-
-- `PUBLIC_GALLERY_ENABLED=true`: enables the Gallery website.
-- `GOOGLE_DRIVE_ENABLED=true`: enables private asynchronous upload after OAuth/privacy checks.
-- `EVENT_GALLERY_AUTO_PUBLISH=false`: disables automatic publication of newly consented confirmations.
-
-Launcher options/environment can also come from `--env-file`. Example files are templates and are not loaded automatically. Exported environment overrides file values; CLI options take priority. See [configuration and operation modes](docs/EVENT_CONFIGURATION.md).
-
-Keep `runtime/` private and backed up: it contains SQLite, photos, queue state and secrets needed to preserve existing shares. Never delete it to resolve startup errors or commit it to Git. See [backup and recovery](docs/WINDOWS_EVENT_GUIDE.md).
-
-### Optional Google Drive
-
-Install the optional dependency:
+Connect the laptop to the intended Wi-Fi/hotspot, then run from the repository root:
 
 ```powershell
-& ./backend/.venv/Scripts/python.exe -m pip install -r backend/requirements-drive-optional.txt
+$env:PUBLIC_GALLERY_ENABLED="true"
+& ./backend/.venv/Scripts/python.exe scripts/run_host.py --profile lan --lan-ip auto --mode development --camera mock
 ```
 
-A fresh setup needs a Google Cloud project with Drive/Picker APIs, a Desktop OAuth client, an authorized account and a destination folder that passes the privacy guard. Follow the [Drive/OAuth and folder-selection guide](docs/PRIVATE_GOOGLE_DRIVE.md); existing valid authorization should be reused.
+Enter your Host credentials and pairing code. **Keep this terminal open.** This starts one Host on port **8000**, listening on `0.0.0.0` for localhost and LAN access. The built frontend and backend run together; a separate Vite server is unnecessary.
 
-Check existing credentials and privacy without starting login:
+For laptop-only testing, replace `--profile lan --lan-ip auto` with `--profile local`. Change the camera option only as described in section 2. Add `--build` when the frontend needs rebuilding.
 
-```powershell
-& ./backend/.venv/Scripts/python.exe -X utf8 scripts/connect_google_drive.py --storage-root runtime --check --audit
-```
+Open `http://localhost:8000/api/health` on the laptop and check for `"status":"ok"`. If startup fails, read the actual exception printed by the launcher. Do not kill unrelated processes or delete runtime/lock files.
 
-Then set `$env:GOOGLE_DRIVE_ENABLED="true"` in Terminal 1 before starting Host. Confirm its startup output says `Google Drive: enabled (background upload)`. Explicit configuration overrides the runtime's remembered Drive setting. Failed uploads remain queued; do not change folder sharing to bypass a privacy/access error.
+### B. Open the five websites
 
-### Optional Cloudflare and production deployment
+`LAPTOP_IP` below means the current Wi-Fi IPv4 printed by the launcher. `{token}` is a route placeholder: open the real generated QR/share link instead of typing it.
 
-The section 4 tunnel workflow requires `cloudflared`; on Windows it can attempt installation using the official `Cloudflare.cloudflared` winget package if missing. See [Mobile QR setup](docs/MOBILE_QR_DEMO.md) for prerequisites and errors.
+| Website | Purpose | URL / route | Requirements |
+| --- | --- | --- | --- |
+| Guest UI | Capture and customize on iPad | `http://LAPTOP_IP:8000/booth`; laptop: `http://localhost:8000/booth` | Same LAN and kiosk pairing code |
+| Host Dashboard | Manage equipment and sessions | `http://localhost:8000/admin` | Host login; laptop localhost only |
+| Event Live Display | Four-corner projector presentation | `http://LAPTOP_IP:8000/event-display` | Same LAN and separate Host-issued display code |
+| All-Photos Gallery | Browse published final composites | `http://LAPTOP_IP:8000/gallery`; public HTTPS origin + `/gallery` when enabled | Gallery flag; published, non-revoked photo with an unexpired issued QR |
+| QR Guest Photo Page | View/download one confirmed photo | `/p/{token}` on the generated share origin | Valid share token; verified public HTTPS for phones on other networks |
 
-Quick Tunnel forwards traffic to the laptop; it does not deploy a cloud server. Its hostname is temporary, so old printed QR URLs may fail after replacement. Keep the laptop, Internet and tunnel running.
+Localhost refers to the device opening the page. Use the laptop's LAN address on the iPad, never the iPad's localhost. Cloudflare forwards selected requests to the laptop; it is not a cloud-server deployment.
 
-Only the isolated Guest Photo Page/media endpoints and enabled public Gallery belong on the public gateway. Never tunnel Host port 8000 directly. Host Dashboard, camera/printing management and Event Display remain private. Permanent cloud deployment is not provided by Quick Tunnel; production HTTPS and hardware readiness require separate configuration and validation.
+### C. Connect the iPad over a phone hotspot
 
-## 8. Troubleshooting
+1. Enable the phone's 4G/5G Wi-Fi hotspot.
+2. Connect both the Windows laptop and iPad to that hotspot.
+3. Run the LAN Host command above. Find the current IPv4 if needed:
 
-- **Host will not start:** inspect the actual exception/log printed by the launcher. Check `/api/health`, build the frontend if missing, and stop only an existing owned Host. Do not kill unrelated processes or delete runtime/lock files.
-- **iPad cannot connect:** check the LAN profile, current IP, same network and hotspot client isolation. On a trusted hotspot, use a Windows Private network profile; do not disable the firewall.
-- **Camera missing or losing signal:** check the selected adapter, USB/power, device index, Windows camera permissions and competing apps. Vendor SDK mode is not implemented.
-- **Live Preview unavailable:** check network/frame timeouts and Host camera diagnostics. A transport failure does not prove physical camera disconnection; saved photos should remain intact.
-- **QR unavailable:** start Host before the tunnel, verify the live HTTPS origin, confirm a new composite and keep Result open. Localhost URLs cannot serve another phone; expired QRs are not automatically renewed.
-- **Gallery disabled/empty:** enable its flag before service startup, then check publication, hide/revoke state and QR expiry.
-- **Drive upload fails:** check Drive enabled, OAuth/folder access, privacy audit and queue errors. Keep pending local photos.
-- **Admin returns 403:** open `http://localhost:8000/admin` on the Host laptop.
+   ```powershell
+   Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.IPAddress -notmatch '^(127\.|169\.254\.)' } | Select-Object InterfaceAlias,IPAddress
+   ```
 
-If Windows blocks a trusted Private Wi-Fi network, an administrator can add this restricted inbound rule (replace `Wi-Fi` if the adapter name differs):
+4. Use the active Wi-Fi address, not a VPN address. Open the printed `/booth` URL in Safari and enter the pairing code.
+5. If automatic detection chooses another interface, stop Host and replace `--lan-ip auto` with `--lan-ip LAPTOP_IP`, using the actual current address. Reopen the URL after DHCP changes; no fixed IP is required.
+
+On a trusted hotspot, use a Windows **Private** network profile. If needed, an administrator can add a Private-network-only rule; replace `Wi-Fi` with the actual interface alias:
 
 ```powershell
 New-NetFirewallRule -DisplayName "Amazing Race Hotspot 8000" -Direction Inbound -Action Allow -Protocol TCP -LocalPort 8000 -Profile Private -InterfaceAlias "Wi-Fi" -RemoteAddress LocalSubnet
 ```
 
-For developer test commands, use the [Windows guide](docs/WINDOWS_EVENT_GUIDE.md); for event acceptance, use the [event checklist](docs/EVENT_DAY_CHECKLIST.md). Software/Mock test results do not certify physical cameras, printers, Safari/iPad or venue networks.
+Do not disable the firewall. Some hotspots isolate connected devices; if the correct IP and firewall rule still fail, use a network that allows device-to-device connections.
+
+### D. Open Event Live Display
+
+On the Host Dashboard, enable display access and create a display code. On a computer **on the same LAN**, open the printed `/event-display` URL and enter that code. Connect its projector/LED by HDMI/USB-C and press F11 for presentation. Newly published final composites appear automatically; Host can hide them.
+
+**A computer on a different auditorium network cannot currently use Event Display through the photo-only Cloudflare gateway.** The public gateway does not serve `/event-display`. Use the same LAN or connect the projector directly to the Host. Cross-network Event Display needs a separately approved private connection or future deployment; it is not currently provided. Never expose Host port 8000 publicly to work around this restriction.
+
+### E. Optional Google Drive upload
+
+Skip this for a local-only test. A new Windows installation needs its own Google authorization; do not copy another user's encrypted credentials.
+
+1. Install the optional dependencies:
+
+   ```powershell
+   & ./backend/.venv/Scripts/python.exe -m pip install -r backend/requirements-drive-optional.txt
+   ```
+
+2. In your Google Cloud project, enable Drive and Picker APIs, configure a Desktop OAuth client and authorize a test user if required. Store its client JSON privately at `.tools/google-drive/client_secret.json`. The account needs Editor/Owner access to the existing target folder `1ixmork-KFJ8xdtQCFJIpUTQm-SnJqeez`; this checkout does not support substituting another folder.
+3. Grant that exact folder through the existing Picker and run the privacy check:
+
+   ```powershell
+   & ./backend/.venv/Scripts/python.exe -X utf8 scripts/connect_google_drive.py --storage-root runtime --client-file .tools/google-drive/client_secret.json --pick-folder
+   & ./backend/.venv/Scripts/python.exe -X utf8 scripts/connect_google_drive.py --storage-root runtime --check --audit
+   ```
+
+4. After authorization/privacy pass, set `$env:GOOGLE_DRIVE_ENABLED="true"` in **Terminal 1 before starting/restarting Host**. Confirm startup says `Google Drive: enabled (background upload)`.
+
+Final composites upload privately in the background. Failed uploads remain queued locally. Do not delete pending files or change folder permissions to bypass a privacy error. See [Drive setup](docs/PRIVATE_GOOGLE_DRIVE.md) for authorization problems.
+
+### F. Terminal 2: optional public HTTPS QR and Gallery
+
+Keep Host running first. Internet and `cloudflared` are required. The script checks the executable and can install the official `Cloudflare.cloudflared` winget package on Windows if missing. In another PowerShell at the repository root:
+
+```powershell
+$env:PUBLIC_GALLERY_ENABLED="true"
+& ./backend/.venv/Scripts/python.exe scripts/mobile_qr_demo.py start --attach-host --host-port 8000 --public-port 8011 --storage-root runtime
+```
+
+If Drive is configured and required for the test, append `--require-drive` to this command. It attaches to the existing Host and starts/reuses an isolated photo gateway on **8011** plus a temporary Quick Tunnel. Do not start a standalone demo or another Host.
+
+Wait for the **actual HTTPS URL** and successful isolation checks. Open that origin plus `/gallery` for public browsing. Confirm a new composite and wait for the Result UI to report a verified HTTPS QR before scanning it over 4G/5G. If Drive is enabled, a pending upload must finish before the photo is publicly ready. Test both the correct image and Download.
+
+The public gateway serves only Guest Photo resources and the enabled public Gallery. It does not expose Booth, Host login, camera/printing controls or Event Display. Gallery can be empty even when Event Display has photos: public Gallery also requires an issued, unexpired QR. QR links expire 24 hours after first successful public verification; restarting a tunnel does not extend them.
+
+Keep the laptop, Internet and tunnel running. Quick Tunnel domains are temporary; replacing a tunnel can invalidate old printed QR URLs. No permanent cloud server is deployed by these commands.
+
+### G. Optional physical printing
+
+Mock printing is the safe default and sends nothing to a physical printer. For Windows printing, install the printer's manufacturer driver and verify it prints from Windows. Stop Host, add `--printer windows --enable-physical-printing` to the same Host command, then select the installed queue in `/admin`. A print-ready image with QR requires a verified public photo URL. Check paper size, orientation and one real print before event use; Mock tests do not verify a printer.
+
+### H. Basic end-to-end check
+
+1. Host starts and `/api/health` reports `ok`.
+2. The chosen camera connects; Sony currently stops at the missing-driver blocker.
+3. Live Preview appears on the iPad over the LAN. Physical Safari/iPad testing is still required.
+4. Capture one photo. Mock/UVC images are DEMO; a real Sony shutter/original JPEG requires the missing driver.
+5. Complete a four-photo session.
+6. Complete a six-photo session.
+7. Test Pause, Resume, Capture Now, Complete, individual Retake and Start Over. Complete opens Review without finalizing.
+8. Review/customize and select **Confirm, Display Photo & Get QR** to save one official composite and authorize event publication.
+9. Check Event Display publication. Check public Gallery after the photo has a valid issued QR; verify Host hide/revoke removes it.
+10. With the public tunnel ready, scan the real HTTPS QR on a phone using 4G/5G; verify the correct photo and Download.
+11. If Drive is enabled, verify the upload reaches `SYNCED` in Host Dashboard. Local Event Display need not wait for Drive.
+12. If physical printing is enabled, verify the actual printed image and QR.
+
+### I. Stop safely
+
+Stop Host with **Ctrl+C** in Terminal 1, or use:
+
+```powershell
+& ./backend/.venv/Scripts/python.exe scripts/stop_host.py
+```
+
+If you started mobile HTTPS testing, stop those owned services separately:
+
+```powershell
+& ./backend/.venv/Scripts/python.exe scripts/mobile_qr_demo.py stop
+```
+
+Restart with the same credentials and runtime. These stop commands preserve photos; do not delete storage or stop unrelated processes.
