@@ -4,7 +4,7 @@
 
 ### Install once
 
-This guide uses **Windows 11 and PowerShell** as the primary setup environment. Windows 11 is not enforced by the application; Windows 10 and other platforms require separate startup, dependency and hardware-driver validation. For macOS, see [macOS setup](docs/MACOS_SETUP.md).
+Use **Windows 11 and PowerShell** for the primary hardware test. Windows 11 is not enforced, but Windows 10 requires separate validation. The current Sony USB transport requires Windows WIA; it does not run on macOS/Linux. For other project components, see [macOS setup](docs/MACOS_SETUP.md).
 
 Install Git, **Python 3.12** and **Node.js 22.12 or newer with npm**. Camera hardware, a printer and Internet access are optional for Mock testing.
 
@@ -64,9 +64,11 @@ Environment variables apply to the current PowerShell terminal. Configuration fi
 
 - **Mock (`mock`):** working synthetic preview and saved test images. No physical shutter or camera JPEG.
 - **Webcam (`uvc_demo`):** optional OpenCV video-frame capture in development mode. It is DEMO, not a replacement for original photographs from a mirrorless camera.
-- **Sony ZV-E10 (`sony_zve10`):** selectable, but **BLOCKED: no real USB/PTP driver is implemented**. Connection fails explicitly without switching to Mock. Fake-driver tests do not verify a real Sony shutter, Live View or JPEG transfer.
+- **Sony ZV-E10 (`sony_zve10`): implemented and automated-tested; physical Sony ZV-E10 validation pending.** This adapter targets the first-generation ZV-E10, not ZV-E10 II.
 
-Sony lists the original ZV-E10 under [Camera Remote Command](https://support.d-imaging.sony.co.jp/app/cameraremotecommand/en/index.html). The separate [Camera Remote SDK](https://support.d-imaging.sony.co.jp/app/sdk/en/index.html) lists ZV-E10M2, not the original ZV-E10. The Command Reference, example code and per-model compatibility information are needed before implementing the missing transport. There is currently no verified Sony driver installation command for this project.
+The current code includes Windows device discovery/transport (`sony_wia.py`), Sony PTP commands (`sony_ptp.py`), adapter validation (`sony_zve10.py`) and a diagnostic script. Live View, remote shutter and original JPEG transfer have implementation paths. Protocol/adapter tests use simulated transport; they do **not** prove physical compatibility or stability. A failed Sony connection never silently switches to DEMO capture.
+
+The transport uses Windows' built-in WIA/PTP interfaces through Python's standard library; the code does not require an additional Sony pip package or SDK installer. Check camera detection in Device Manager. Do not replace USB drivers blindly.
 
 ### Prepare the original Sony ZV-E10
 
@@ -80,25 +82,62 @@ The iPad does not connect to the camera by USB or use its own camera in Host mod
 2. On the camera, set **Network > Smartphone Connect > Smartphone Connection > Off**.
 3. Set **Network > PC Remote Function > PC Remote > On** and **PC Remote Cnct Method > USB**.
 4. For original-file testing, choose **Still Img. Save Dest. > PC+Camera**, insert a writable memory card, and select **PC Save Image Size > Original**. If shooting RAW & JPEG, choose **RAW+J PC Save Img > JPEG Only**.
-5. Independently check USB detection, Live View and one photograph with Sony's official [Imaging Edge Desktop](https://support.d-imaging.sony.co.jp/app/imagingedge/en/). Then close Remote and other camera applications before Photobooth testing so they do not compete for the device.
+5. Connect the camera directly to the Windows laptop. If needed, independently check it with Sony's official [Imaging Edge Desktop](https://support.d-imaging.sony.co.jp/app/imagingedge/en/), then fully close Remote and other camera applications before Photobooth diagnostics. Only one application may own the camera.
 
-These settings come from the [ZV-E10 PC Remote guide](https://helpguide.sony.net/ilc/2070/v1/en/contents/TP0002392805.html). Imaging Edge working does not supply this project's missing driver. Do not replace Windows USB drivers blindly or install SDK components intended only for ZV-E10 II.
+These settings follow the [Sony ZV-E10 PC Remote guide](https://helpguide.sony.net/ilc/2070/v1/en/contents/TP0002392805.html). Imaging Edge working is a useful independent check, not proof that this project's driver works on the same hardware.
 
-### Select an adapter
+### Run Sony diagnostics before starting Host
 
-Use the Host command in section 3 with `--camera mock` for the first software test.
+**Stop Host and close other camera software first.** Run these commands from the repository root, in order:
 
-To try a webcam, install its optional dependency once, then replace `--camera mock` with `--camera uvc_demo` in that Host command:
+1. Discover Windows camera devices without opening the camera:
+
+   ```powershell
+   & ./backend/.venv/Scripts/python.exe scripts/diagnose_sony_camera.py
+   ```
+
+   Inspect `pnp.devices` and `original_zv_e10_name_match`. A matching device name does not verify USB/PTP communication. Discovery alone leaves protocol checks `NOT_TESTED` and exits with code **2**, even when a device is listed.
+
+2. Open USB/PTP, identify the model and retrieve a Live View frame without firing the shutter:
+
+   ```powershell
+   & ./backend/.venv/Scripts/python.exe scripts/diagnose_sony_camera.py --connect-preview
+   ```
+
+   Expect `usb_ptp_session` and `live_view` to report `PASS`. Shutter/JPEG checks remain `NOT_TESTED`.
+
+3. **This command triggers one real shutter operation** and saves the original JPEG:
+
+   ```powershell
+   & ./backend/.venv/Scripts/python.exe scripts/diagnose_sony_camera.py --capture --confirm-shutter --output-dir ./sony-test-output
+   ```
+
+   Expect all four `protocol_checks` to report `PASS`, plus `jpeg_bytes`, `jpeg_dimensions`, `jpeg_sha256` and `saved_test_image`. Open that saved file and inspect the photograph. The script only marks shutter success after receiving the JPEG.
+
+Diagnostics print JSON to the terminal; they do not automatically create a diagnostic log file. Capture outputs and recovery receipts are under `sony-test-output/camera_originals/sony-recovery/`; `saved_test_image` gives the exact JPEG path. Keep this directory private. Optional `--timeout` accepts **1–60 seconds** (default 15). Preview/capture checks exit **0** on PASS or **2** on FAIL.
+
+A diagnostic PASS covers only the requested checks. It does not mark the adapter `hardware_verified` or unlock Event mode. Full 4/6-photo and stability testing remains pending.
+
+### Select the Sony adapter
+
+After diagnostics finish, start the Sony Host command in section 3A. On the laptop, open `/admin`, sign in and inspect Camera Settings. Open `/booth` and verify Live Preview, then repeat from the paired iPad. Use **development** for initial hardware validation: Event mode requires verified physical hardware, and the current Sony adapter still reports `hardware_verified=false`. Do not bypass that restriction.
+
+For software-only testing, replace `--camera sony_zve10` with `--camera mock`. For an optional webcam test, install the following, then use `--camera uvc_demo`:
 
 ```powershell
 & ./backend/.venv/Scripts/python.exe -m pip install -r backend/requirements-camera-optional.txt
 ```
 
-To inspect the Sony integration's current blocked state, use `--camera sony_zve10` instead. Do not start a second Host. On the laptop, open `/admin`, sign in and open Camera Settings. Refresh diagnostics and inspect connection, preview, physical shutter and original-file results separately. The current Sony adapter reports the missing driver; it cannot complete a real capture.
+### Camera troubleshooting
 
-Once a verified driver is delivered, the hardware acceptance sequence is: connect Sony, check laptop preview, check iPad preview, use **Capture Now**, and inspect the saved original JPEG before confirming the composite. Originals are stored under `runtime/camera_originals/<session-id>/`; successful finalization may clean them up later. Verify the captured slot, then test four/six photos, Pause, Resume, Complete and Retake. These physical Sony steps remain **blocked**, not hardware-verified.
+- **Not detected:** check power, a USB data cable, another USB port and Device Manager. `pnp.status=UNAVAILABLE` means Windows could not complete the query; it does not prove the camera is absent.
+- **Busy/access/WIA error:** stop Host before using the diagnostic script; close Imaging Edge and other camera apps. Recheck PC Remote/USB settings.
+- **USB/PTP/protocol or unsupported-model error:** confirm original ZV-E10, PC Remote settings and the reported error code. A failure after detection may be a transport/protocol compatibility issue, not a broken camera.
+- **Live View timeout:** inspect USB/PTP connection and camera state first; a preview timeout alone does not prove disconnection. Reproduce with `--connect-preview` on the laptop before investigating Wi-Fi.
+- **No shutter/JPEG or uncertain result:** inspect the diagnostic stage, memory card and save/transfer settings. Do not repeatedly fire the shutter after an uncertain result; preserve recovery files and retry the existing pending transfer through the app.
+- **Disconnected during capture:** reconnect and inspect/recover the pending operation before taking another photo. Keep captured photos and storage intact.
 
-If connection fails, check USB data support, camera power, PC Remote settings and competing applications. For UVC, also check Windows camera permissions and the device index. For a preview timeout, check the Host/network first; it does not by itself prove a USB disconnect. Read the launcher error and `runtime/logs/`; keep existing photos and retry the same pending save rather than repeatedly triggering the shutter.
+Host logs are under `runtime/logs/`. Report the diagnostic JSON, camera model/settings and failing stage, without credentials or private images. Successful mock tests cannot distinguish every hardware problem from a driver compatibility issue; physical testing is required.
 
 ## 3. Running the Complete Photobooth System
 
@@ -108,12 +147,12 @@ Connect the laptop to the intended Wi-Fi/hotspot, then run from the repository r
 
 ```powershell
 $env:PUBLIC_GALLERY_ENABLED="true"
-& ./backend/.venv/Scripts/python.exe scripts/run_host.py --profile lan --lan-ip auto --mode development --camera mock
+& ./backend/.venv/Scripts/python.exe scripts/run_host.py --profile lan --lan-ip auto --mode development --camera sony_zve10
 ```
 
 Enter your Host credentials and pairing code. **Keep this terminal open.** This starts one Host on port **8000**, listening on `0.0.0.0` for localhost and LAN access. The built frontend and backend run together; a separate Vite server is unnecessary.
 
-For laptop-only testing, replace `--profile lan --lan-ip auto` with `--profile local`. Change the camera option only as described in section 2. Add `--build` when the frontend needs rebuilding.
+Finish and close standalone diagnostics before starting this Host. For a test without Sony hardware, use `--camera mock`. For laptop-only testing, replace `--profile lan --lan-ip auto` with `--profile local`. Add `--build` when the frontend needs rebuilding.
 
 Open `http://localhost:8000/api/health` on the laptop and check for `"status":"ok"`. If startup fails, read the actual exception printed by the launcher. Do not kill unrelated processes or delete runtime/lock files.
 
@@ -191,7 +230,11 @@ $env:PUBLIC_GALLERY_ENABLED="true"
 
 If Drive is configured and required for the test, append `--require-drive` to this command. It attaches to the existing Host and starts/reuses an isolated photo gateway on **8011** plus a temporary Quick Tunnel. Do not start a standalone demo or another Host.
 
-Wait for the **actual HTTPS URL** and successful isolation checks. Open that origin plus `/gallery` for public browsing. Confirm a new composite and wait for the Result UI to report a verified HTTPS QR before scanning it over 4G/5G. If Drive is enabled, a pending upload must finish before the photo is publicly ready. Test both the correct image and Download.
+Wait for the **actual HTTPS URL** and successful isolation checks. Open that origin plus `/gallery` for public browsing. Confirm a new composite and wait for the Result UI to display a verified HTTPS QR before scanning it over 4G/5G. Test both the correct image and Download.
+
+Confirmation durably saves one final composite on Host and creates/reuses its stable share token. The authorized gateway can serve the checksum-verified local staging image while private Drive upload runs asynchronously. QR readiness does **not** wait for Drive `SYNCED`; it requires a reachable, verified HTTPS origin and verification of that session's available photo. Print-ready preparation is separate.
+
+If the tunnel disconnects, public sharing becomes unavailable; the saved composite and upload queue remain intact. Reconnect the tunnel and use **Retry sharing** if automatic retries have stopped. For `getaddrinfo failed (11001)`, check DNS/network connectivity; try another network or configure a working DNS resolver. Do not bypass isolation checks or advertise a localhost/LAN QR as public.
 
 The public gateway serves only Guest Photo resources and the enabled public Gallery. It does not expose Booth, Host login, camera/printing controls or Event Display. Gallery can be empty even when Event Display has photos: public Gallery also requires an issued, unexpired QR. QR links expire 24 hours after first successful public verification; restarting a tunnel does not extend them.
 
@@ -203,18 +246,18 @@ Mock printing is the safe default and sends nothing to a physical printer. For W
 
 ### H. Basic end-to-end check
 
-1. Host starts and `/api/health` reports `ok`.
-2. The chosen camera connects; Sony currently stops at the missing-driver blocker.
-3. Live Preview appears on the iPad over the LAN. Physical Safari/iPad testing is still required.
-4. Capture one photo. Mock/UVC images are DEMO; a real Sony shutter/original JPEG requires the missing driver.
-5. Complete a four-photo session.
-6. Complete a six-photo session.
-7. Test Pause, Resume, Capture Now, Complete, individual Retake and Start Over. Complete opens Review without finalizing.
-8. Review/customize and select **Confirm, Display Photo & Get QR** to save one official composite and authorize event publication.
-9. Check Event Display publication. Check public Gallery after the photo has a valid issued QR; verify Host hide/revoke removes it.
-10. With the public tunnel ready, scan the real HTTPS QR on a phone using 4G/5G; verify the correct photo and Download.
-11. If Drive is enabled, verify the upload reaches `SYNCED` in Host Dashboard. Local Event Display need not wait for Drive.
-12. If physical printing is enabled, verify the actual printed image and QR.
+1. Complete installation and verify `frontend/dist-host/index.html` exists.
+2. **Sony hardware:** before Host startup, run discovery, connection/Live View and the explicitly confirmed one-shutter diagnostic. Open the transferred original JPEG; record each result separately.
+3. **Sony hardware:** start Host with `--camera sony_zve10`; check `/api/health` reports `ok` and verify laptop Live Preview. Physical compatibility/stability is still **PENDING** until the tester performs these checks.
+4. **iPad/LAN:** pair the iPad and verify Live Preview in Safari.
+5. **Sony hardware:** complete a four-photo session and inspect all captured slots.
+6. **Sony hardware:** repeat with a six-photo session.
+7. Test Pause, Resume, Capture Now, Complete, individual Retake and Start Over. In Pause mode, manually fill all slots and use Complete to open Review without finalizing.
+8. Review/customize and select **Confirm, Display Photo & Get QR** to save one official composite and authorize event publication. Temporary originals may be cleaned up after durable finalization; inspect them before confirmation if needed.
+9. Check local Event Display publication. With optional public HTTPS configured, check Gallery after the photo has a valid issued QR; verify Host hide/revoke removes it.
+10. **Optional public HTTPS/phone:** scan the real QR using 4G/5G; verify the correct photo and Download. This requires a running, verified tunnel, not just a localhost URL.
+11. **Optional Drive:** verify upload reaches `SYNCED`. QR and local Event Display must not wait for an otherwise safely staged photo's upload.
+12. **Optional printer hardware:** verify the actual printed image and embedded QR, including paper size/orientation.
 
 ### I. Stop safely
 
