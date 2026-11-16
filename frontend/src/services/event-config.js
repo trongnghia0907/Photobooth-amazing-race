@@ -10,6 +10,7 @@ export async function loadEventConfiguration(app){
     document.body.dataset.eventMode=String(config.event_mode);
     const badge=document.getElementById('demoModeBadge');badge.hidden=config.event_mode;
     if(config.operation_mode==='rehearsal')badge.textContent='REHEARSAL / DEMO • Check the camera and printer; real hardware has not been verified.';
+    if(config.operation_mode==='development')badge.textContent='DEVELOPMENT • Hardware test mode; check the camera connection before capturing.';
     if(config.event_mode){
       // Camera selection, mirror/diagnostic controls and local frame uploads
       // are Host responsibilities in Event Mode. Keep the guest surface to

@@ -28,7 +28,7 @@ from app.services.camera.base import CameraError
 PNP_QUERY=r"""$ErrorActionPreference='Stop'
 [Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)
 $candidates=@(Get-PnpDevice -PresentOnly -ErrorAction Stop |
-    Where-Object { $_.FriendlyName -match 'Sony|ZV-E10' } |
+    Where-Object { $_.FriendlyName -match 'Sony|ZV-E10' -or $_.InstanceId -match 'VID_054C' } |
     Select-Object -First 32 Status,Class,FriendlyName)
 ConvertTo-Json -InputObject @($candidates) -Depth 3 -Compress
 """
@@ -64,7 +64,7 @@ def probe_windows(timeout=15):
                         'pnp_status':str(row.get('Status') or '')[:40],
                         'original_zv_e10_name_match':bool(re.fullmatch(r'(?:Sony\s+)?ZV-E10',name.strip(),re.I))})
     return {'status':'QUERIED','devices':devices,
-            'detail':'PnP names only. A matching name does not verify PC Remote, Live View, shutter or original JPEG transfer.'}
+            'detail':'Sony USB vendor/name candidates only; non-ZV-E10 models are not supported by this adapter. Detection does not verify PC Remote, Live View, shutter or original JPEG transfer.'}
 
 
 def diagnostic(timeout=15, *, connect_preview=False, capture=False, output_dir=None):
@@ -120,6 +120,7 @@ def diagnostic(timeout=15, *, connect_preview=False, capture=False, output_dir=N
                 result['physical_hardware_verification']='DIAGNOSTIC_ONLY - full 4/6 workflow still needs testing'
             result['verdict']='PASS - requested device checks completed; hardware_verified remains false'
         except CameraError as error:
+            result['camera_access']='FAILED'
             result['protocol_checks'][check]='FAIL'
             result['error']={'code':error.code,'message':str(error),'uncertain':error.uncertain}
             result['verdict']='FAIL - check USB data cable, PC Remote/USB, camera mode; close Imaging Edge and stop Host before diagnostics'

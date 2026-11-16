@@ -23,6 +23,7 @@ class PreviewFrame:
     data: bytes
     sequence: int
     captured_at: float
+    timings: dict | None = None
 
 
 @dataclass(frozen=True)

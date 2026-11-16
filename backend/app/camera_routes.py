@@ -38,6 +38,8 @@ def frame(request: Request,sid: UUID,owner: Auth):
     return Response(result.data,media_type='image/jpeg',headers={
         'Cache-Control':'no-store','X-Robots-Tag':'noindex, nofollow','X-Content-Type-Options':'nosniff',
         'X-Frame-Sequence':str(result.sequence),'X-Frame-Time':str(result.captured_at),
+        'X-Frame-Age-Ms':f'{max(0,(time.time()-result.captured_at)*1000):.1f}',
+        **{('X-Preview-'+name.replace('_','-')):str(value) for name,value in (result.timings or {}).items()},
         'X-Preview-Processing-Ms':f'{(time.perf_counter()-started)*1000:.1f}'})
 
 

@@ -95,9 +95,15 @@ def test_selectable_real_transport_fails_closed_without_a_camera(settings):
         assert 'No Sony WIA camera' in result.json()['error']['message']
         assert client.get('/api/admin/camera').status_code==401
         csrf=login(client,settings)
-        assert any(row['id']=='sony_zve10' for row in client.get('/api/admin/camera').json()['adapters'])
+        camera=client.get('/api/admin/camera').json()
+        sony=next(row for row in camera['adapters'] if row['id']=='sony_zve10')
+        shell=client.get('/admin').text
+        assert sony['label'] in shell and 'PTP driver not implemented' not in shell
         assert client.put('/api/admin/camera/config',headers=csrf,json={'adapter':'mock'}).status_code==200
         assert client.put('/api/admin/camera/config',headers=csrf,json={'adapter':'sony_zve10'}).status_code==200
+        selected=client.get('/api/admin/camera').json()['capabilities']
+        assert selected['adapter']=='sony_zve10' and not selected['demo']
+        assert selected['physical_shutter'] and selected['original_file'] and not selected['hardware_verified']
         with client.app.state.repository.db.connect() as db:
             assert db.execute('SELECT COUNT(*) FROM camera_captures').fetchone()[0]==0
 

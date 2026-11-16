@@ -290,13 +290,19 @@ export async function confirmAndSaveSession(app,publishToEvent=false) {
 }
 
 export function forgetSession(app) {
-  if (app.persistenceBusy || app.captureBusy || app.shareBusy || pending(app) || app.persistenceError) {
+  const retiringCamera=!!app.hostCaptureOperation&&!app.pendingPhotos.some(Boolean)&&!app.pendingDeletion
+    &&!app.finalOperation?.confirmationStarted&&!app.resumeRecoveryPending;
+  if (app.persistenceBusy || app.captureBusy || app.shareBusy || (pending(app)||app.persistenceError)&&!retiringCamera) {
     app.showToast('This session still has unsaved data. Retry saving before starting a new guest session.', 'info');
     return false;
   }
   app.stopPrintPolling();
   forgetRememberedSession();
   app.releaseHostCamera();
+  // Retire only the browser request. The backend retains its receipt/original
+  // and establishes the physical safety boundary before a newer session shoots.
+  app.hostCaptureOperation=null;
+  app.persistenceError='';
   app.printOperation = null;
   app.printError = '';
   app.sessionContext = null;

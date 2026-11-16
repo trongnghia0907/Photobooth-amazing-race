@@ -14,10 +14,11 @@ import struct
 import threading
 import time
 import uuid
+from datetime import datetime, timezone
 from PIL import Image, UnidentifiedImageError
 from .base import CameraCapabilities, CameraError, CapturedPhoto, PreviewFrame
 from .sony_wia import MAX_TRANSFER, WindowsWiaTransport
-from ..images import atomic_write
+from ..images import atomic_write, is_jpeg_image
 
 SHOT = 0xffffc001
 LIVE = 0xffffc002
@@ -136,7 +137,8 @@ def object_info(data):
 def check_jpeg(data, *, preview=False):
     try:
         with Image.open(BytesIO(data)) as image:
-            if image.format != 'JPEG':raise ValueError()
+            if not is_jpeg_image(image):raise ValueError()
+            image.seek(0)
             if image.width * image.height > (8_000_000 if preview else 64_000_000):raise ValueError()
             image.load()
             return image.size
@@ -200,7 +202,7 @@ class SonyPtpDriver:
                 self.transport.open(deadline)
                 info = device_info(self._command(0x1001, deadline=deadline))
                 if info['model'] != 'ZV-E10' or 'SONY' not in info['manufacturer'].upper():
-                    raise CameraError('unsupported', 'Expected original Sony ZV-E10; other models, including ZV-E10M2, are not supported.', stage='connect')
+                    raise CameraError('unsupported', f"Expected original Sony ZV-E10; detected {info['model'][:80]!r}. Other models, including ZV-E10M2, are not supported.", stage='connect')
                 required_ops = {0x1008, 0x1009, 0x9201, 0x9202, 0x9207, 0x9209}
                 if not required_ops.issubset(info['operations']):
                     raise CameraError('unsupported', 'ZV-E10 does not advertise the required PTP operations.', stage='connect')
@@ -218,7 +220,7 @@ class SonyPtpDriver:
                 self._properties(deadline)
                 self.root.mkdir(parents=True, exist_ok=True)
                 self.unresolved = {p for p in self.root.glob('*.json')
-                                   if json.loads(p.read_text(encoding='utf-8')).get('status') != 'saved'}
+                                   if json.loads(p.read_text(encoding='utf-8')).get('status') not in ('saved','cancelled','superseded')}
                 self.model, self.connected = info['model'], True
             except Exception:
                 self.disconnect()
@@ -242,29 +244,40 @@ class SonyPtpDriver:
         if not self.connected:raise CameraError('disconnected', 'Sony camera is not connected.')
 
     def get_preview_frame(self):
+        started=time.perf_counter()
         with self.lock:
+            timings={'driver_lock_ms':round((time.perf_counter()-started)*1000,2)}
             self._ready()
             if not self.previewing:raise CameraError('not_ready', 'Sony Live View was not requested.', stage='preview')
             deadline = time.monotonic()+min(3, self.timeout)
+            step=time.perf_counter()
             if self._value(self._properties(deadline), LIVE_STATUS) != 1:
                 raise CameraError('not_ready', 'Camera Live View is temporarily unavailable; check still-photo mode.', stage='preview')
+            timings['properties_ms']=round((time.perf_counter()-step)*1000,2)
+            step=time.perf_counter()
             if not self.preview_limit:
                 info = object_info(self._command(0x1008, (LIVE,), deadline=deadline))
                 self.preview_limit = min(info['size'], 8*1024*1024)
+            timings['object_info_ms']=round((time.perf_counter()-step)*1000,2)
             wait = self.next_preview - time.monotonic()
             if wait > 0:
                 if time.monotonic()+wait >= deadline:raise CameraError('busy', 'Waiting for the next Sony Live View frame.', stage='preview')
                 time.sleep(wait)
             self.next_preview = time.monotonic()+0.034  # Sony PTP 2 p.31: <=30 fps.
+            step=time.perf_counter()
             data = self._command(0x1009, (LIVE,), deadline=deadline, limit=self.preview_limit)
+            acquired_at=time.time()
+            timings['acquisition_ms']=round((time.perf_counter()-step)*1000,2)
+            step=time.perf_counter()
             reader = Reader(data)
             offset, size = reader.number(4), reader.number(4)
             if offset < 8 or size == 0 or offset+size > len(data):
                 raise CameraError('preview', 'Invalid Sony Live View JPEG range.', stage='preview')
             jpeg = data[offset:offset+size]
             check_jpeg(jpeg, preview=True)
+            timings['validation_ms']=round((time.perf_counter()-step)*1000,2)
             self.sequence += 1
-            return PreviewFrame(jpeg, self.sequence, time.time())
+            return PreviewFrame(jpeg, self.sequence, acquired_at, timings)
 
     def _paths(self, capture_id):
         capture_id = str(uuid.UUID(capture_id))
@@ -272,11 +285,118 @@ class SonyPtpDriver:
 
     def _record(self, path, record):
         atomic_write(path, json.dumps(record, sort_keys=True).encode())
-        if record.get('status') == 'saved':self.unresolved.discard(path)
+        if record.get('status') in ('saved','cancelled','superseded'):self.unresolved.discard(path)
         else:self.unresolved.add(path)
 
     def _pending(self):
         return self.unresolved
+
+    def _restore_rejected(self, capture_id, record):
+        """Read back exact, checksum-bound bytes rejected by an older validator.
+
+        No USB commands. Malformed payloads remain rejected; only a completely
+        decodable JPEG/MPO with the recorded size/hash can enter recovery cache.
+        """
+        evidence=record.get('rejected_transfer')
+        if not evidence:return
+        digest=evidence.get('sha256','')
+        if len(digest)!=64 or any(c not in '0123456789abcdef' for c in digest):
+            raise CameraError('transfer','Checksum bản lưu transfer không hợp lệ; giữ nguyên dữ liệu để kiểm tra.',stage='transfer')
+        candidate=self.root/'rejected'/(str(uuid.UUID(capture_id))+'-'+digest+'.bin')
+        if evidence.get('path')!=candidate.relative_to(self.root.parent.parent).as_posix() or candidate.resolve()!=candidate.absolute():
+            raise CameraError('transfer','Đường dẫn bản lưu transfer không hợp lệ; chưa đọc ảnh hoặc gửi shutter.',stage='transfer')
+        if not candidate.is_file():
+            raise CameraError('transfer','Không tìm thấy bản lưu transfer cũ; nhờ Host khôi phục file.',stage='transfer')
+        with candidate.open('rb') as stream:data=stream.read(MAX_TRANSFER+1)
+        if len(data)>MAX_TRANSFER or len(data)!=evidence.get('bytes') or len(data)!=(record.get('object') or {}).get('size') or hashlib.sha256(data).hexdigest()!=digest:
+            raise CameraError('transfer','Bản lưu transfer không khớp kích thước/checksum; không dùng làm ảnh.',stage='transfer')
+        try:check_jpeg(data)
+        except CameraError:return  # Still invalid; permit retry of the same camera object only.
+        self.transfer_cache[capture_id]=data
+        record['recovered_transfer']={'path':evidence['path'],'sha256':digest}
+        self._record(self._paths(capture_id)[0],record)
+
+    def supersede_capture(self, capture_id, session_id, successor_id, deadline):
+        """Quarantine a retired capture under the controller's exclusive I/O lease.
+
+        Never sends shutter-down; may finish the existing journaled release.
+        Unknown physical outcomes remain barriers. Empty
+        tombstones are rechecked before subsequent shutters for late old JPEGs.
+        """
+        with self.lock:
+            self._ready()
+            session_id,successor_id=str(uuid.UUID(session_id)),str(uuid.UUID(successor_id))
+            journal,saved=self._paths(capture_id)
+            if not journal.is_file():return None
+            record=json.loads(journal.read_text(encoding='utf-8'))
+            if record.get('status')=='cancelled':return None
+            if record.get('session_id',session_id)!=session_id:
+                raise CameraError('recovery_required','Receipt camera không khớp phiên cũ; chưa gửi shutter mới.')
+            if not record.get('superseded_by'):
+                record.update(session_id=session_id,superseded_by=successor_id,
+                    superseded_at=datetime.now(timezone.utc).isoformat(),
+                    supersede_reason='New session acquired camera after previous capture stopped.')
+                self._record(journal,record)
+            if record.get('release_pending') is not False:
+                # Reuse the existing safe recovery: release (value 1), never a
+                # new press (value 2). A WIA failure leaves the receipt pending.
+                self.recover_capture(capture_id,deadline,quarantine=True)
+                record=json.loads(journal.read_text(encoding='utf-8'))
+            destination=self.root.parent/session_id/(str(uuid.UUID(capture_id))+'.jpg')
+            if destination.exists():
+                data=destination.read_bytes();check_jpeg(data)
+                if not record.get('sha256') or hashlib.sha256(data).hexdigest()!=record['sha256']:
+                    raise CameraError('transfer','JPEG cách ly không khớp receipt; giữ nguyên file để khôi phục.',stage='transfer')
+            else:
+                if not saved.exists() and capture_id not in self.transfer_cache:self._restore_rejected(capture_id,record)
+                cached=saved.exists() or capture_id in self.transfer_cache
+                count=self._value(self._properties(deadline),FILE_INFO)
+                if record.get('last_buffer_value')!=count:
+                    record['last_buffer_value']=count;self._record(journal,record)
+                if not cached and count==0:
+                    # GetObject may already have consumed a previous transfer.
+                    # ObjectInfo is not evidence that the camera is still busy.
+                    # Keep its metadata, and explicitly audit the missing local
+                    # original instead of pretending a JPEG was saved/recovered.
+                    record.update(status='superseded',buffer_checked_at=datetime.now(timezone.utc).isoformat(),
+                        capture_outcome='buffer_empty_original_unavailable' if record.get('object') else 'buffer_empty_no_image')
+                    self._record(journal,record)
+                    return None
+                if not cached and not (count & 0x8000 and count & 0x7fff):
+                    raise CameraError('camera_recovery_pending',f'Camera chưa báo JPEG cũ sẵn sàng (FILE_INFO=0x{count:04X}). Đợi camera hoàn tất hoặc nhờ Host kiểm tra; chưa gửi shutter mới.',stage='transfer')
+                data=self.get_captured_photo(capture_id,deadline,quarantine=True).data
+                atomic_write(destination,data)
+                record=json.loads(journal.read_text(encoding='utf-8'))
+            record.update(status='superseded',quarantine_path=destination.relative_to(self.root.parent.parent).as_posix(),
+                sha256=hashlib.sha256(data).hexdigest())
+            self._record(journal,record)
+            self.transfer_cache.pop(capture_id,None)
+            return {'path':record['quarantine_path'],'sha256':record['sha256'],'mime':'image/jpeg'}
+
+    def cancel_capture(self, capture_id, deadline, *, confirm_discard=False):
+        """Abandon an empty failed capture; retain its receipt and never fire."""
+        if not confirm_discard:raise CameraError('confirmation_required','Explicit discard confirmation is required.')
+        with self.lock:
+            self._ready()
+            journal,saved=self._paths(capture_id)
+            if not journal.is_file():raise CameraError('recovery_required','No receipt for this capture; nothing was cancelled.')
+            record=json.loads(journal.read_text(encoding='utf-8'))
+            if record.get('status')=='cancelled':return record
+            if record.get('status')!='dispatched' or record.get('object') is not None or saved.exists() or capture_id in self.transfer_cache:
+                raise CameraError('recovery_required','Capture may contain a saved/received JPEG. Preserve and recover it; cancellation was refused.')
+            if record.get('release_pending') is not False:
+                raise CameraError('recovery_required','Shutter release is unresolved. No camera command or cancellation was sent.')
+            if self._value(self._properties(deadline),FILE_INFO)!=0:
+                raise CameraError('recovery_required','Camera still contains an unclaimed image. Recover the existing capture; no cancellation or new shutter was sent.')
+            archive=self.root/'cancelled'/journal.name
+            original=journal.read_bytes()
+            if archive.exists():
+                if archive.read_bytes()!=original:raise CameraError('recovery_required','Cancellation archive differs; preserve existing records for inspection.')
+            else:atomic_write(archive,original)
+            record.update(status='cancelled',cancelled_at=datetime.now(timezone.utc).isoformat(),
+                cancel_reason='Operator confirmed discard; camera image buffer verified empty.')
+            self._record(journal,record)
+            return record
 
     def capture_persisted(self, capture_id):
         # Only the extra recovery cache is discarded, AFTER the controller has
@@ -323,28 +443,33 @@ class SonyPtpDriver:
             # Controller journals this reference before it waits/downloads.
             return str(uuid.UUID(capture_id))
 
-    def recover_capture(self, capture_id, deadline):
+    def recover_capture(self, capture_id, deadline, *, quarantine=False):
         """Read/reconcile an existing intent. Never sends a shutter-down."""
         with self.lock:
             self._ready()
             journal, _ = self._paths(capture_id)
             if not journal.is_file():raise CameraError('recovery_required', 'No durable Sony capture receipt; cannot safely retry shutter.', uncertain=True)
             record = json.loads(journal.read_text(encoding='utf-8'))
+            if record.get('superseded_by') and not quarantine:
+                raise CameraError('capture_superseded','Yêu cầu này thuộc phiên cũ đã được thay thế. Ảnh cũ được giữ riêng; không chụp lại yêu cầu cũ.')
+            if record.get('status')=='cancelled':
+                raise CameraError('capture_cancelled','The previous capture was cancelled by the operator. Saved photos are unchanged; choose a new capture explicitly.',stage='capture')
             if record.get('release_pending'):
                 self._command(0x9207, (ONE_SHOT,), data=struct.pack('<H',1), deadline=deadline)
                 record['release_pending'] = False
                 self._record(journal, record)
             return str(uuid.UUID(capture_id))
 
-    def get_captured_photo(self, reference, deadline):
+    def get_captured_photo(self, reference, deadline, *, quarantine=False):
         with self.lock:
             self._ready()
             journal, saved = self._paths(reference)
-            self.recover_capture(reference, deadline)
+            self.recover_capture(reference, deadline,quarantine=quarantine)
             record = json.loads(journal.read_text(encoding='utf-8'))
+            if not saved.exists() and reference not in self.transfer_cache:self._restore_rejected(reference,record)
             if saved.exists() or reference in self.transfer_cache:
                 data = self.transfer_cache.get(reference) or saved.read_bytes()
-                check_jpeg(data)
+                dimensions=check_jpeg(data)
                 if len(data) != record['object']['size']:
                     raise CameraError('transfer', 'Sony recovery JPEG size mismatch.', stage='transfer')
                 if record.get('sha256') and hashlib.sha256(data).hexdigest() != record['sha256']:
@@ -353,6 +478,8 @@ class SonyPtpDriver:
             else:
                 while True:
                     count = self._value(self._properties(deadline), FILE_INFO)
+                    if record.get('last_buffer_value')!=count:
+                        record['last_buffer_value']=count;self._record(journal,record)
                     if count & 0x8000 and count & 0x7fff:break
                     self._wait(deadline)
                 info = object_info(self._command(0x1008, (SHOT,), deadline=deadline))
@@ -363,12 +490,34 @@ class SonyPtpDriver:
                 record['object'] = info
                 self._record(journal, record)
                 data = self._command(0x1009, (SHOT,), deadline=deadline, limit=info['size'])
-                if len(data) != info['size'] or check_jpeg(data) != (info['width'], info['height']):
-                    raise CameraError('transfer', 'Sony original JPEG is incomplete or has unexpected dimensions.', stage='transfer')
+                try:
+                    dimensions=check_jpeg(data)
+                    if len(data)!=info['size']:
+                        raise CameraError('transfer','Sony original JPEG byte count does not match ObjectInfo.',stage='transfer')
+                except CameraError as error:
+                    # A transfer can consume the camera buffer even when the
+                    # payload is invalid. Retain the exact rejected bytes for
+                    # recovery/debugging, but NEVER serve them as a saved photo.
+                    digest=hashlib.sha256(data).hexdigest()
+                    rejected=self.root/'rejected'/(reference+'-'+digest+'.bin')
+                    if not rejected.exists():atomic_write(rejected,data)
+                    record['rejected_transfer']={'sha256':digest,'bytes':len(data),
+                        'path':rejected.relative_to(self.root.parent.parent).as_posix(),'error':str(error)}
+                    self._record(journal,record)
+                    raise
                 # If local persistence fails after the camera buffer was consumed,
                 # retain this one original in memory for retry, without re-firing.
                 self.transfer_cache[reference] = data
                 atomic_write(saved, data)
+            record['jpeg_dimensions']=list(dimensions)
+            info=record['object']
+            # ZV-E10 virtual ObjectInfo may omit width/height (zero). The JPEG
+            # decoder is authoritative in that case; positive values must match.
+            if not quarantine and any(info[name]>0 and info[name]!=actual
+                                      for name,actual in zip(('width','height'),dimensions)):
+                record['validation_error']='JPEG dimensions disagree with nonzero ObjectInfo dimensions.'
+                self._record(journal,record)
+                raise CameraError('transfer','Sony original JPEG has unexpected dimensions; original bytes retained for recovery.',stage='transfer')
             record.update(status='saved', sha256=hashlib.sha256(data).hexdigest())
             self._record(journal, record)
             self.transfer_cache.pop(reference,None)

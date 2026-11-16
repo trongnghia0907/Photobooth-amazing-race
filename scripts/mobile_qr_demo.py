@@ -47,6 +47,27 @@ def wait_for_proof(check,seconds=40):
             if not error.retryable or time.monotonic()>=deadline:raise
             time.sleep(min(1,max(0,deadline-time.monotonic())))
 
+
+def attached_host_health(port, seconds=8):
+    """Wait briefly for Terminal 1; never create a replacement Host."""
+    url=f'http://127.0.0.1:{port}/api/health'
+    deadline=time.monotonic()+seconds
+    last_error='Host is not ready'
+    while True:
+        try:
+            code,payload,_=get(url,timeout=min(2,max(.1,deadline-time.monotonic())),local=True)
+            health=json.loads(payload)
+            if code!=200 or not isinstance(health,dict) or health.get('status')!='ok' or health.get('phase')!=6:
+                raise RuntimeError(f'{url} is not a ready Photobooth Host (HTTP {code}). Check Terminal 1; no tunnel started.')
+            return health
+        except (OSError,URLError,ValueError) as error:
+            last_error=str(getattr(error,'reason',error))
+        if time.monotonic()>=deadline:
+            raise RuntimeError(f'Cannot connect to Photobooth Host at {url}: {last_error}. '
+                'Start Terminal 1 with scripts/run_host.py and wait for the Booth URL, then keep it open. '
+                'If Host uses another port, match --host-port. No replacement Host or tunnel was started.')
+        time.sleep(min(.25,max(0,deadline-time.monotonic())))
+
 def find_cloudflared():
     candidates=[shutil.which('cloudflared')]
     for variable in ('ProgramFiles','ProgramFiles(x86)','LOCALAPPDATA'):
@@ -170,6 +191,7 @@ def serve(args):
     owned=OwnedProcesses()
     try:
         write_json(state,{'phase':'starting','run_id':run_id})
+        health=attached_host_health(args.host_port) if args.attach_host else None
         if credentials_path.exists():credentials=json.loads(credentials_path.read_text(encoding='utf-8'))
         else:
             credentials={'username':'mobile-test-host','password':secrets.token_urlsafe(24),
@@ -185,10 +207,6 @@ def serve(args):
         settings=Settings(home/'storage',app_env='development',operation_mode='rehearsal',allow_mock_hardware=True,
                           public_base_url=f'http://localhost:{args.host_port}',google_drive_enabled=args.require_drive)
         if args.attach_host:
-            status_code,payload,_=get(f'http://127.0.0.1:{args.host_port}/api/health',local=True)
-            health=json.loads(payload)
-            if status_code!=200 or health.get('status')!='ok' or health.get('phase')!=6:
-                raise RuntimeError('Start the existing Photobooth Host first; no duplicate backend will be started.')
             if not health['sharing'].get('temporary_origin_supported') or health['sharing'].get('app_env')!='development':
                 raise RuntimeError('Quick Tunnel testing requires a development/rehearsal Host. Event/production settings were not changed.')
             # Match the active host storage and Drive mode; never disable its queue.

@@ -7,7 +7,9 @@ import uuid
 import warnings
 
 from PIL import Image, ImageOps, UnidentifiedImageError
+from PIL.JpegImagePlugin import JpegImageFile
 from fastapi import HTTPException, UploadFile
+from fastapi.concurrency import run_in_threadpool
 
 from ..config import Settings
 
@@ -21,6 +23,12 @@ class ValidatedImage:
     input_hash: str
 
 
+def is_jpeg_image(image):
+    # Sony .JPG originals may carry MPF metadata and be identified as MPO by
+    # Pillow. MPO's primary frame is a JPEG; do not accept arbitrary formats.
+    return image.format in ('JPEG','MPO') and isinstance(image,JpegImageFile)
+
+
 async def read_image(file: UploadFile, settings: Settings) -> ValidatedImage:
     if file.content_type not in {'image/png', 'image/jpeg', 'image/webp'}:
         raise HTTPException(415, 'Chỉ hỗ trợ PNG, JPEG hoặc WebP')
@@ -29,7 +37,7 @@ async def read_image(file: UploadFile, settings: Settings) -> ValidatedImage:
         data.extend(chunk)
         if len(data) > settings.max_upload_bytes:
             raise HTTPException(413, 'File ảnh vượt giới hạn dung lượng')
-    return validate_image(bytes(data), file.content_type, settings)
+    return await run_in_threadpool(validate_image,bytes(data),file.content_type,settings)
 
 
 def validate_image(data: bytes, content_type: str, settings: Settings) -> ValidatedImage:
@@ -41,14 +49,16 @@ def validate_image(data: bytes, content_type: str, settings: Settings) -> Valida
         with warnings.catch_warnings():
             warnings.simplefilter('error', Image.DecompressionBombWarning)
             with Image.open(BytesIO(data)) as probe:
-                if probe.format not in {'PNG', 'JPEG', 'WEBP'}:
+                if probe.format not in {'PNG', 'JPEG', 'MPO', 'WEBP'}:
                     raise ValueError('Unsupported image format')
-                if probe.format != {'image/png':'PNG','image/jpeg':'JPEG','image/webp':'WEBP'}[content_type]:
+                matches=is_jpeg_image(probe) if content_type=='image/jpeg' else probe.format=={'image/png':'PNG','image/webp':'WEBP'}[content_type]
+                if not matches:
                     raise ValueError('Image format does not match its declared MIME type')
                 if probe.width * probe.height > settings.max_image_pixels:
                     raise HTTPException(413, 'Ảnh vượt giới hạn số pixel')
                 probe.verify()
             with Image.open(BytesIO(data)) as img:
+                img.seek(0)  # Primary full-resolution image, never an MPO thumbnail.
                 normalized = ImageOps.exif_transpose(img).convert('RGBA')
                 output = BytesIO()
                 normalized.save(output, format='PNG')

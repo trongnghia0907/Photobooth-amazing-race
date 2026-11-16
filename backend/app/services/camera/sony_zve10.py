@@ -10,6 +10,7 @@ import uuid
 from PIL import Image, UnidentifiedImageError
 from .base import CameraCapabilities, CameraError, CapturedPhoto
 from .sony_ptp import SonyPtpDriver
+from ..images import is_jpeg_image
 
 _DEFAULT_DRIVER = object()
 
@@ -127,7 +128,8 @@ class SonyZvE10CameraAdapter:
             raise CameraError('transfer','Sony requires the original camera JPEG, never a preview/webcam image.',stage='transfer')
         try:
             with Image.open(BytesIO(photo.data)) as image:
-                if image.format!='JPEG':raise ValueError('Not JPEG')
+                if not is_jpeg_image(image):raise ValueError('Not a JPEG-compatible original')
+                image.seek(0)
                 # JPEG verify() alone accepts truncated pixel data. Decode it,
                 # but retain the original bytes/EXIF rather than re-encoding.
                 image.load()

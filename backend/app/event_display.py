@@ -7,6 +7,8 @@ import hashlib
 import hmac
 import secrets
 import time
+from io import BytesIO
+from PIL import Image
 from pathlib import Path
 from typing import Literal
 from uuid import UUID, uuid4
@@ -15,6 +17,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field, StrictBool
 from .booth_access import RateLimit
 from .printing_routes import host
+from .services.images import atomic_write
 
 COOKIE='osa_event_display'
 PREFIX='/event-display'
@@ -158,7 +161,7 @@ def approved_photo_feed(display,limit,media_prefix,newest_completion=False):
         for row in rows:
             try:display.file(row)
             except HTTPException:continue
-            items.append({'id':row['display_id'],'image_url':f"{media_prefix}/{row['display_id']}",
+            items.append({'id':row['display_id'],'image_url':f"{media_prefix}/{row['display_id']}"+('?thumbnail=true' if newest_completion else ''),
                           'width':row['width'],'height':row['height'],'approved_at':row['approved_at']})
     return {'items':items}
 
@@ -192,8 +195,18 @@ def booth_photos(request:Request,response:Response,limit:int=Query(8,ge=5,le=10)
 
 
 @booth_gallery.get('/{display_id}',dependencies=[Depends(kiosk_auth)])
-def booth_media(request:Request,display_id:UUID):
-    return FileResponse(approved_photo_file(service(request),display_id),media_type='image/png',headers=HEADERS)
+def booth_media(request:Request,display_id:UUID,thumbnail:bool=False):
+    # Recheck approval even for a cached derivative: revocation takes effect on
+    # the next request. Full-size projection/download routes remain unchanged.
+    display=service(request);path=approved_photo_file(display,display_id)
+    if not thumbnail:return FileResponse(path,media_type='image/png',headers=HEADERS)
+    target=display.repo.settings.storage_root/'event_previews'/(path.stem+'.jpg')
+    if not target.exists():
+        with Image.open(path) as image:
+            image.thumbnail((480,480))
+            output=BytesIO();image.convert('RGB').save(output,format='JPEG',quality=80)
+        atomic_write(target,output.getvalue())
+    return FileResponse(target,media_type='image/jpeg',headers=HEADERS)
 
 
 @admin.get('/status')

@@ -81,7 +81,7 @@ The iPad does not connect to the camera by USB or use its own camera in Host mod
 1. Use the first-generation **ZV-E10**, a charged/powered camera and a USB data cable. A charge-only cable is insufficient.
 2. On the camera, set **Network > Smartphone Connect > Smartphone Connection > Off**.
 3. Set **Network > PC Remote Function > PC Remote > On** and **PC Remote Cnct Method > USB**.
-4. For original-file testing, choose **Still Img. Save Dest. > PC+Camera**, insert a writable memory card, and select **PC Save Image Size > Original**. If shooting RAW & JPEG, choose **RAW+J PC Save Img > JPEG Only**.
+4. For this backend, set still-image **File Format > JPEG** and **Drive Mode > Single Shooting**; RAW/RAW & JPEG are not accepted by the current capture check. Choose **Still Img. Save Dest. > PC+Camera**, insert a writable memory card, and select **PC Save Image Size > Original**. Use PC Remote rather than USB Streaming/webcam mode.
 5. Connect the camera directly to the Windows laptop. If needed, independently check it with Sony's official [Imaging Edge Desktop](https://support.d-imaging.sony.co.jp/app/imagingedge/en/), then fully close Remote and other camera applications before Photobooth diagnostics. Only one application may own the camera.
 
 These settings follow the [Sony ZV-E10 PC Remote guide](https://helpguide.sony.net/ilc/2070/v1/en/contents/TP0002392805.html). Imaging Edge working is a useful independent check, not proof that this project's driver works on the same hardware.

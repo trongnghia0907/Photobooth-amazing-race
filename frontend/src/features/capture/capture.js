@@ -1,6 +1,9 @@
 /** Extracted from legacy; explicit app context supplied by bootstrap. */
 import {createStore} from '../../core/store.js';
 import {showQRUnavailable} from '../../components/qr-status.js';
+import {photoThumbnail} from '../../utils/photo-thumbnail.js';
+
+const renderedGrids=new WeakMap();
 
 export async function startAutomaticSession(app) {
   if(!app.eventConfigurationReady||app.resumeRecoveryPending){app.showToast('Session setup or recovery is not ready. Please ask event staff to check the host.','error');return;}
@@ -60,9 +63,13 @@ export function renderSixSlotsGrid(app) {
   const grid = document.getElementById('sixSlotsGrid');
   if (!grid) return;
 
+  const target=app.singleRetakeIndex??app.photos.findIndex(p=>p===null);
+  const previous=renderedGrids.get(grid);
+  if(!previous||previous.target!==target||previous.photos.length!==app.photos.length||app.photos.some((photo,i)=>photo!==previous.photos[i])){
+  renderedGrids.set(grid,{target,photos:app.photos.slice()});
   grid.innerHTML = app.photos.map((canvasItem, idx) => {
     if (canvasItem) {
-      const dataUrl = canvasItem.toDataURL('image/jpeg', 0.85);
+      const dataUrl = photoThumbnail(canvasItem);
       return `
         <div class="group relative aspect-[4/3] rounded-2xl overflow-hidden border-2 border-brand-400 bg-slate-900 shadow-sm cursor-pointer transition-all hover:scale-[1.02]" onclick="app.triggerSingleRetake(${idx})">
           <img src="${dataUrl}" class="w-full h-full object-cover" alt="Shot ${idx + 1}" />
@@ -83,6 +90,7 @@ export function renderSixSlotsGrid(app) {
       `;
     }
   }).join('');
+  }
 
   const takenCount = app.photos.filter(p => p !== null).length;
   const badge = document.getElementById('capturedCountBadge');

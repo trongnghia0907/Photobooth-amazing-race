@@ -72,17 +72,24 @@ def _method(pointer, index, *types):
     return C.WINFUNCTYPE(C.c_long, C.c_void_p, *types)(address)
 
 
-def _check(hr):
+def _check(hr, operation='WIA operation'):
     if hr < 0:
         number = hr & 0xffffffff
         kind = {0x80070005:'access', 0x80210006:'busy', 0x80210015:'disconnected',
                 0x8007048f:'disconnected'}.get(number, 'usb')
-        raise CameraError(kind, f'Windows WIA error 0x{number:08X}. Close Imaging Edge/other camera apps; check USB data cable and PC Remote.', stage='connect')
+        raise CameraError(kind, f'Windows WIA error 0x{number:08X} during {operation}. Check camera/USB state and other camera owners; this error alone does not identify the owner.', stage='connect')
 
 
 def _release(pointer):
     if pointer:
         _method(pointer, 2)(pointer)
+
+
+def _is_sony_camera(properties):
+    # GET_STIDEVICE_TYPE extracts HIWORD; LOWORD is a vendor subtype.
+    device_type=(properties.get(5,0) >> 16) & 0xffff
+    descriptor=' '.join(str(properties.get(n,'')) for n in (3,4,7)).upper()
+    return device_type==2 and ('ZV-E10' in descriptor or 'SONY' in descriptor)
 
 
 class _WiaDevice:
@@ -114,7 +121,7 @@ class _WiaDevice:
         for spec, prop in zip(specs, ids):
             spec.kind, spec.id = 1, prop  # PRSPEC_PROPID
         try:
-            _check(_method(storage, 3, C.c_uint32, C.c_void_p, C.c_void_p)(storage, len(ids), specs, values))
+            _check(_method(storage, 3, C.c_uint32, C.c_void_p, C.c_void_p)(storage, len(ids), specs, values), 'IWiaPropertyStorage.ReadMultiple')
             result = {}
             for prop, value in zip(ids, values):
                 if value.vt in (8, 31):  # VT_BSTR, VT_LPWSTR
@@ -133,25 +140,24 @@ class _WiaDevice:
         if self.kernel.WaitForSingleObject(self.mutex, 0) not in (0, 0x80):
             raise CameraError('busy', 'Sony camera is owned by another Photobooth/diagnostic instance.', stage='connect')
         self.owns_mutex = True
-        _check(self.ole.CoInitializeEx(None, 2))
+        _check(self.ole.CoInitializeEx(None, 2), 'CoInitializeEx')
         self.initialized = True
         cls = GUID.of('a1f4e726-8cf1-11d1-bf92-0060081ed811')
         iid = GUID.of('5eb2502a-8cf1-11d1-bf92-0060081ed811')
-        _check(self.ole.CoCreateInstance(C.byref(cls), None, 4, C.byref(iid), C.byref(self.manager)))
+        _check(self.ole.CoCreateInstance(C.byref(cls), None, 4, C.byref(iid), C.byref(self.manager)), 'CoCreateInstance(WIA DeviceManager)')
         enum = C.c_void_p()
         try:
-            _check(_method(self.manager, 3, C.c_long, C.c_void_p)(self.manager, 0x10, C.byref(enum)))
+            _check(_method(self.manager, 3, C.c_long, C.c_void_p)(self.manager, 0x10, C.byref(enum)), 'IWiaDevMgr.EnumDeviceInfo')
             candidates = []
             for _ in range(128):
                 storage, fetched = C.c_void_p(), C.c_uint32()
-                _check(_method(enum, 3, C.c_uint32, C.c_void_p, C.c_void_p)(enum, 1, C.byref(storage), C.byref(fetched)))
+                _check(_method(enum, 3, C.c_uint32, C.c_void_p, C.c_void_p)(enum, 1, C.byref(storage), C.byref(fetched)), 'IEnumWIA_DEV_INFO.Next')
                 if not fetched.value:
                     break
                 try:
                     props = self._properties(storage)
-                    descriptor = ' '.join(str(props.get(n, '')) for n in (3,4,7)).upper()
                     # Discovery names are hints only; GetDeviceInfo checks identity.
-                    if (props.get(5, 0) & 0xffff) == 2 and ('ZV-E10' in descriptor or 'SONY' in descriptor):
+                    if _is_sony_camera(props):
                         candidates.append(props[2])
                 finally:
                     _release(storage)
@@ -161,11 +167,11 @@ class _WiaDevice:
                 raise CameraError('busy', 'Multiple Sony cameras found. Connect only the original ZV-E10.', stage='connect')
             device_id = self.automation.SysAllocString(candidates[0])
             try:
-                _check(_method(self.manager, 4, C.c_void_p, C.c_void_p)(self.manager, device_id, C.byref(self.root)))
+                _check(_method(self.manager, 4, C.c_void_p, C.c_void_p)(self.manager, device_id, C.byref(self.root)), 'IWiaDevMgr.CreateDevice')
             finally:
                 self.automation.SysFreeString(device_id)
             iid = GUID.of('6291ef2c-36ef-4532-876a-8e132593778d')
-            _check(_method(self.root, 0, C.c_void_p, C.c_void_p)(self.root, C.byref(iid), C.byref(self.extras)))
+            _check(_method(self.root, 0, C.c_void_p, C.c_void_p)(self.root, C.byref(iid), C.byref(self.extras)), 'QueryInterface(IWiaItemExtras)')
         finally:
             _release(enum)
 
@@ -175,7 +181,8 @@ class _WiaDevice:
         count = C.c_uint32()
         _check(_method(self.extras, 4, C.c_uint32, C.c_void_p, C.c_uint32,
                        C.c_void_p, C.c_uint32, C.c_void_p)(
-                           self.extras, 0x0100, incoming, len(packet), outgoing, len(outgoing), C.byref(count)))
+                           self.extras, 0x0100, incoming, len(packet), outgoing, len(outgoing), C.byref(count)),
+               f'IWiaItemExtras.Escape(PTP 0x{struct.unpack_from("<H", packet)[0]:04X})')
         if count.value > len(outgoing):
             raise CameraError('protocol', 'WIA returned an oversized response.')
         return outgoing.raw[:count.value]

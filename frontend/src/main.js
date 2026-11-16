@@ -15,9 +15,11 @@ app.initializeKioskUI();
 const badge = document.createElement('div');
 badge.id = 'demoModeBadge';
 badge.className = 'bg-amber-100 text-amber-800 text-center text-xs font-bold p-2';
-badge.textContent = defaults.demoEnabled
+badge.textContent = defaults.hostCameraEnabled
+  ? 'Host camera • Checking backend configuration and camera connection…'
+  : defaults.demoEnabled
   ? 'DEMO • Photos are saved, private QR codes and print queue use the backend • No physical camera shutter'
-  : 'Production is not supported yet: physical camera and printing are not integrated; demo capture is disabled.';
+  : 'Host camera build is required for camera control. Ask event staff to run build:host.';
 document.body.insertBefore(badge, document.querySelector('header'));
 if (defaults.demoEnabled || defaults.hostCameraEnabled) {
   await initializeBoothAccess();

@@ -37,6 +37,25 @@ def test_readonly_query_does_not_report_name_as_a_working_driver(windows,monkeyp
     assert 'DO-NOT-EXPOSE' not in json.dumps(result)
     assert calls[0][1]['timeout']==7
     assert 'Get-PnpDevice -PresentOnly' in calls[0][0][-1]
+    assert 'VID_054C' in calls[0][0][-1]
+
+
+def test_vendor_detected_other_sony_is_reported_without_claiming_zve10(windows,monkeypatch):
+    monkeypatch.setattr(diagnostic.subprocess,'run',lambda *args,**kwargs:SimpleNamespace(
+        returncode=0,stdout=json.dumps([{'FriendlyName':'ILCE-7C','Status':'OK','Class':'WPD'}])))
+    result=diagnostic.probe_windows()
+    assert result['devices'][0]['name']=='ILCE-7C'
+    assert not result['devices'][0]['original_zv_e10_name_match']
+
+
+def test_failed_connection_clearly_reports_failure_and_never_tests_shutter(monkeypatch):
+    from app.services.camera.base import CameraError
+    monkeypatch.setattr(diagnostic,'probe_windows',lambda timeout:{'status':'QUERIED','devices':[]})
+    def fail(self):raise CameraError('unsupported','Expected ZV-E10, detected ILCE-7C',stage='connect')
+    monkeypatch.setattr(diagnostic.SonyZvE10CameraAdapter,'connect',fail)
+    result=diagnostic.diagnostic(connect_preview=True)
+    assert result['camera_access']=='FAILED' and result['error']['code']=='unsupported'
+    assert result['protocol_checks']['physical_shutter']=='NOT_TESTED'
 
 
 @pytest.mark.parametrize('response,expected',[

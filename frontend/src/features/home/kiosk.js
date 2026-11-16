@@ -1,6 +1,5 @@
 import {defaults} from '../../config/defaults.js';
-const reviewThumbnails=new WeakMap();
-function thumbnail(canvas){if(!reviewThumbnails.has(canvas))reviewThumbnails.set(canvas,canvas.toDataURL('image/jpeg',.65));return reviewThumbnails.get(canvas);}
+import {photoThumbnail as thumbnail} from '../../utils/photo-thumbnail.js';
 
 export function initializeKioskUI(app){
   // Technical controls belong to the authenticated Host Dashboard. Remove
@@ -84,13 +83,18 @@ export function renderRecentPhotos(app){
   app.photos.forEach((canvas,index)=>{if(!canvas)return;const button=document.createElement('button');button.type='button';button.className='guest-review-photo';button.setAttribute('aria-label',`Retake photo ${index+1}`);const image=document.createElement('img');image.src=thumbnail(canvas);image.alt=`Photo ${index+1} in the current session`;const number=document.createElement('span');number.className='guest-review-number';number.textContent=`#${index+1}`;button.append(image,number);button.addEventListener('click',()=>{app.goToScreen('capture');app.triggerSingleRetake(index);});reviewShots.append(button);});
   }
   const items=app.recentGalleryItems||[],galleryKey=JSON.stringify(items.map(item=>[item?.id,item?.image_url]));
-  if(galleryKey!==app.recentGalleryRenderedKey){app.recentGalleryRenderedKey=galleryKey;list.replaceChildren();
+  if(galleryKey!==app.recentGalleryRenderedKey){app.recentGalleryRenderedKey=galleryKey;
+  const existing=new Map(Array.from(list.children,card=>[card.querySelector('img')?.dataset.displayId,card])),next=[];
   for(const item of items){
     if(!item||typeof item.image_url!=='string'||!item.image_url.startsWith('/api/booth/recent-photos/'))continue;
+    const previous=existing.get(item.id);
+    if(previous?.querySelector('img')?.getAttribute('src')===item.image_url){next.push(previous);continue;}
     const card=document.createElement('figure');card.className='recent-gallery-card';
     const image=document.createElement('img');image.src=item.image_url;image.alt='Completed Amazing Race photobooth photo';image.loading='lazy';image.decoding='async';image.dataset.displayId=item.id;
-    card.append(image);list.append(card);
+    card.append(image);next.push(card);
   }
+  for(const card of Array.from(list.children))if(!next.includes(card))card.remove();
+  next.forEach((card,index)=>{if(list.children[index]!==card)list.insertBefore(card,list.children[index]||null);});
   }
   const empty=document.getElementById('recentEmptyState');empty.hidden=list.childElementCount>0;
   empty.textContent=app.recentGalleryError?'Could not load photos. Retrying automatically.':app.recentGalleryLoaded?'No approved photos to display yet.':'Loading recent photos…';
@@ -118,7 +122,9 @@ export async function refreshRecentGallery(app){
 }
 
 export function confirmNewGuestSession(app){
-  if(!app.serverSession?.finalized&&app.photos.some(Boolean)&&!window.confirm('Your current photos have not been confirmed. Start a new session?'))return;
+  if(!app.serverSession?.finalized&&(app.photos.some(Boolean)||app.hostCaptureOperation)&&!window.confirm(app.hostCaptureOperation
+    ?'Chuyển sang phiên mới? Yêu cầu camera cũ sẽ được giữ để khôi phục riêng; ảnh đã lưu không bị xóa.'
+    :'Your current photos have not been confirmed. Start a new session?'))return;
   app.startNewGuestSession();
 }
 

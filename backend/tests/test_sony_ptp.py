@@ -28,6 +28,31 @@ def string(value):
     return bytes([len(value)+1])+value.encode('utf-16-le')+b'\0\0'
 
 
+@pytest.mark.parametrize('operation', ['IWiaDevMgr.CreateDevice', 'IWiaItemExtras.Escape(PTP 0x1001)'])
+def test_wia_busy_reports_failing_operation(operation):
+    from app.services.camera.sony_wia import _check
+    with pytest.raises(CameraError) as caught:
+        _check(0x80210006 - (1 << 32), operation)
+    assert caught.value.code == 'busy'
+    assert operation in str(caught.value)
+    assert '0x80210006' in str(caught.value)
+    _check(0, operation)
+    _check(1, operation)  # COM S_FALSE is not a failure.
+
+
+@pytest.mark.parametrize('packed,name,expected',[
+    (0x00020000,'ZV-E10',True),
+    (0x00020007,'ZV-E10',True),
+    (0x00020000,'ILCE-7C',True),  # Discovery only; identity is rejected before Sony initialization.
+    (0x00010002,'ZV-E10',False),  # Scanner with camera-like subtype must not pass.
+    (0x00000002,'ZV-E10',False),
+    (0x00020000,'Other vendor',False),
+])
+def test_wia_camera_discovery_uses_major_type_not_vendor_subtype(packed,name,expected):
+    from app.services.camera.sony_wia import _is_sony_camera
+    assert _is_sony_camera({3:'Sony Corporation' if name!='Other vendor' else 'Other',4:name,5:packed,7:name}) is expected
+
+
 def array(values):return struct.pack('<I',len(values))+struct.pack('<'+'H'*len(values),*values)
 
 
@@ -157,10 +182,11 @@ def test_identity_and_initialization(tmp_path):
     real.disconnect();assert wire.closed==1 and not real.connected
 
 
-@pytest.mark.parametrize('model',['ZV-E10M2','ILCE-7M4'])
+@pytest.mark.parametrize('model',['ZV-E10M2','ILCE-7M4','ILCE-7C'])
 def test_other_models_rejected_before_initialization(tmp_path,model):
     wire=FakeWia();wire.model=model;real=SonyPtpDriver(tmp_path,transport=wire)
-    with pytest.raises(CameraError,match='original Sony ZV-E10'):real.connect()
+    with pytest.raises(CameraError,match='original Sony ZV-E10') as caught:real.connect()
+    assert model in str(caught.value)
     assert wire.closed==1 and wire.shots==0
     assert [c[0] for c in wire.commands]==[0x1001]
 
@@ -215,6 +241,33 @@ def test_transfer_retry_never_refires_shutter(tmp_path,fault):
     assert real.get_captured_photo(reference,end).mime=='image/jpeg' and wire.shots==1
 
 
+@pytest.mark.parametrize('width,height',[(0,0),(0,240),(320,0)])
+def test_original_jpeg_with_unspecified_object_dimensions_is_saved(tmp_path,monkeypatch,width,height):
+    from app.services.camera import sony_ptp
+    real,wire=driver(tmp_path);end=time.monotonic()+3
+    reference=real.capture_photo(str(uuid.uuid4()),end);original=wire.photos[0][0]
+    parse=sony_ptp.object_info
+    monkeypatch.setattr(sony_ptp,'object_info',lambda data:{**parse(data),'width':width,'height':height})
+    photo=real.get_captured_photo(reference,end)
+    assert photo.data==original and wire.shots==1 and not wire.photos
+    journal,saved=real._paths(reference)
+    assert saved.read_bytes()==original
+    assert __import__('json').loads(journal.read_text())['jpeg_dimensions']==[320,240]
+    assert real.get_captured_photo(reference,end).data==original
+
+
+def test_known_wrong_dimensions_fail_but_preserve_consumed_original(tmp_path,monkeypatch):
+    from app.services.camera import sony_ptp
+    real,wire=driver(tmp_path);end=time.monotonic()+3
+    reference=real.capture_photo(str(uuid.uuid4()),end);original=wire.photos[0][0]
+    parse=sony_ptp.object_info
+    monkeypatch.setattr(sony_ptp,'object_info',lambda data:{**parse(data),'width':999})
+    with pytest.raises(CameraError,match='dimensions'):real.get_captured_photo(reference,end)
+    assert real._paths(reference)[1].read_bytes()==original and not wire.photos
+    with pytest.raises(CameraError,match='dimensions'):real.get_captured_photo(reference,end)
+    assert wire.shots==1
+
+
 def test_uncertain_shutter_reconciles_without_another_shutter(tmp_path):
     real,wire=driver(tmp_path);identifier=str(uuid.uuid4());end=time.monotonic()+3
     wire.fault='shutter_timeout'
@@ -236,7 +289,12 @@ def test_changed_camera_buffer_is_not_assigned_to_old_capture(tmp_path):
 
 
 @pytest.mark.parametrize('count,layout',[(4,'landscape_4'),(6,'grid2x3')])
-def test_real_driver_host_api_slots_retake_replay_and_originals(tmp_path,count,layout):
+@pytest.mark.parametrize('unknown_dimensions',[False,True])
+def test_real_driver_host_api_slots_retake_replay_and_originals(tmp_path,monkeypatch,count,layout,unknown_dimensions):
+    if unknown_dimensions:
+        from app.services.camera import sony_ptp
+        parse=sony_ptp.object_info
+        monkeypatch.setattr(sony_ptp,'object_info',lambda data:{**parse(data),'width':0,'height':0})
     from app.config import Settings
     settings=Settings(tmp_path/'host',camera_adapter='sony_zve10',camera_guest_enabled=True)
     app=create_app(settings);wire=FakeWia()
@@ -245,7 +303,14 @@ def test_real_driver_host_api_slots_retake_replay_and_originals(tmp_path,count,l
         sid=create(client,slot_count=count,layout=layout);base=f'/api/sessions/{sid}/camera'
         assert client.post(base+'/connect',headers=headers()).status_code==200
         assert client.post(base+'/live-view/start',headers=headers()).status_code==200
-        assert client.get(base+'/frame',headers=headers()).content==wire.preview
+        wire.live=0
+        assert client.get(base+'/frame',headers=headers()).status_code==503
+        wire.live=1
+        response=client.get(base+'/frame',headers=headers())
+        assert response.content==wire.preview
+        assert float(response.headers['X-Preview-acquisition-ms'])>=0
+        assert float(response.headers['X-Frame-Age-Ms'])>=0
+        assert wire.open_count==1 and wire.shots==0
         ids=[]
         for slot in range(count):
             operation=key();payload={'slot_index':slot}
