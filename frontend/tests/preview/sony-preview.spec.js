@@ -29,19 +29,24 @@ test('development Sony contract tolerates first pending frame and does not reope
       await route.fulfill({response:await route.fetch()});
     }finally{inflight--;}
   });
-  await page.goto('/');await page.waitForFunction(()=>window.app?.hostPreviewDiagnostics?.frames>=20);
+  await page.goto('/?previewStats=1');await page.waitForFunction(()=>window.app?.hostPreviewDiagnostics?.frames>=20);
   expect(connects).toBe(1);expect(maxInflight).toBe(1);
   await expect(page.locator('#demoModeBadge')).not.toContainText('Production is not supported');
   await expect(page.locator('#hostCameraPreview')).toBeVisible();
+  await expect(page.locator('#hostPreviewStats')).toContainText(/FPS.*request p95.*frame age/);
+  await expect(page.locator('#hostPreviewStats')).toContainText(/next paint \d+.*timer late/);
   const metrics=await page.evaluate(()=>app.hostPreviewPerformance());
   expect(metrics.samples).toBeGreaterThanOrEqual(20);
   expect(metrics.displayedFPS).toBeGreaterThan(0);
   expect(metrics.responseMs.p95).toBeGreaterThanOrEqual(metrics.responseMs.p50);
+  expect(metrics.paintAgeUpperBoundMs.p95).toBeGreaterThan(0);
+  expect(metrics.pendingRender).toBeLessThanOrEqual(1);
   console.log('SIMULATED Sony capability / Mock transport preview:',JSON.stringify(metrics));
 });
 
 test('old sequence is ignored, temporary busy recovers, released preview cleans up',async({page})=>{
   await sonyCapabilities(page);await page.goto('/');await page.waitForFunction(()=>window.app?.hostPreviewHealthy);
+  await expect(page.locator('#hostPreviewStats')).toBeHidden();
   const before=await page.evaluate(()=>app.hostFrameSequence);let stale=true,connects=0;
   page.on('request',r=>{if(r.url().endsWith('/camera/connect'))connects++;});
   await page.route('**/camera/frame',async route=>{
@@ -50,6 +55,7 @@ test('old sequence is ignored, temporary busy recovers, released preview cleans 
     await route.fulfill({response});
   });
   await page.waitForFunction(()=>app.hostPreviewDiagnostics.lastFailure==='preview_pending');
+  expect(await page.evaluate(()=>app.hostPreviewPerformance().discardedStaleFrames)).toBeGreaterThan(0);
   expect(await page.evaluate(()=>app.hostFrameSequence)).toBe(before);
   stale=false;await page.waitForFunction(n=>app.hostFrameSequence>n,before);
   expect(connects).toBe(0);

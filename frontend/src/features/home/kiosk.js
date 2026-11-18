@@ -29,9 +29,13 @@ export function initializeKioskUI(app){
   const previewCard=document.getElementById('compositeCanvas').closest('.glass-card');
   previewCard.id='guestCompositeCard';
   previewCard.parentElement.parentElement.id='guestResultColumns';
-  actions.append(document.getElementById('printReadyBox'),copies,printStatus,printerCheck,printButtons);
+  const download=printButtons.querySelector('button[onclick="app.downloadCompositeImage()"]');
+  download.id='downloadPhotoBtn';
+  actions.append(download,copies,document.getElementById('printPhotoBtn'),printStatus,printerCheck);
+  printButtons.remove();
   const confirm=document.getElementById('confirmSessionBtn');confirm.className='w-full mt-4 px-5 py-4 rounded-xl btn-primary-blue font-bold';
-  previewCard.append(confirm,actions);
+  previewCard.append(document.getElementById('printReadyBox'),document.getElementById('finalPhotoNotice'),confirm);
+  document.getElementById('guestDeliveryPanel').parentElement.append(actions);
   resultWorkspace.querySelector(':scope > .glass-card button').id='legacyReviewBack';
   document.body.classList.toggle('kiosk-host',!defaults.demoEnabled);
   app.kioskInitialized=true;app.syncSetupLayout();app.renderRecentPhotos();
@@ -55,6 +59,7 @@ export function syncGuestWorkflowUI(app){
   result.classList.toggle('automatic-layout',active&&app.currentScreen==='result'&&!delivered);
   document.body.dataset.guestFlow=String(active);
   document.body.dataset.workflow=app.guestStarting?'preparing':app.currentScreen==='home'?'setup':app.currentScreen==='capture'?'capture':delivered?'delivery':'review';
+  document.getElementById('guestResultTitle').textContent=delivered?'Your Amazing Race Photo':'✨ Customize & Get Your Photo ✨';
   for(const id of ['guestDeliveryPanel','guestDeliveryActions'])document.getElementById(id).hidden=active&&!delivered;
   for(const id of ['guestReviewEditor','guestReviewShots'])document.getElementById(id).hidden=active&&delivered;
   document.getElementById('guestCapturedPanel').hidden=!active||app.currentScreen!=='result'||delivered||!app.photos.some(Boolean);
@@ -68,11 +73,14 @@ export function syncGuestWorkflowUI(app){
 
 export function syncKioskStatus(app){
   const status=document.getElementById('setupCameraStatus');if(!status)return;
-  if(app.eventConfig?.event_mode){status.textContent=app.guestStarting?'Checking camera…':app.persistenceError||!app.hostPreviewHealthy?'Camera is not ready. Please ask an event staff member for help.':'Camera ready';return;}
-  if(app.guestStarting||app.persistenceError){status.textContent=app.guestStarting?'Checking camera…':app.persistenceError;return;}
-  status.textContent=app.cameraSource==='host'
-    ? (app.hostPreviewHealthy?`${app.hostCameraStatus?.capabilities?.name||'Host camera'} • Live View`:document.getElementById('hostCameraStatus').textContent||'Connecting to the host camera…')
-    : 'DEMO • Browser preview, not a real camera shutter';
+  let text;
+  if(app.guestStarting)text='Checking camera…';
+  else if(app.eventConfig?.event_mode)text=app.persistenceError||!app.hostPreviewHealthy?'Camera is not ready. Please ask an event staff member for help.':'Camera ready';
+  else if(app.persistenceError)text=app.persistenceError;
+  else if(app.cameraSource!=='host')text='DEMO • Browser preview, not a real camera shutter';
+  else if(app.hostPreviewHealthy)text=`${app.hostCameraStatus?.capabilities?.name||'Host camera'} • Live View`;
+  else text=document.getElementById('hostCameraStatus').textContent||'Connecting to the host camera…';
+  if(status.textContent!==text)status.textContent=text;
 }
 
 export function renderRecentPhotos(app){

@@ -2,6 +2,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 import os
 
+APPROVED_GOOGLE_DRIVE_FOLDER_ID = '1QO_i__d-JzrQOCL7muz9lkgjOe1JxNGH'
+
 
 @dataclass(frozen=True)
 class Settings:
@@ -37,7 +39,7 @@ class Settings:
     cups_lp: str = 'lp'
     cups_lpstat: str = 'lpstat'
     google_drive_enabled: bool = False
-    google_drive_folder_id: str = '1ixmork-KFJ8xdtQCFJIpUTQm-SnJqeez'
+    google_drive_folder_id: str = APPROVED_GOOGLE_DRIVE_FOLDER_ID
     google_oauth_client_file: Path | None = None
     event_gallery_auto_publish: bool = True
     public_gallery_enabled: bool = False
@@ -47,7 +49,7 @@ class Settings:
         return self.operation_mode == 'development' or (self.operation_mode == 'rehearsal' and self.allow_mock_hardware)
 
     def __post_init__(self):
-        if self.google_drive_folder_id!='1ixmork-KFJ8xdtQCFJIpUTQm-SnJqeez':
+        if self.google_drive_folder_id != APPROVED_GOOGLE_DRIVE_FOLDER_ID:
             raise ValueError('Google Drive destination must be the approved Photobooth folder')
         if not 1 <= self.max_print_copies <= 100:
             raise ValueError('MAX_PRINT_COPIES must be 1..100')
@@ -123,6 +125,6 @@ class Settings:
             google_drive_enabled=flag('GOOGLE_DRIVE_ENABLED'),
             event_gallery_auto_publish=flag('EVENT_GALLERY_AUTO_PUBLISH','true'),
             public_gallery_enabled=flag('PUBLIC_GALLERY_ENABLED'),
-            google_drive_folder_id=os.environ.get('GOOGLE_DRIVE_FOLDER_ID','1ixmork-KFJ8xdtQCFJIpUTQm-SnJqeez'),
+            google_drive_folder_id=os.environ.get('GOOGLE_DRIVE_FOLDER_ID', APPROVED_GOOGLE_DRIVE_FOLDER_ID),
             google_oauth_client_file=Path(os.environ['GOOGLE_OAUTH_CLIENT_FILE']).expanduser().resolve() if os.environ.get('GOOGLE_OAUTH_CLIENT_FILE') else None,
         )

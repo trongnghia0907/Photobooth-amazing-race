@@ -33,7 +33,10 @@ test('state is isolated, all 9 filters and sticker library retained; auto print 
   assert.equal(b.photos[0], null);
   assert.equal(a.autoPrintPopup, false);
   assert.equal(a.filters.length, 9);
-  assert.equal(JSON.stringify(a.filters), JSON.stringify(baseline.filters));
+  // English labels intentionally differ; filter algorithms and colors do not.
+  const behavior = filters => filters.map(({id,css,color})=>({id,css,color}));
+  assert.equal(JSON.stringify(behavior(a.filters)), JSON.stringify(behavior(baseline.filters)));
+  assert.deepEqual(a.filters.map(filter=>filter.name), ['Original','Black & White','Vintage','Warm','Cool','Dramatic','Soft Fade','Vivid','Sepia']);
   assert.equal(JSON.stringify(a.stickerLibrary), JSON.stringify(baseline.stickerLibrary));
   assert.equal(createEmptyPhotos('landscape_4').length, 4);
   assert.equal(layouts.landscape_4.enabled, true);
@@ -104,8 +107,8 @@ test('legacy DOM IDs preserved except explicitly removed guest controls; styles 
 test('Guest layout selector exposes only portrait 2x3 and landscape 2x2 choices', () => {
   const current = readFileSync(new URL('../index.html',import.meta.url),'utf8');
   assert.match(current, /id="setupLayoutChoices"/);
-  assert.match(current, /id="frameCardGrid2x3"[^>]*>[^]*?2×3 dọc/);
-  assert.match(current, /id="frameCardLandscape4"[^>]*>[^]*?2×2 ngang/);
+  assert.match(current, /id="frameCardGrid2x3"[^>]*>[^]*?2×3 Portrait/);
+  assert.match(current, /id="frameCardLandscape4"[^>]*>[^]*?2×2 Landscape/);
   assert.doesNotMatch(current, /customFrameInputMain|frameCardGrid3x2|Tải Frame PNG/);
 });
 

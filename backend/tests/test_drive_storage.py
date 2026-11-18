@@ -15,7 +15,7 @@ from app.services.drive_client import DriveError,GoogleDriveClient
 from test_sessions import create,upload,composite,headers,key,image
 from test_printing import login,enqueue,wait_job
 
-FOLDER='1ixmork-KFJ8xdtQCFJIpUTQm-SnJqeez'
+FOLDER='1QO_i__d-JzrQOCL7muz9lkgjOe1JxNGH'
 
 class FakeDrive:
     def __init__(self):
@@ -104,9 +104,10 @@ def test_offline_and_lost_upload_ack_survive_restart_without_duplicates(setup):
         assert db.execute('SELECT drive_file_id FROM drive_uploads').fetchone()[0]=='reserved-1'
     assert finalize(client,sid,cid).status_code==200
 
-def test_privacy_and_auth_fail_closed_keep_staging(setup):
+def test_privacy_and_auth_fail_closed_keep_staging(setup,caplog):
     client,repo,fake,settings=setup
     sid,cid=confirmed(client);fake.allowed=False;repo.drive.process_one()
+    assert f'composite_id={cid} stage=privacy attempt=1' in caplog.text
     assert fake.reserved==0 and not fake.files
     # A private local share is independent of a blocked remote upload.
     assert finalize(client,sid,cid).status_code==200
@@ -119,6 +120,26 @@ def test_privacy_and_auth_fail_closed_keep_staging(setup):
     assert not fake.files
     assert client.post('/api/admin/storage/drive/retry').status_code==403
     assert client.post('/api/admin/storage/drive/retry',headers=csrf).status_code==200
+
+
+def test_revoked_oauth_reports_reauthorization_without_raw_response(tmp_path,monkeypatch):
+    credential_module=pytest.importorskip('google.oauth2.credentials')
+    errors=pytest.importorskip('google.auth.exceptions')
+    client=GoogleDriveClient(Settings(tmp_path))
+    monkeypatch.setattr(client.store,'load',lambda:'{}')
+
+    class ExpiredCredentials:
+        valid=False
+
+        def refresh(self,request):
+            raise errors.RefreshError('raw Google OAuth response',{'error':'invalid_grant','error_description':'private debug data'})
+
+    monkeypatch.setattr(credential_module.Credentials,'from_authorized_user_info',lambda *_:ExpiredCredentials())
+    with pytest.raises(DriveError,match='invalid_grant') as caught:
+        client.privacy()
+    assert '--pick-folder' in str(caught.value)
+    assert 'private debug data' not in str(caught.value)
+    assert 'raw Google OAuth response' not in str(caught.value)
 
 def test_checksum_mismatch_never_synced_or_cleaned(setup):
     client,repo,fake,settings=setup

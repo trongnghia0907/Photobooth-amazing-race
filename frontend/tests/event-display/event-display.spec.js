@@ -104,9 +104,11 @@ test('16:9 event display: explicit approval, four-corner gallery, hide, reconnec
     await expect(page.locator('#displayPresentation button, #displayPresentation select')).toHaveCount(0);
     step('hide first photo');await host.locator('nav [data-page="photos"]').click();await host.locator('#gallery article').filter({hasText:'6 ảnh'}).locator('button').click();await host.locator('#hideDisplayPhoto').click();
     await expect(page.locator('#photoWall figure[data-photo-id]')).toHaveCount(1);expect((await page.request.get(base+oldMedia)).status()).toBe(404);
-    const download=await request.get(base+a.share.download_url);expect(download.ok()).toBe(true);expect(createHash('sha256').update(await download.body()).digest('hex')).toBe(a.share.print_ready.sha256);
+    const download=await request.get(base+a.share.download_url);expect(download.ok()).toBe(true);
+    // The isolated localhost Host has no public HTTPS QR footer.
+    expect(createHash('sha256').update(await download.body()).digest('hex')).toBe(a.composite.sha256);
     step('network loss/recovery');await page.route('**/event-display/api/photos*',route=>route.abort());
-    await expect(page.locator('#displayStatus')).toContainText('Mất kết nối');await expect(page.locator('#photoWall figure[data-photo-id]')).toHaveCount(1);
+    await expect(page.locator('#displayStatus')).toContainText('Connection lost');await expect(page.locator('#photoWall figure[data-photo-id]')).toHaveCount(1);
     await page.unroute('**/event-display/api/photos*');await expect(page.locator('#photoWall figure[data-photo-id]')).toHaveCount(1);
     step('reapprove and rotate access');await consent(6,'guest_consent');await expect(page.locator('#photoWall figure[data-photo-id]')).toHaveCount(2);
     const secondCode=await code();expect(secondCode).not.toBe(firstCode);await expect(page.locator('#displayLogin')).toBeVisible();await expect(page.locator('#photoWall figure[data-photo-id]')).toHaveCount(0);

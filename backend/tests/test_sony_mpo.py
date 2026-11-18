@@ -44,7 +44,7 @@ class MpoCamera(FakeWia):
     def __init__(self):super().__init__();self.original=mpo()
     def command(self,opcode,params=(),**kwargs):
         result=super().command(opcode,params,**kwargs)
-        if opcode==0x9207 and kwargs.get('data')==b'\x02\x00':self.photos[-1]=(self.original,self.shots)
+        if opcode==0x9207 and params==(0xd2c2,) and kwargs.get('data')==b'\x02\x00':self.photos[-1]=(self.original,self.shots)
         return result
 
 
@@ -82,7 +82,8 @@ def test_retry_recovers_old_rejected_mpo_without_usb_transfer_or_shutter(tmp_pat
     reference=driver.capture_photo(str(uuid.uuid4()),end)
     retained=seed_rejected(driver,wire,reference,wire.original);commands=len(wire.commands)
     assert driver.get_captured_photo(reference,end).data==wire.original
-    assert len(wire.commands)==commands and wire.shots==1
+    assert wire.commands[commands:]==[(0x9209,(),None)] and wire.shots==1
+    assert json.loads(driver._paths(reference)[0].read_text())['buffer_drained']
     assert retained.read_bytes()==wire.original
 
 

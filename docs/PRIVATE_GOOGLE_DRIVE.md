@@ -1,6 +1,6 @@
 # Private Google Drive storage and Limited Access audit
 
-Destination is fixed to `1ixmork-KFJ8xdtQCFJIpUTQm-SnJqeez`. The application never modifies Drive sharing permissions or creates another top-level destination.
+The approved upload destination is `1QO_i__d-JzrQOCL7muz9lkgjOe1JxNGH`. Set `GOOGLE_DRIVE_FOLDER_ID` to this ID if your Host environment explicitly specifies a folder. Restart Host after changing the destination. Existing synced files stay in their original folder.
 
 ## What is implemented
 
@@ -32,9 +32,9 @@ Broad entries are accepted as metadata-only only when the item is a folder, `inh
 
 A proven Limited Access boundary stops traversal into the parent. The parent can remain publicly shared without being treated as effective content access inside that boundary. When no such boundary is proven, ancestor ACLs must also be readable and safe. The guard never silently widens OAuth scope.
 
-## Actual evidence collected on 2026-10-31
+## Historical evidence for the previous destination collected on 2026-10-31
 
-Latest authenticated result after Desktop Picker selection: **PASS**. The callback
+Authenticated result for the previous folder (`1ixmork-KFJ8xdtQCFJIpUTQm-SnJqeez`) after Desktop Picker selection: **PASS**. The callback
 contained exactly the approved folder ID and the new credentials were saved with
 Windows DPAPI. Folder metadata and `canAddChildren` passed. The raw API returned
 `inheritedPermissionsDisabled=true`; the anyone/reader entry has `view=metadata`
@@ -80,19 +80,18 @@ that point, not evidence of public sharing.
 2. Run from the repository root:
 
    ```powershell
-   & .\backend\.venv\Scripts\python.exe -X utf8 scripts/connect_google_drive.py --storage-root runtime --pick-folder --test-upload
+   & .\backend\.venv\Scripts\python.exe -X utf8 scripts/connect_google_drive.py --storage-root runtime --pick-folder
    ```
 
 3. In the browser use the account that has Editor/Owner access, select
-   **Amazing race-Photobooth**, and confirm **Insert**. Only ID
-   `1ixmork-KFJ8xdtQCFJIpUTQm-SnJqeez` is accepted. Cancel, a missing selection, a
+   the folder with ID `1QO_i__d-JzrQOCL7muz9lkgjOe1JxNGH`, and confirm **Insert**. Cancel, a missing selection, a
    different folder, additional scopes, or missing offline authorization preserves
    the previous saved credentials.
 4. The script checks authenticated folder metadata, `canAddChildren` (Editor or
-   stronger capability), and the existing privacy guard. `--test-upload` creates
-   or reuses exactly one disposable image only after those checks pass, then
-   reports its Drive file ID, size and verified checksum. It never migrates old
-   customer photos or starts a worker. If any guard blocks, nothing is uploaded.
+   stronger capability), and the existing privacy guard. After Host restarts,
+   check that a newly confirmed composite reaches `SYNCED` and appears in the
+   selected folder. An earlier disposable test ID can still refer to a file in
+   the previous folder, so use a newly confirmed composite to verify this change.
 
 The OAuth-hosted Picker uses the saved encrypted client ID/secret from the same
 project, PKCE, a random loopback port, `trigger_onepick=true`, `prompt=consent`,

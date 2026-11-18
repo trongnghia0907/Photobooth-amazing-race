@@ -72,7 +72,7 @@ def status(request: Request):
                   for name,table in [('sessions','sessions'),('photos','session_finals'),('composites','session_finals')]}
         for state in ('queued','processing','failed'):
             counts[state] = db.execute('SELECT COUNT(*) FROM print_jobs WHERE status=?',(state,)).fetchone()[0]
-    return {'backend':'online',**counts,'printer':request.app.state.printing.config(),
+    return {'backend':'online',**counts,'printer':request.app.state.printing.inventory(),
             'readiness':readiness_report(request.app.state.repository,request.app.state.printing,request.app.state.camera)}
 
 
@@ -166,9 +166,7 @@ def cancel(request: Request,job_id: UUID):
 
 @admin.get('/printers',dependencies=[Depends(host)])
 def printers(request: Request):
-    service = request.app.state.printing
-    with service.repo.db.connect() as db:
-        return {'items':service.printers(),'selected':service.selected(db),**service.config()}
+    return request.app.state.printing.inventory()
 
 
 class Selection(BaseModel):

@@ -7,6 +7,7 @@ import threading
 import time
 import uuid
 from collections import deque
+from contextlib import contextmanager
 from dataclasses import replace
 from fastapi import HTTPException
 from .base import CameraError
@@ -30,6 +31,8 @@ class CameraController:
         self.io = threading.Lock()
         self.owner = None
         self.release_requested = None
+        self.reconciled_session = None
+        self.capture_progress = None
         self.lease_until = 0
         self.state = 'idle'
         self.last_error = None
@@ -78,9 +81,31 @@ class CameraController:
             lock.close()
             raise CameraError('host_busy','Camera controller thuộc process khác. Chạy Uvicorn với một worker.',stage='connect') from None
         self.process_lock = lock
+        self._reconcile_cancelled_receipts()
         with self.repo.db.connect() as db:
             db.execute("UPDATE camera_captures SET status='failed',uncertain=1,error_code='interrupted',error_message=?,updated_at=? WHERE status='capturing'",('Host bị ngắt khi đang chụp. Kiểm tra camera trước khi chụp lại.',now()))
             db.execute("UPDATE camera_captures SET status='transfer_failed',error_code='interrupted_transfer',error_message=?,updated_at=? WHERE status='transferring'",('Truyền file bị ngắt. Thử lại cùng key, không chụp thêm.',now()))
+
+    def _reconcile_cancelled_receipts(self):
+        # A crash may occur after the archived receipt is committed but before
+        # SQLite acknowledges cancellation. Replay only that durable decision;
+        # no physical-idle inference and no USB/control commands are involved.
+        driver=getattr(self.adapter,'driver',None)
+        if not isinstance(driver,SonyPtpDriver):return
+        with self.repo.db.connect() as db:
+            rows=db.execute("""SELECT c.id FROM camera_captures c JOIN sessions s ON s.id=c.session_id
+                WHERE c.adapter_mode='sony_zve10' AND c.status IN ('failed','transfer_failed')
+                AND c.native_path IS NULL AND COALESCE(c.error_code,'')!='capture_cancelled'
+                AND s.status!='completed'
+                AND NOT EXISTS(SELECT 1 FROM session_finals f WHERE f.session_id=s.id)""").fetchall()
+            for row in rows:
+                journal,_=driver._paths(row['id'])
+                if not journal.is_file() or not (driver.root/'cancelled'/journal.name).is_file():continue
+                record=json.loads(journal.read_text(encoding='utf-8'))
+                if record.get('status')!='cancelled':continue
+                db.execute("""UPDATE camera_captures SET status='failed',error_code='capture_cancelled',
+                    error_message=?,uncertain=0,updated_at=? WHERE id=?""",
+                    ('Reconciled durable cancellation receipt; original receipt and photos retained.',now(),row['id']))
 
     def _expire(self):
         if self.owner and time.monotonic() > self.lease_until and not self.capture_lock.locked():
@@ -113,10 +138,29 @@ class CameraController:
                     'lease_active':bool(self.owner),'preview_healthy':fresh,
                     'last_frame_at':self.last_frame_at,'last_error':self.last_error,
                     'frame_diagnostics':dict(self.frame_diagnostics),
+                    'capture_progress': self.capture_progress if sid is None or sid==self.owner else None,
+                    'camera_progress': getattr(getattr(self.adapter,'driver',None),'capture_progress',None)
+                        if sid is None or sid==self.owner else None,
                     'preview_performance':self.preview_performance(),
                     'timeout_seconds':self.settings.camera_timeout_seconds,
                     'stale_seconds':self.settings.camera_stale_seconds,
                     'operation_mode':self.settings.operation_mode,'configured_model':self.settings.camera_model}
+
+    def _capture_stage(self, capture_id, stage):
+        stamp=time.monotonic();previous=self.capture_progress
+        timings=dict(previous['timings_ms']) if previous and previous['capture_id']==capture_id and previous['stage'] not in ('complete','error') else {}
+        if timings or (previous and previous['capture_id']==capture_id and previous['stage'] not in ('complete','error')):
+            timings[previous['stage']]=round((stamp-previous['monotonic'])*1000,2)
+        self.capture_progress={'capture_id':capture_id,'stage':stage,'at':now(),'monotonic':stamp,'timings_ms':timings}
+        logging.getLogger('uvicorn.error').info('camera_capture capture_id=%s stage=%s at=%s timings_ms=%s',capture_id,stage,self.capture_progress['at'],timings)
+
+    @contextmanager
+    def _capture_io(self, deadline):
+        remaining=deadline-time.monotonic()
+        if remaining<=0 or not self.io.acquire(timeout=remaining):
+            raise CameraError('busy','Camera I/O is still occupied. No new shutter was sent; retry the same request after the current operation ends.',stage='capture')
+        try:yield
+        finally:self.io.release()
 
     def diagnose(self, *, confirm_physical_shutter=False):
         """Return safe capability/status diagnostics for the Host UI.
@@ -177,13 +221,19 @@ class CameraController:
             self.state = 'connecting'
             try:
                 self.check_event_capabilities()
+                if self.owner == sid and self.adapter.get_status()['connected']:
+                    self.lease_until = time.monotonic() + self.settings.camera_lease_seconds
+                    self.state = 'previewing' if self.adapter.get_status()['previewing'] else 'ready'
+                    return self.status(sid, token)
                 self.adapter.connect()
+                self.reconciled_session = None
                 self.preview_epoch += 1
                 self.last_frame_sequence = None
                 self.preview_samples.clear()
                 self.owner = sid;self.lease_until = time.monotonic()+self.settings.camera_lease_seconds
                 self.state = 'ready';self.last_error = None
             except CameraError as error:
+                logging.getLogger(__name__).warning('camera_connect_failed adapter=%s code=%s: %s',self.mode,error.code,error)
                 self.state = 'error';self.last_error = str(error);raise
         return self.status(sid,token)
 
@@ -249,6 +299,8 @@ class CameraController:
                 with self.control:
                     if self.adapter is adapter and self.owner==sid and self.preview_epoch==epoch:
                         self.frame_diagnostics['failures'] += 1
+                        if self.frame_diagnostics['last_failure']!=error.code or self.last_error!=str(error):
+                            logging.getLogger(__name__).warning('camera_preview_failed adapter=%s code=%s: %s',self.mode,error.code,error)
                         self.frame_diagnostics['last_failure'] = error.code
                         self.state = 'waiting' if error.code in ('preview_pending','not_ready','busy') else 'error'
                         self.last_error = str(error)
@@ -262,7 +314,7 @@ class CameraController:
         samples=list(self.preview_samples)
         result={'samples':len(samples),'delivered_fps':round((len(samples)-1)/(samples[-1]['at']-samples[0]['at']),2)
             if len(samples)>1 and samples[-1]['at']>samples[0]['at'] else None}
-        for name in ('processing_ms','lock_ms','age_ms','driver_lock_ms','properties_ms','object_info_ms','acquisition_ms','validation_ms'):
+        for name in ('processing_ms','lock_ms','age_ms','driver_lock_ms','properties_ms','object_info_ms','acquisition_ms','wia_worker_ms','wia_ipc_overhead_ms','validation_ms'):
             values=sorted(sample[name] for sample in samples if name in sample)
             if values:result[name]={'p50':round(values[(len(values)-1)//2],2),'p95':round(values[min(len(values)-1,int(len(values)*.95))],2),'max':round(values[-1],2)}
         return result
@@ -301,7 +353,14 @@ class CameraController:
         with self.repo.db.connect() as db:
             # A retry of the CURRENT session already owns the camera buffer.
             # Do not let an empty old tombstone consume its pending JPEG.
-            current=db.execute("SELECT id FROM camera_captures WHERE session_id=? AND adapter_mode='sony_zve10' AND status!='captured'",(sid,)).fetchall()
+            current=db.execute("SELECT id,error_code FROM camera_captures WHERE session_id=? AND adapter_mode='sony_zve10' AND status!='captured'",(sid,)).fetchall()
+            for row in current:
+                journal,_=driver._paths(row['id'])
+                # A retired tab must not reopen A with a fresh key after B has
+                # finished. The receipt also covers a crash before the DB ACK.
+                if row['error_code']=='capture_superseded' or (journal.exists() and
+                        json.loads(journal.read_text(encoding='utf-8')).get('superseded_by')):
+                    raise CameraError('capture_superseded','Phiên cũ đã nhường camera. Hãy chọn Phiên mới; ảnh và receipt cũ vẫn được giữ, chưa gửi shutter mới.',stage='capture')
             if any(driver._paths(row['id'])[0] in driver.unresolved for row in current):return
             rows=db.execute('''SELECT c.* FROM camera_captures c
                 JOIN sessions old ON old.id=c.session_id JOIN sessions current ON current.id=?
@@ -331,6 +390,14 @@ class CameraController:
                              int(record.get('status')!='superseded'),
                              preserved['path'] if preserved else None,preserved['sha256'] if preserved else None,
                              preserved['mime'] if preserved else None,now(),row['id']))
+        # Independent diagnostics can leave a receipt without a Host DB row.
+        # Reuse exactly the same bounded recovery/identity barrier, rather than
+        # leaving such receipts permanently invisible to session handoff.
+        if self.reconciled_session!=sid:
+            with self.repo.db.connect() as db:
+                known={row[0] for row in db.execute('SELECT id FROM camera_captures')}
+            driver.reconcile_previous_captures(sid,deadline,exclude=known)
+            self.reconciled_session=sid
 
     def capture(self, sid, token, key, slot):
         session = self.authorize(sid,token)
@@ -351,6 +418,7 @@ class CameraController:
         if not self.capture_lock.acquire(blocking=False):raise CameraError('busy','Một lệnh chụp đang được xử lý. Đọc trạng thái/thử lại cùng key.')
         capture_id = old['id'] if old else str(uuid.uuid4())
         try:
+            self._capture_stage(capture_id,'preparing')
             # A request may have been descheduled between lookup and lock
             # acquisition while an identical request completed. Read its ACK
             # again before inserting an intent or touching the camera.
@@ -380,8 +448,11 @@ class CameraController:
                     db.execute('INSERT INTO camera_captures (id,session_id,request_key,slot_index,expected_revision,adapter_mode,status,created_at,updated_at) VALUES (?,?,?,?,?,?,\'capturing\',?,?)',
                                (capture_id,sid,key,slot,session['shots_revision'],self.mode,stamp,stamp))
             deadline = time.monotonic()+self.settings.camera_timeout_seconds
-            with self.io:
+            self._capture_stage(capture_id,'waiting_io')
+            with self._capture_io(deadline):
+                self._capture_stage(capture_id,'reconciling')
                 self._supersede_previous_captures(sid,deadline)
+                self._capture_stage(capture_id,'recovering' if old else 'shutter')
                 if not old:
                     self.state = 'capturing'
                     reference = self.adapter.capture_photo(capture_id,deadline)
@@ -396,6 +467,7 @@ class CameraController:
                         db.execute("UPDATE camera_captures SET adapter_reference=?,status='transferring',updated_at=? WHERE id=?",(reference,now(),capture_id))
                 else:reference = old['adapter_reference']
                 self.state = 'transferring'
+                self._capture_stage(capture_id,'receiving_original')
                 if old and old['native_path']:
                     root = self.settings.storage_root.resolve();path = (root/old['native_path']).resolve()
                     if not path.is_relative_to(root) or not path.is_file():raise CameraError('transfer','File gốc camera bị mất.',stage='transfer')
@@ -406,21 +478,29 @@ class CameraController:
                     photo = self.adapter.get_captured_photo(reference,deadline)
                     data,mime,source = photo.data,photo.mime,photo.source
                 if time.monotonic()>deadline:raise CameraError('timeout','Hết thời gian truyền ảnh. Thử lại cùng yêu cầu.',stage='transfer')
-                validated = validate_image(data,mime,camera_settings)
+                self._capture_stage(capture_id,'normalizing')
+                # Encode the large Sony working PNG faster, with identical
+                # pixels. The original JPEG is persisted separately.
+                png_level = 5 if self.mode=='sony_zve10' else 6
+                validated = validate_image(data,mime,camera_settings,png_compress_level=png_level)
                 cap = self.adapter.get_capabilities()
                 if not cap.demo and (source!='camera_original' or mime!='image/jpeg' or not cap.physical_shutter or not cap.original_file):
                     raise CameraError('invalid_provenance','Adapter thật chưa xác nhận shutter/file gốc; từ chối dùng frame thay thế.',stage='transfer')
                 relative = f'camera_originals/{sid}/{capture_id}'+{'image/jpeg':'.jpg','image/png':'.png','image/webp':'.webp'}[mime]
+                self._capture_stage(capture_id,'saving_original')
                 atomic_write(self.settings.storage_root/relative,data)
                 with self.repo.db.connect() as db:
                     db.execute("UPDATE camera_captures SET native_path=?,native_sha256=?,mime=?,status='transferring',updated_at=? WHERE id=?",(relative,hashlib.sha256(data).hexdigest(),mime,now(),capture_id))
                     current = db.execute('SELECT expected_revision FROM camera_captures WHERE id=?',(capture_id,)).fetchone()[0]
+                self._capture_stage(capture_id,'saving_slot')
                 self.repo.upload_photo(sid,token,'camera_'+capture_id,slot,source,validated,current,capture_id)
                 if isinstance(self.adapter,SonyZvE10CameraAdapter):self.adapter.capture_persisted(capture_id)
+            self._capture_stage(capture_id,'complete')
             self.state = 'captured';self.last_error = None
             self.lease_until = time.monotonic()+self.settings.camera_lease_seconds
             return self.result(sid,token,capture_id)
         except Exception as error:
+            self._capture_stage(capture_id,'error')
             if isinstance(error,CameraError):error.capture_id = capture_id
             self.last_error = str(error) if isinstance(error,CameraError) else 'Không lưu/nhận được ảnh camera. File cũ vẫn giữ; thử lại cùng key.'
             self.state = 'disconnected' if isinstance(error,CameraError) and error.code=='disconnect' else 'error'

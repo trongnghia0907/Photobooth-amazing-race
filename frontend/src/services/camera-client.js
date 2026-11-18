@@ -37,6 +37,7 @@ export async function selectCameraDevice(app, deviceId) {
   if (app.cameraSource === 'host') {
     app.releaseHostCamera();app.cameraSource='browser_demo';
     document.getElementById('hostCameraTools').hidden=true;document.getElementById('hostCameraStatus').hidden=true;
+    if(app.hostPreviewStats)app.hostPreviewStats.hidden=true;
   }
   if (deviceId === 'simulated_camera') {
     app.startSimulatedCamera('Switched to Event Simulation Camera mode.');

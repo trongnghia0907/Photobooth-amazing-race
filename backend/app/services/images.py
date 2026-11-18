@@ -40,7 +40,7 @@ async def read_image(file: UploadFile, settings: Settings) -> ValidatedImage:
     return await run_in_threadpool(validate_image,bytes(data),file.content_type,settings)
 
 
-def validate_image(data: bytes, content_type: str, settings: Settings) -> ValidatedImage:
+def validate_image(data: bytes, content_type: str, settings: Settings, *, png_compress_level: int = 6) -> ValidatedImage:
     if content_type not in {'image/png', 'image/jpeg', 'image/webp'}:
         raise HTTPException(415, 'Chỉ hỗ trợ PNG, JPEG hoặc WebP')
     if not data or len(data) > settings.max_upload_bytes:
@@ -61,7 +61,7 @@ def validate_image(data: bytes, content_type: str, settings: Settings) -> Valida
                 img.seek(0)  # Primary full-resolution image, never an MPO thumbnail.
                 normalized = ImageOps.exif_transpose(img).convert('RGBA')
                 output = BytesIO()
-                normalized.save(output, format='PNG')
+                normalized.save(output, format='PNG', compress_level=png_compress_level)
                 payload = output.getvalue()
                 return ValidatedImage(payload, normalized.width, normalized.height,
                                       hashlib.sha256(payload).hexdigest(), hashlib.sha256(data).hexdigest())

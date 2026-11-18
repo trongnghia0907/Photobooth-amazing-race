@@ -14,13 +14,22 @@ from test_sony_zve10 import settings, connect, capture
 from test_sessions import create, headers, key
 
 
-def pending(client,wire):
+def received_checkpoint(client,capture_id,data):
+    # Model a crash after the validated-byte hash checkpoint, before its cache
+    # file was persisted. Metadata-only timeouts deliberately get NO checkpoint.
+    journal,_=client.app.state.camera.adapter.driver._paths(capture_id)
+    record=json.loads(journal.read_text());record['received_sha256']=hashlib.sha256(data).hexdigest()
+    journal.write_text(json.dumps(record))
+
+
+def pending(client,wire,*,known_original=False):
     sid=create(client);base=connect(client,sid);operation=key()
     wire.fault='transfer_timeout'
     result=capture(client,base,0,operation)
     assert result.status_code!=200
     with client.app.state.repository.db.connect() as db:
         row=db.execute('SELECT * FROM camera_captures WHERE session_id=?',(sid,)).fetchone()
+    if known_original:received_checkpoint(client,row['id'],wire.photos[0][0])
     return sid,base,operation,row['id']
 
 
@@ -34,7 +43,7 @@ def new_session(client,old_sid,count=6):
 def test_failed_old_transfer_is_quarantined_then_new_session_captures(settings,count):
     with TestClient(create_app(settings)) as client:
         camera=client.app.state.camera;wire=FakeWia();camera.adapter.driver.transport=wire
-        a,base_a,old_key,cid=pending(client,wire);original=wire.photos[0][0]
+        a,base_a,old_key,cid=pending(client,wire,known_original=True);original=wire.photos[0][0]
         b,base_b=new_session(client,a,count)
         operation=key();result=capture(client,base_b,0,operation)
         assert result.status_code==200,result.text
@@ -55,23 +64,24 @@ def test_empty_retired_capture_and_late_old_jpeg_never_enter_new_slots(settings)
     with TestClient(create_app(settings)) as client:
         wire=FakeWia();camera=client.app.state.camera;camera.adapter.driver.transport=wire
         a,_,_,cid=pending(client,wire);wire.photos.clear()
-        journal,_=camera.adapter.driver._paths(cid)
-        record=json.loads(journal.read_text());record['object']=None;journal.write_text(json.dumps(record))
+        # Keep the receipt's evidence that GetObject had already started.
         b,base=new_session(client,a)
         assert capture(client,base,0).status_code==200
         late=jpeg('purple');wire.photos.append((late,1))
-        assert capture(client,base,1).status_code==200
-        assert (settings.storage_root/'camera_originals'/a/(cid+'.jpg')).read_bytes()==late
+        result=capture(client,base,1)
+        assert result.json()['error']['code']=='recovery_required'
+        assert wire.photos[0][0]==late  # Unknown late image is NOT labelled as A.
+        assert not (settings.storage_root/'camera_originals'/a/(cid+'.jpg')).exists()
         with camera.repo.db.connect() as db:
             rows=db.execute('SELECT native_sha256 FROM camera_captures WHERE session_id=?',(b,)).fetchall()
         assert all(row[0]!=hashlib.sha256(late).hexdigest() for row in rows)
-        assert wire.shots==3
+        assert wire.shots==2
 
 
 def test_current_session_retry_keeps_same_shutter_and_original(settings):
     with TestClient(create_app(settings)) as client:
         wire=FakeWia();client.app.state.camera.adapter.driver.transport=wire
-        _,base,operation,_=pending(client,wire)
+        _,base,operation,_=pending(client,wire,known_original=True)
         assert client.post(base+'/connect',headers=headers()).status_code==200
         assert capture(client,base,0,operation).status_code==200
         assert wire.shots==1
@@ -104,10 +114,13 @@ def test_empty_old_tombstone_cannot_consume_current_sessions_retry(settings):
     with TestClient(create_app(settings)) as client:
         wire=FakeWia();camera=client.app.state.camera;driver=camera.adapter.driver;driver.transport=wire
         a,_,_,cid=pending(client,wire);wire.photos.clear()
-        journal,_=driver._paths(cid);record=json.loads(journal.read_text());record['object']=None;journal.write_text(json.dumps(record))
+        # The failed transfer consumed the buffer; its ObjectInfo remains.
         b,base=new_session(client,a);operation=key();wire.fault='transfer_timeout'
         assert capture(client,base,0,operation).status_code!=200
         expected=wire.photos[0][0]
+        with camera.repo.db.connect() as db:
+            current_id=db.execute('SELECT id FROM camera_captures WHERE session_id=? AND request_key=?',(b,operation)).fetchone()[0]
+        received_checkpoint(client,current_id,expected)
         assert client.post(base+'/connect',headers=headers()).status_code==200
         result=capture(client,base,0,operation)
         assert result.status_code==200,result.text
@@ -135,7 +148,7 @@ def test_older_tab_cannot_supersede_newer_sessions_pending_capture(settings):
 def test_physical_uncertainty_blocks_new_shutter_and_can_recover(settings,monkeypatch,failure):
     with TestClient(create_app(settings)) as client:
         wire=FakeWia();camera=client.app.state.camera;driver=camera.adapter.driver;driver.transport=wire
-        a,_,_,cid=pending(client,wire);b,base=new_session(client,a)
+        a,_,_,cid=pending(client,wire,known_original=True);b,base=new_session(client,a)
         journal,_=driver._paths(cid);record=json.loads(journal.read_text())
         original=driver._properties
         if failure=='release_busy':
@@ -151,20 +164,28 @@ def test_physical_uncertainty_blocks_new_shutter_and_can_recover(settings,monkey
                     props=original(deadline);props[0xd215]['value']=1;return props
                 raise CameraError('busy' if failure=='busy' else 'disconnected','TEST physical unavailable')
             monkeypatch.setattr(driver,'_properties',unavailable)
-        result=capture(client,base,0);assert result.status_code!=200 and wire.shots==1
+        operation=key();result=capture(client,base,0,operation);assert result.status_code!=200 and wire.shots==1
         assert not list((settings.storage_root/'camera_originals'/b).glob('*.jpg'))
         assert journal.exists() and wire.photos
+        # Once the simulated physical barrier clears, the identical B request
+        # may reconcile A and send exactly ONE new shutter, never replay A's.
+        if failure=='release_busy':monkeypatch.setattr(driver,'_command',command)
+        else:monkeypatch.setattr(driver,'_properties',original)
+        result=capture(client,base,0,operation)
+        assert result.status_code==200,result.text
+        assert wire.shots==2
+        assert capture(client,base,0,operation).json()==result.json() and wire.shots==2
 
 
 def test_unknown_shutter_finishes_only_release_before_quarantining(settings):
     with TestClient(create_app(settings)) as client:
         wire=FakeWia();camera=client.app.state.camera;driver=camera.adapter.driver;driver.transport=wire
-        a,_,_,cid=pending(client,wire);b,base=new_session(client,a)
+        a,_,_,cid=pending(client,wire,known_original=True);b,base=new_session(client,a)
         journal,_=driver._paths(cid);record=json.loads(journal.read_text())
         record['release_pending']=True;journal.write_text(json.dumps(record));before=len(wire.commands)
         assert capture(client,base,0).status_code==200
         controls=[data for op,_params,data in wire.commands[before:] if op==0x9207]
-        assert controls==[b'\x01\x00',b'\x02\x00',b'\x01\x00']
+        assert controls==[b'\x01\x00',b'\x02\x00',b'\x02\x00',b'\x01\x00',b'\x01\x00']
         assert wire.shots==2
 
 
@@ -172,7 +193,7 @@ def test_restart_reconciles_superseded_receipt_without_resurrecting_old_request(
     wire=FakeWia()
     with TestClient(create_app(settings)) as client:
         camera=client.app.state.camera;camera.adapter.driver.transport=wire
-        a,base_a,operation,cid=pending(client,wire);b,base_b=new_session(client,a)
+        a,base_a,operation,cid=pending(client,wire,known_original=True);b,base_b=new_session(client,a)
         # Crash boundary: receipt/file committed but SQLite handoff not yet written.
         camera.adapter.driver.supersede_capture(cid,a,b,__import__('time').monotonic()+5)
     with TestClient(create_app(settings)) as client:
@@ -205,3 +226,173 @@ def test_active_transfer_cannot_be_superseded_by_another_session(settings,monkey
         connect(client,b)
         assert capture(client,f'/api/sessions/{b}/camera',0).status_code==200
         assert wire.shots==2
+
+
+@pytest.mark.parametrize('restart',[False,True])
+def test_retired_session_cannot_reopen_capture_with_a_new_request_key(settings,restart):
+    wire=FakeWia()
+    with TestClient(create_app(settings)) as client:
+        camera=client.app.state.camera;camera.adapter.driver.transport=wire
+        a,base_a,_,cid=pending(client,wire,known_original=True)
+        b,base_b=new_session(client,a)
+        first=capture(client,base_b,0);assert first.status_code==200,first.text
+        assert client.post(base_b+'/disconnect',headers=headers()).status_code==200
+        if not restart:
+            connect(client,a)
+            result=capture(client,base_a,1)
+            assert result.json()['error']['code']=='capture_superseded',result.text
+            assert wire.shots==2
+    if restart:
+        with TestClient(create_app(settings)) as client:
+            camera=client.app.state.camera;camera.adapter.driver.transport=wire
+            connect(client,a)
+            result=capture(client,base_a,1)
+            assert result.json()['error']['code']=='capture_superseded',result.text
+            assert wire.shots==2
+
+
+@pytest.mark.parametrize('restart',[False,True])
+def test_empty_buffer_does_not_prove_uncertain_shutter_finished(settings,restart):
+    wire=FakeWia()
+    def blocked(client):
+        camera=client.app.state.camera;camera.adapter.driver.transport=wire
+        base=connect(client,b);operation=key()
+        result=capture(client,base,0,operation)
+        assert result.json()['error']['code']=='camera_recovery_pending',result.text
+        assert wire.shots==1
+        journal,_=camera.adapter.driver._paths(cid)
+        assert json.loads(journal.read_text())['status']!='superseded'
+        # A's delayed synthetic exposure arrives only AFTER B tried to start.
+        wire.photos.append(late)
+        result=capture(client,base,0,operation)
+        assert result.json()['error']['code']=='recovery_required',result.text
+        assert wire.photos[0]==late and wire.shots==1
+        with camera.repo.db.connect() as db:
+            assert db.execute('SELECT COUNT(*) FROM slots WHERE session_id=?',(b,)).fetchone()[0]==0
+    with TestClient(create_app(settings)) as client:
+        camera=client.app.state.camera;camera.adapter.driver.transport=wire
+        a=create(client);base_a=connect(client,a);wire.fault='shutter_timeout'
+        assert capture(client,base_a,0).status_code!=200
+        late=wire.photos.pop()
+        with camera.repo.db.connect() as db:
+            cid=db.execute('SELECT id FROM camera_captures WHERE session_id=?',(a,)).fetchone()[0]
+        assert client.post(base_a+'/disconnect',headers=headers()).status_code==200
+        b=create(client)
+        if not restart:blocked(client)
+    if restart:
+        with TestClient(create_app(settings)) as client:blocked(client)
+
+
+@pytest.mark.parametrize('restart',[False,True])
+def test_late_checksum_bound_original_stays_under_A_identity(settings,restart):
+    wire=FakeWia()
+    def finish(client):
+        camera=client.app.state.camera;camera.adapter.driver.transport=wire
+        if restart:connect(client,b)
+        wire.photos.append(late)
+        operation=key();result=capture(client,base_b,1,operation)
+        assert result.status_code==200,result.text
+        original=settings.storage_root/'camera_originals'/a/(cid+'.jpg')
+        assert original.read_bytes()==late[0]
+        journal,_=camera.adapter.driver._paths(cid)
+        receipt=json.loads(journal.read_text())
+        assert receipt['status']=='superseded' and receipt['session_id']==a
+        assert receipt['sha256']==hashlib.sha256(late[0]).hexdigest()
+        with camera.repo.db.connect() as db:
+            assert db.execute('SELECT COUNT(*) FROM slots WHERE session_id=?',(a,)).fetchone()[0]==0
+            row=db.execute('SELECT * FROM camera_captures WHERE id=?',(cid,)).fetchone()
+            assert row['native_path']==original.relative_to(settings.storage_root).as_posix()
+            assert row['error_code']=='capture_superseded'
+        assert result.json()['capture']['id']!=cid and result.json()['capture']['session_id']==b
+        assert wire.shots==3
+        assert capture(client,base_b,1,operation).json()==result.json() and wire.shots==3
+    with TestClient(create_app(settings)) as client:
+        camera=client.app.state.camera;camera.adapter.driver.transport=wire
+        a,_,_,cid=pending(client,wire,known_original=True);late=wire.photos.pop()
+        b,base_b=new_session(client,a)
+        assert capture(client,base_b,0).status_code==200
+        if not restart:finish(client)
+    if restart:
+        with TestClient(create_app(settings)) as client:finish(client)
+
+
+def test_receipt_alone_blocks_stale_A_after_crash_before_sqlite_handoff(settings):
+    wire=FakeWia()
+    with TestClient(create_app(settings)) as client:
+        camera=client.app.state.camera;camera.adapter.driver.transport=wire
+        a,base_a,_,cid=pending(client,wire,known_original=True)
+        b,_=new_session(client,a)
+        camera.adapter.driver.supersede_capture(cid,a,b,__import__('time').monotonic()+5)
+        with camera.repo.db.connect() as db:
+            assert db.execute('SELECT error_code FROM camera_captures WHERE id=?',(cid,)).fetchone()[0]!='capture_superseded'
+    with TestClient(create_app(settings)) as client:
+        camera=client.app.state.camera;camera.adapter.driver.transport=wire
+        connect(client,a)
+        result=capture(client,base_a,1)
+        assert result.json()['error']['code']=='capture_superseded',result.text
+        assert wire.shots==1
+        assert (settings.storage_root/'camera_originals'/a/(cid+'.jpg')).exists()
+
+
+def test_checkpoint_write_failure_recovers_A_before_B_shutter(settings,monkeypatch):
+    from app.services.camera import sony_ptp
+    with TestClient(create_app(settings)) as client:
+        camera=client.app.state.camera;wire=FakeWia();driver=camera.adapter.driver;driver.transport=wire
+        a=create(client);base_a=connect(client,a);original=jpeg('red');write=sony_ptp.atomic_write
+        def fail_checkpoint(path,payload):
+            if path.suffix=='.json' and b'received_sha256' in payload:raise OSError('TEST checkpoint fsync failed')
+            return write(path,payload)
+        monkeypatch.setattr(sony_ptp,'atomic_write',fail_checkpoint)
+        result=capture(client,base_a,0);assert result.status_code==503
+        with camera.repo.db.connect() as db:
+            cid=db.execute('SELECT id FROM camera_captures WHERE session_id=?',(a,)).fetchone()[0]
+        assert driver.transfer_cache[cid]==original and wire.shots==1
+        monkeypatch.setattr(sony_ptp,'atomic_write',write)
+        b,base_b=new_session(client,a)
+        result=capture(client,base_b,0);assert result.status_code==200,result.text
+        assert (settings.storage_root/'camera_originals'/a/(cid+'.jpg')).read_bytes()==original
+        assert result.json()['capture']['native_sha256']!=hashlib.sha256(original).hexdigest()
+        assert result.json()['capture']['session_id']==b and wire.shots==2
+        assert cid not in driver.transfer_cache and cid not in driver.transfer_hashes
+
+
+@pytest.mark.parametrize('restart',[False,True])
+@pytest.mark.parametrize('physical',['empty','busy','pending','late_jpeg'])
+def test_legacy_closed_empty_receipt_does_not_reopen_a_resolved_handoff(settings,monkeypatch,restart,physical):
+    wire=FakeWia()
+    def verify(client):
+        driver=client.app.state.camera.adapter.driver
+        if physical in ('busy','pending'):
+            original=driver._properties
+            def unavailable(deadline):
+                if physical=='busy':raise CameraError('busy','TEST WIA still busy')
+                values=original(deadline);values[0xd215]['value']=1;return values
+            monkeypatch.setattr(driver,'_properties',unavailable)
+        elif physical=='late_jpeg':wire.photos.append((jpeg('purple'),777))
+        before=len(wire.commands);result=capture(client,base,0)
+        if physical=='empty':
+            assert result.status_code==200,result.text
+            assert wire.shots==2 and journal.read_bytes()==closed
+        else:
+            expected={'busy':'busy','pending':'camera_recovery_pending','late_jpeg':'recovery_required'}[physical]
+            assert result.json()['error']['code']==expected,result.text
+            assert wire.shots==1
+            assert not any(op in (0x1009,0x9207) for op,_params,_data in wire.commands[before:])
+            if physical=='late_jpeg':assert wire.photos[0][1]==777
+    with TestClient(create_app(settings)) as client:
+        camera=client.app.state.camera;driver=camera.adapter.driver;driver.transport=wire
+        a,_,_,cid=pending(client,wire);wire.photos.clear()
+        b,base=new_session(client,a)
+        journal,_=driver._paths(cid);record=json.loads(journal.read_text())
+        # Exact legacy state: already retired after an empty-buffer check,
+        # with original ObjectInfo, but predating transfer_attempted receipts.
+        record.pop('transfer_attempted',None)
+        record.update(status='superseded',session_id=a,superseded_by=b,
+            capture_outcome='buffer_empty_original_unavailable',last_buffer_value=0,
+            buffer_checked_at='2026-11-16T17:32:23.529728+00:00')
+        journal.write_text(json.dumps(record));closed=journal.read_bytes()
+        if not restart:verify(client)
+    if restart:
+        with TestClient(create_app(settings)) as client:
+            client.app.state.camera.adapter.driver.transport=wire;connect(client,b)
+            verify(client)

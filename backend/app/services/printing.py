@@ -27,17 +27,52 @@ class PrintingService:
 
     def selected(self, db):
         row = db.execute('SELECT value FROM host_settings WHERE key=?', ('printer:'+self.settings.printer_mode,)).fetchone()
-        return row[0] if row else ('mock' if self.settings.printer_mode == 'mock' else self.settings.printer_name)
+        if row:
+            return row[0]
+        if self.settings.printer_mode == 'mock':
+            return 'mock'
+        if self.settings.printer_name:
+            return self.settings.printer_name
+        if self.settings.printer_mode == 'windows':
+            return self.adapter.default_printer()
+        return ''
 
-    def config(self):
+    def inventory(self):
         with self.repo.db.connect() as db:
             selected = self.selected(db)
         devices = self.printers()
+        return {'items':devices,'selected':selected,**self.config(selected, devices)}
+
+    def config(self, selected=None, devices=None):
+        if selected is None:
+            with self.repo.db.connect() as db:
+                selected = self.selected(db)
+        if devices is None:
+            devices = self.printers()
+        mode = self.settings.printer_mode
         enabled = (self.settings.printer_mode == 'mock' and self.settings.demo_hardware_allowed) or (self.settings.printer_mode != 'mock' and self.settings.enable_physical_printing)
-        diagnostic=getattr(self.adapter,'diagnostic',lambda:'')()
-        return {'mode':self.settings.printer_mode,'max_copies':self.settings.max_print_copies,
-                'available':enabled and not diagnostic and selected in [p['id'] for p in devices],
-                'message':diagnostic or ('Mock Printer: không in giấy.' if self.settings.printer_mode == 'mock' and self.settings.demo_hardware_allowed else 'Chế độ Event không cho phép MockPrinter.' if self.settings.printer_mode=='mock' else 'Host cần chọn máy in và bật in thật; chưa xác nhận giấy đã in.')}
+        diagnostic = getattr(self.adapter,'diagnostic',lambda:'')()
+        device = next((p for p in devices if p['id']==selected), None)
+        state = device['status'] if device else 'unavailable'
+        if diagnostic:
+            message = diagnostic
+        elif mode == 'mock':
+            message = 'Mock Printer: không in giấy.' if enabled else 'Chế độ Event không cho phép MockPrinter.'
+        elif not enabled:
+            message = 'Chưa bật in thật trên Host.'
+        elif not devices:
+            message = 'Không tìm thấy máy in khả dụng. Kiểm tra cáp, driver và dịch vụ in của hệ điều hành.'
+        elif not device:
+            message = 'Máy in đã chọn hoặc mặc định không khả dụng. Hãy chọn máy in trong Dashboard.'
+        elif state == 'offline':
+            message = 'Máy in đang ngoại tuyến. Kiểm tra nguồn và cáp.'
+        elif state == 'blocked':
+            message = 'Windows báo máy in lỗi hoặc tạm dừng. Kiểm tra giấy, mực và hàng đợi in.'
+        else:
+            message = 'Máy in sẵn sàng nhận lệnh theo trạng thái hệ điều hành.'
+        return {'mode':mode,'max_copies':self.settings.max_print_copies,'device_status':state,
+                'available':enabled and not diagnostic and device is not None and state not in ('offline','blocked'),
+                'message':message}
 
     @staticmethod
     def metadata(row):
@@ -83,8 +118,9 @@ class PrintingService:
                 if previous['uncertain'] and not acknowledge:
                     raise HTTPException(409, 'Chưa rõ job đã in hay chưa. Kiểm tra spooler/giấy và xác nhận trước khi retry.')
             selected = self.selected(db)
-            if not self.config()['available']:
-                raise HTTPException(503, 'Máy in chưa sẵn sàng. Host kiểm tra cấu hình và chọn máy in.')
+            printer = self.config(selected)
+            if not printer['available']:
+                raise HTTPException(503, printer['message'])
             job_id, stamp = str(uuid.uuid4()), now()
             db.execute('''INSERT INTO print_jobs
                 (id,session_id,final_id,print_ready_file,sha256,copies,status,mode,printer_id,scope,request_key,payload_hash,retry_of,created_at,updated_at)

@@ -25,7 +25,7 @@ def retry(request:Request):
 
 @router.post('/connect')
 def connect(request:Request):
-    return {'instruction':'Trên laptop Host: chạy backend/.venv/Scripts/python.exe scripts/connect_google_drive.py. OAuth chỉ dùng drive.file; không tự mở rộng quyền hoặc sửa permission.'}
+    return {'instruction':'Trên laptop Host: chạy backend/.venv/Scripts/python.exe scripts/connect_google_drive.py --storage-root runtime --pick-folder. Dùng đúng thư mục lưu trữ của Host nếu đã đổi runtime. Chọn lại thư mục Drive đích, kiểm tra quyền rồi bấm Thử lại upload lỗi.'}
 
 @router.post('/test')
 def test_upload(request:Request):

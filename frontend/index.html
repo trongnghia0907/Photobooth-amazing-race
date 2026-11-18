@@ -270,6 +270,7 @@
           <div id="cameraPreviewPanel" class="relative w-full aspect-[4/3] bg-slate-900 rounded-[2rem] overflow-hidden border-4 border-white shadow-soft-blue flex items-center justify-center">
             <img id="hostCameraPreview" class="mirror-video" hidden alt="Live view from the host laptop camera" />
             <p id="hostCameraStatus" role="status" hidden></p>
+            <output id="hostPreviewStats" aria-live="off" hidden></output>
             <span id="hostShotProgress"></span>
             <video id="liveVideo" autoplay playsinline muted class="w-full h-full object-cover mirror-video"></video>
             <canvas id="simLiveCanvas" width="960" height="720" class="hidden w-full h-full object-cover"></canvas>
@@ -363,7 +364,7 @@
           <span>← Retake Photos</span>
         </button>
         <div class="font-display-title text-xl sm:text-2xl font-bold bg-gradient-to-r from-brand-700 via-brand-600 to-brand-400 bg-clip-text text-transparent flex items-center gap-2">
-          <span>✨ Customize &amp; Get Your Photo ✨</span>
+          <span id="guestResultTitle">✨ Customize &amp; Get Your Photo ✨</span>
         </div>
       </div>
 

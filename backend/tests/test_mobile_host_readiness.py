@@ -1,6 +1,7 @@
 """Terminal 2 preflight, without hardware, credentials or public tunnels."""
 import importlib.util
 from pathlib import Path
+from types import SimpleNamespace
 from urllib.error import URLError
 
 import pytest
@@ -42,3 +43,21 @@ def test_unrelated_or_unready_http_service_is_not_accepted(mobile,monkeypatch,co
     monkeypatch.setattr(mobile,'get',lambda *args,**kwargs:(code,body,{}))
     with pytest.raises(RuntimeError,match='not a ready Photobooth Host'):
         mobile.attached_host_health(8000,seconds=0)
+
+
+def test_fresh_tunnel_waits_for_host_dns(mobile,monkeypatch,tmp_path):
+    calls=[]
+    def resolve(host, port, *, type):
+        calls.append((host,port,type))
+        if len(calls)==1:raise mobile.socket.gaierror(11001,'host not found')
+    monkeypatch.setattr(mobile.socket,'getaddrinfo',resolve)
+    monkeypatch.setattr(mobile.time,'sleep',lambda delay:None)
+    mobile.wait_for_tunnel_dns('https://new-test.trycloudflare.com',SimpleNamespace(poll=lambda:None),tmp_path/'stop')
+    assert calls==[('new-test.trycloudflare.com',443,mobile.socket.SOCK_STREAM)]*2
+
+
+def test_dns_deadline_reports_hostname_and_resolver_error(mobile,monkeypatch,tmp_path):
+    def resolve(*args,**kwargs):raise mobile.socket.gaierror(11001,'host not found')
+    monkeypatch.setattr(mobile.socket,'getaddrinfo',resolve)
+    with pytest.raises(RuntimeError,match=r'Host DNS could not resolve new-test\.trycloudflare\.com.*11001'):
+        mobile.wait_for_tunnel_dns('https://new-test.trycloudflare.com',SimpleNamespace(poll=lambda:None),tmp_path/'stop',seconds=0)

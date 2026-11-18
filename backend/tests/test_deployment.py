@@ -78,6 +78,22 @@ def test_built_routes_station_isolation_csrf_and_logout(settings):
         assert client.get(f'/api/sessions/{sid}',headers=a).status_code==200
 
 
+@pytest.mark.parametrize(('server','client_ip','connection'),[
+    ('192.168.1.40','192.168.1.40','close'),
+    ('192.168.1.40','192.168.1.41',None),
+    ('127.0.0.1','127.0.0.1',None),
+])
+def test_booth_connections_close_only_for_same_laptop_lan_ip(settings,server,client_ip,connection):
+    with TestClient(create_app(settings),base_url=f'http://{server}:8000',client=(client_ip,123)) as client:
+        auth = pair(client,settings)
+        sid = create(client,auth)
+        response = client.get(f'/api/sessions/{sid}',headers=auth)
+        assert response.status_code == 200
+        assert response.headers.get('Connection') == connection
+        assert client.get(f'/api/sessions/{sid}').status_code == 401
+        assert client.get('/api/health').headers.get('Connection') is None
+
+
 def test_public_gateway_only_serves_specific_completed_photo_and_restart(settings):
     with TestClient(create_app(settings),client=('127.0.0.1',123)) as private:
         a=pair(private,settings);sid,one=finalized(private,a,6)

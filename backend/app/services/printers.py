@@ -23,27 +23,62 @@ class WindowsPrinterAdapter:
         self.enabled = enabled
 
     def diagnostic(self):
-        if sys.platform!='win32':return 'Windows Print Spooler requires Windows; configure CUPS on macOS/Linux.'
+        if sys.platform!='win32':return 'Chế độ máy in Windows cần chạy Host trên Windows.'
         try:import win32print, win32ui
-        except ImportError:return 'Windows printing requires pywin32 and a configured printer driver.'
+        except ImportError:return 'Thiếu pywin32. Cài lại dependencies của backend và driver máy in.'
         return ''
+
+    def default_printer(self):
+        try:
+            import win32print
+            return win32print.GetDefaultPrinter() or ''
+        except Exception:
+            return ''
 
     def list_printers(self):
         try:
             import win32print
-            return [{'id': p[2], 'name': p[2], 'status': 'driver_available'} for p in
-                    win32print.EnumPrinters(win32print.PRINTER_ENUM_LOCAL | win32print.PRINTER_ENUM_CONNECTIONS)]
+            # Local queues include USB drivers. Do not open remote print servers
+            # every time the dashboard refreshes.
+            queues = win32print.EnumPrinters(win32print.PRINTER_ENUM_LOCAL, None, 2)
         except Exception:
             # pywintypes.error is not an OSError. A stopped spooler must make
             # printing unavailable rather than crash /print-config or /admin.
             return []
+        devices = []
+        for queue in queues:
+            name = queue['pPrinterName']
+            driver = (queue.get('pDriverName') or '').casefold()
+            ports = {port.strip().casefold() for port in (queue.get('pPortName') or '').split(',')}
+            attributes, status = queue['Attributes'], queue['Status']
+            if (ports & {'portprompt:', 'file:', 'nul:'}
+                    or any(port.startswith('microsoft.office.onenotevirtualprinter') for port in ports)
+                    or any(virtual in driver for virtual in ('onenote', 'print to pdf', 'xps document', 'pdfcreator', 'adobe pdf'))
+                    or attributes & win32print.PRINTER_ATTRIBUTE_FAX):
+                continue
+            if status & win32print.PRINTER_STATUS_OFFLINE or attributes & win32print.PRINTER_ATTRIBUTE_WORK_OFFLINE:
+                state = 'offline'
+            elif status & (win32print.PRINTER_STATUS_ERROR | win32print.PRINTER_STATUS_PAUSED |
+                           win32print.PRINTER_STATUS_NOT_AVAILABLE | win32print.PRINTER_STATUS_PAPER_OUT |
+                           win32print.PRINTER_STATUS_PAPER_JAM | win32print.PRINTER_STATUS_USER_INTERVENTION |
+                           win32print.PRINTER_STATUS_NO_TONER | win32print.PRINTER_STATUS_DOOR_OPEN):
+                state = 'blocked'
+            else:
+                state = 'driver_available'
+            devices.append({'id': name, 'name': name, 'status': state})
+        return devices
 
     def print_image(self, file_path, copies, options):
         if not self.enabled:
             raise PrinterError('In thật chưa được bật trên host.')
         printer = options['printer_id']
-        if printer not in [p['id'] for p in self.list_printers()]:
-            raise PrinterError('Máy in đã chọn không còn khả dụng.')
+        device = next((p for p in self.list_printers() if p['id'] == printer), None)
+        if device is None:
+            raise PrinterError('Máy in không còn khả dụng. Kiểm tra cáp, driver và Windows Print Spooler.')
+        if device['status'] == 'offline':
+            raise PrinterError('Máy in đang ngoại tuyến. Kiểm tra nguồn và cáp trước khi in lại.')
+        if device['status'] == 'blocked':
+            raise PrinterError('Windows báo máy in lỗi hoặc tạm dừng. Kiểm tra giấy, mực và hàng đợi in.')
         dc, started = None, False
         try:
             import win32ui

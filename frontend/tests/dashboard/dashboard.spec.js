@@ -9,6 +9,31 @@ async function login(page){
   await expect(page.locator('#backendBadge')).toHaveText('Backend online');
 }
 async function nav(page,name){await page.locator('nav [data-page="'+name+'"]').click();}
+
+test('printer panel refreshes Windows availability and keeps a pending selection',async({page})=>{
+  let items=[];
+  await page.route('**/api/admin/status',async route=>{
+    const response=await route.fetch();
+    const data=await response.json();
+    data.printer={mode:'windows',max_copies:3,selected:items.length?'USB A':'',
+      available:items[0]?.status==='driver_available',items,
+      message:!items.length?'Không tìm thấy máy in khả dụng.':
+        items[0].status==='offline'?'Máy in đang ngoại tuyến.':'Máy in sẵn sàng nhận lệnh.'};
+    await route.fulfill({response,json:data});
+  });
+  await login(page);
+  await nav(page,'prints');
+  await expect(page.locator('#printerStatus')).toContainText('Không tìm thấy');
+  await expect(page.locator('#selectPrinter')).toBeDisabled();
+  items=[{id:'USB A',name:'USB A',status:'offline'},{id:'USB B',name:'USB B',status:'driver_available'}];
+  await expect(page.locator('#printerStatus')).toContainText('ngoại tuyến');
+  await expect(page.locator('#printers option:checked')).toHaveText('USB A · Ngoại tuyến');
+  await page.locator('#printers').selectOption('USB B');
+  items=[{...items[0],status:'driver_available'},items[1]];
+  await expect(page.locator('#overviewPrinter')).toHaveText('Sẵn sàng theo cấu hình');
+  await expect(page.locator('#printers')).toHaveValue('USB B');
+});
+
 async function seed(page,count){
   const png=Buffer.from(await page.evaluate(count=>{const canvas=document.createElement('canvas');canvas.width=count===4?1200:800;canvas.height=count===4?800:1200;const ctx=canvas.getContext('2d');ctx.fillStyle='#2458d3';ctx.fillRect(0,0,canvas.width,canvas.height);ctx.fillStyle='white';ctx.font='34px sans-serif';ctx.fillText('AMAZING RACE 2026',40,70);return canvas.toDataURL().split(',')[1];},count),'base64');
   const headers=()=>({Authorization:'Bearer '+'a'.repeat(64),'Idempotency-Key':randomUUID()});

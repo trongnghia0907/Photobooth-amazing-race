@@ -7,6 +7,7 @@ The apartment lives in one child process: a stalled native call cannot strand
 the ASGI worker or cause a second, concurrent camera connection.
 """
 import ctypes as C
+import logging
 import multiprocessing as mp
 import os
 import queue
@@ -75,7 +76,8 @@ def _method(pointer, index, *types):
 def _check(hr, operation='WIA operation'):
     if hr < 0:
         number = hr & 0xffffffff
-        kind = {0x80070005:'access', 0x80210006:'busy', 0x80210015:'disconnected',
+        kind = {0x80070005:'access', 0x80210006:'busy', 0x80210005:'disconnected',
+                0x8021000a:'disconnected', 0x80210015:'disconnected',
                 0x8007048f:'disconnected'}.get(number, 'usb')
         raise CameraError(kind, f'Windows WIA error 0x{number:08X} during {operation}. Check camera/USB state and other camera owners; this error alone does not identify the owner.', stage='connect')
 
@@ -133,7 +135,19 @@ class _WiaDevice:
             for value in values:
                 self.ole.PropVariantClear(C.byref(value))
 
-    def open(self):
+    def _create_device(self, device_id, deadline):
+        create = _method(self.manager, 4, C.c_void_p, C.c_void_p)
+        hr = create(self.manager, device_id, C.byref(self.root))
+        if hr & 0xffffffff == 0x80210006 and deadline-time.monotonic() > 0.1:
+            # Retry the busy open inside the same worker, COM apartment and
+            # ownership mutex. Never apply this retry to a PTP write.
+            _release(self.root)
+            self.root = C.c_void_p()
+            time.sleep(0.1)
+            hr = create(self.manager, device_id, C.byref(self.root))
+        _check(hr, 'IWiaDevMgr.CreateDevice')
+
+    def open(self, deadline):
         self.mutex = self.kernel.CreateMutexW(None, False, 'Local\\AmazingRace2026SonyWia')
         if not self.mutex:
             raise CameraError('access', 'Cannot acquire the Sony camera ownership mutex.', stage='connect')
@@ -167,7 +181,7 @@ class _WiaDevice:
                 raise CameraError('busy', 'Multiple Sony cameras found. Connect only the original ZV-E10.', stage='connect')
             device_id = self.automation.SysAllocString(candidates[0])
             try:
-                _check(_method(self.manager, 4, C.c_void_p, C.c_void_p)(self.manager, device_id, C.byref(self.root)), 'IWiaDevMgr.CreateDevice')
+                self._create_device(device_id, deadline)
             finally:
                 self.automation.SysFreeString(device_id)
             iid = GUID.of('6291ef2c-36ef-4532-876a-8e132593778d')
@@ -212,12 +226,13 @@ def _worker(channel):
             if request[0] == 'close':
                 break
             try:
+                started = time.perf_counter()
                 if request[0] == 'open':
-                    device.open()
+                    device.open(request[1])
                     result = None
                 else:
                     result = device.exchange(request[1], request[2])
-                channel.send(('ok', result))
+                channel.send(('ok', result, (time.perf_counter()-started)*1000))
             except CameraError as error:
                 channel.send(('error', error.code, str(error)))
             except Exception:
@@ -236,6 +251,8 @@ class WindowsWiaTransport:
         self.lock = threading.RLock()
         self.responses = queue.Queue(maxsize=1)
         self.reader = None
+        self.stalled_process = None
+        self.last_worker_ms = None
 
     @staticmethod
     def _read_replies(channel, responses):
@@ -266,14 +283,21 @@ class WindowsWiaTransport:
             raise CameraError('disconnected', 'Sony WIA connection was interrupted.') from None
         if reply[0] == 'error':
             raise CameraError(reply[1], reply[2])
+        self.last_worker_ms = reply[2] if len(reply)>2 else None
         return reply[1]
 
     def open(self, deadline):
         if os.name != 'nt':
             raise CameraError('unsupported', 'Sony USB/PTP transport currently requires Windows WIA.', stage='connect')
         with self.lock:
+            if self.stalled_process is not None:
+                if self.stalled_process.is_alive():
+                    raise CameraError('worker_stalled','Previous Sony WIA worker has not exited. No replacement worker or shutter was started; stop testing and inspect camera ownership.',stage='connect')
+                self.stalled_process.close();self.stalled_process=None
             if self.process:
-                return
+                if self.process.is_alive():
+                    return
+                self.close()
             context = mp.get_context('spawn')
             self.channel, child = context.Pipe()
             self.process = context.Process(target=_worker, args=(child,), daemon=True, name='photobooth-sony-wia')
@@ -284,10 +308,12 @@ class WindowsWiaTransport:
                 self.reader = threading.Thread(target=self._read_replies,args=(self.channel,self.responses),
                                                daemon=True,name='sony-wia-replies')
                 self.reader.start()
-                self._request(('open',), deadline)
-            except Exception:
+                self._request(('open', deadline), deadline)
+            except Exception as error:
                 child.close()
-                self.close(force=True)
+                # A returned WIA error means the child can process close and
+                # release its COM apartment normally. Keep the bounded fallback.
+                self.close(force=not isinstance(error, CameraError))
                 raise
 
     def command(self, opcode, params=(), *, data=None, limit=65536, deadline):
@@ -300,6 +326,7 @@ class WindowsWiaTransport:
 
     def close(self, force=False):
         with self.lock:
+            started=time.monotonic()
             process, channel = self.process, self.channel
             self.process = self.channel = None
             if process is None:
@@ -316,4 +343,10 @@ class WindowsWiaTransport:
                 channel.close()
                 if self.reader:self.reader.join(0.1)
                 self.reader = None
-                if not process.is_alive():process.close()
+                alive=process.is_alive()
+                if alive:self.stalled_process=process
+                else:process.close()
+                logging.getLogger('uvicorn.error').info('sony_wia_close at=%s force=%s elapsed_ms=%.2f worker_alive=%s',
+                    time.time(),force,(time.monotonic()-started)*1000,alive)
+                if alive:
+                    raise CameraError('worker_stalled','Sony WIA worker did not exit after bounded cleanup. No replacement camera worker is permitted; preserve the pending capture.',stage='transfer',uncertain=True)

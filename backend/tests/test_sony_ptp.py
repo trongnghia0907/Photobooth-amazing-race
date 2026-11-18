@@ -5,6 +5,7 @@ The fake boundary is WIA/USB; all Sony parsing, capture and recovery are real co
 """
 from io import BytesIO
 from pathlib import Path
+import json
 import struct
 import time
 import uuid
@@ -17,7 +18,7 @@ from fastapi.testclient import TestClient
 from app.main import create_app
 from app.services.camera.base import CameraError
 from app.services.camera.sony_ptp import (SonyPtpDriver, Reader, device_info, object_info,
-    property_info, SHOT, LIVE, ONE_SHOT, FILE_INFO, LIVE_STATUS, SAVE_DESTINATION)
+    property_info, SHOT, LIVE, ONE_SHOT, SHUTTER_RELEASE, HALF_RELEASE, FOCUS_MODE, FOCUS_FOUND, FILE_INFO, LIVE_STATUS, SAVE_DESTINATION)
 from app.services.camera.sony_wia import (encode_command, decode_response, IN_HEADER,
     OUT_HEADER, WindowsWiaTransport, _Spec, _Variant)
 from app.services.camera.sony_zve10 import SonyZvE10CameraAdapter
@@ -38,6 +39,40 @@ def test_wia_busy_reports_failing_operation(operation):
     assert '0x80210006' in str(caught.value)
     _check(0, operation)
     _check(1, operation)  # COM S_FALSE is not a failure.
+
+
+@pytest.mark.parametrize('status',[0x80210005,0x8021000A])
+def test_wia_offline_or_lost_communication_allows_connection_recovery(status):
+    from app.services.camera.sony_wia import _check
+    with pytest.raises(CameraError) as caught:
+        _check(status - (1 << 32), 'IWiaItemExtras.Escape')
+    assert caught.value.code=='disconnected'
+
+
+@pytest.mark.parametrize('remaining,replies,expected',[
+    (5,[0x80210006,0],2), (5,[0x80210006,0x80210006],2), (0,[0x80210006],1),
+])
+def test_wia_create_device_busy_retry_keeps_one_manager(monkeypatch,remaining,replies,expected):
+    from ctypes import c_void_p
+    from app.services.camera import sony_wia
+    device=sony_wia._WiaDevice.__new__(sony_wia._WiaDevice)
+    device.manager=c_void_p(1)
+    device.root=c_void_p()
+    calls=[]
+    responses=iter(replies)
+    def create(manager,device_id,root):
+        calls.append((manager.value,device_id))
+        code=next(responses)
+        return code-(1<<32) if code else 0
+    monkeypatch.setattr(sony_wia,'_method',lambda *_:create)
+    monkeypatch.setattr(sony_wia.time,'sleep',lambda _:None)
+    deadline=time.monotonic()+remaining
+    if replies[-1]:
+        with pytest.raises(CameraError,match='CreateDevice'):
+            device._create_device(37,deadline)
+    else:
+        device._create_device(37,deadline)
+    assert calls==[(1,37)]*expected
 
 
 @pytest.mark.parametrize('packed,name,expected',[
@@ -67,7 +102,7 @@ def object_dataset(data, sequence=0, name='DSC00001.JPG'):
         1,0x3801,0,len(data),0,0,0,0,320,240,24,0,0,0,sequence)+string(name)+string('')*3
 
 
-PROPS=[FILE_INFO,LIVE_STATUS,SAVE_DESTINATION,0x5004,0x5013]
+PROPS=[FILE_INFO,LIVE_STATUS,SAVE_DESTINATION,FOCUS_MODE,FOCUS_FOUND,0x5004,0x5013]
 OPS=[0x1001,0x1008,0x1009,0x9201,0x9202,0x9207,0x9209]
 
 
@@ -92,7 +127,8 @@ class FakeWia:
         self.model='ZV-E10';self.connected=False;self.open_count=0;self.closed=0
         self.preview=jpeg('blue');self.photos=[];self.shots=0;self.commands=[]
         self.fault=None;self.live=1;self.drive=1;self.compression=3;self.destination=0x11
-        self.properties=PROPS;self.controls=[ONE_SHOT];self.version=0xc8
+        self.properties=PROPS;self.controls=[ONE_SHOT,SHUTTER_RELEASE,HALF_RELEASE];self.version=0xc8
+        self.button_states={SHUTTER_RELEASE:1,HALF_RELEASE:1}
 
     def open(self,deadline):self.connected=True;self.open_count+=1
     def close(self):self.connected=False;self.closed+=1
@@ -110,12 +146,13 @@ class FakeWia:
         elif opcode==0x9202:result=struct.pack('<H',self.version)+array(self.properties)+array(self.controls)
         elif opcode==0x9209:
             values={FILE_INFO:0x8001 if self.photos else 0,LIVE_STATUS:self.live,
-                    SAVE_DESTINATION:self.destination,0x5004:self.compression,0x5013:self.drive}
+                    SAVE_DESTINATION:self.destination,FOCUS_MODE:1,FOCUS_FOUND:2,0x5004:self.compression,0x5013:self.drive,**self.button_states}
             result=props_dataset(values)
         elif opcode==0x9207:
-            assert params==(ONE_SHOT,)
+            assert params in ((ONE_SHOT,),(SHUTTER_RELEASE,),(HALF_RELEASE,))
             value=struct.unpack('<H',data)[0]
-            if value==2:
+            if params==(HALF_RELEASE,):assert value in (1,2)
+            elif value==2:
                 self.shots+=1;self.photos.append((jpeg('red' if self.shots%2 else 'green'),self.shots))
                 if self.fault=='shutter_timeout':
                     self.fault=None;raise CameraError('timeout','FAKE lost shutter response')
@@ -160,6 +197,16 @@ def test_wia_codec_layout_and_driver_owned_ids():
 def test_wia_error_codes(code,kind):
     with pytest.raises(CameraError) as caught:decode_response(OUT_HEADER.pack(code,0,0,0,0,0,0,0),0)
     assert caught.value.code==kind
+
+
+@pytest.mark.parametrize('control',[HALF_RELEASE,SHUTTER_RELEASE])
+@pytest.mark.parametrize('value',[1,2])
+def test_sony_button_command_uses_one_parameter_and_uint16_write_payload(control,value):
+    packet=encode_command(0x9207,(control,),struct.pack('<H',value))
+    assert packet[:10]==bytes.fromhex('0792')+bytes(8)
+    assert packet[10:30]==struct.pack('<I',control)+bytes(16)
+    assert packet[30:38]==bytes.fromhex('01000000 04000000')
+    assert packet[38:]==(b'\1\0' if value==1 else b'\2\0')
 
 
 @pytest.mark.parametrize('lists',[0,1,2])
@@ -213,6 +260,45 @@ def test_preview_is_framed_decoded_and_not_a_still_capture(tmp_path):
     wire.live=1;assert real.get_preview_frame().data==wire.preview and wire.open_count==1
 
 
+@pytest.mark.parametrize('persistent', [False, True])
+def test_transient_identity_busy_reuses_wia_and_bounds_retries(tmp_path, persistent):
+    wire = FakeWia()
+    command = wire.command
+    attempts = []
+
+    def busy_identity(opcode, *args, **kwargs):
+        if opcode == 0x1001:
+            attempts.append(opcode)
+            if persistent or len(attempts) == 1:
+                raise CameraError('busy', 'WIA busy')
+        return command(opcode, *args, **kwargs)
+
+    wire.command = busy_identity
+    camera = SonyPtpDriver(tmp_path, transport=wire)
+    if persistent:
+        with pytest.raises(CameraError, match='WIA busy'):
+            camera.connect()
+        assert not camera.connected and wire.closed == 1
+    else:
+        camera.connect()
+        camera.connect()
+    assert len(attempts) == 2 and wire.open_count == 1 and wire.shots == 0
+
+
+def test_preview_property_cache_expires_without_affecting_original_checks(tmp_path):
+    camera, wire = driver(tmp_path)
+    camera.start_live_view()
+    wire.commands.clear()
+    for _ in range(3):
+        assert camera.get_preview_frame().data == wire.preview
+    assert sum(op == 0x9209 for op, _, _ in wire.commands) == 1
+    camera.preview_status_until = 0
+    wire.live = 0
+    with pytest.raises(CameraError, match='temporarily unavailable'):
+        camera.get_preview_frame()
+    assert wire.shots == 0
+
+
 @pytest.mark.parametrize('attribute,value',[('drive',2),('compression',0x13),('destination',0x10)])
 def test_capture_preflight_does_not_change_camera_settings_or_fire(tmp_path,attribute,value):
     real,wire=driver(tmp_path);setattr(wire,attribute,value)
@@ -223,7 +309,9 @@ def test_capture_preflight_does_not_change_camera_settings_or_fire(tmp_path,attr
 def test_original_transfer_and_receipt_survive_driver_restart(tmp_path):
     real,wire=driver(tmp_path);identifier=str(uuid.uuid4());end=time.monotonic()+2
     reference=real.capture_photo(identifier,end);original=wire.photos[0][0]
-    assert wire.commands[-2:]==[(0x9207,(ONE_SHOT,),b'\2\0'),(0x9207,(ONE_SHOT,),b'\1\0')]
+    assert wire.commands[-4:]==[(0x9207,(HALF_RELEASE,),b'\2\0'),(0x9207,(SHUTTER_RELEASE,),b'\2\0'),
+        (0x9207,(SHUTTER_RELEASE,),b'\1\0'),(0x9207,(HALF_RELEASE,),b'\1\0')]
+    assert json.loads(real._paths(identifier)[0].read_text())['shutter_control']==SHUTTER_RELEASE
     photo=real.get_captured_photo(reference,end)
     assert photo.data==original and photo.data!=wire.preview and photo.source=='camera_original'
     with Image.open(BytesIO(photo.data)) as image:assert image.size==(320,240) and image.getexif()[274]==6
@@ -233,12 +321,17 @@ def test_original_transfer_and_receipt_survive_driver_restart(tmp_path):
 
 
 @pytest.mark.parametrize('fault',['transfer_timeout','bad_jpeg'])
-def test_transfer_retry_never_refires_shutter(tmp_path,fault):
+def test_unproven_transfer_retry_refuses_without_refiring_shutter(tmp_path,fault):
     real,wire=driver(tmp_path);identifier=str(uuid.uuid4());end=time.monotonic()+3
     reference=real.capture_photo(identifier,end);wire.fault=fault
     with pytest.raises(CameraError):real.get_captured_photo(reference,end)
     if not real.connected:real.connect()
-    assert real.get_captured_photo(reference,end).mime=='image/jpeg' and wire.shots==1
+    before=sum(op==0x1009 for op,_params,_data in wire.commands)
+    for _ in range(2):
+        with pytest.raises(CameraError) as caught:real.get_captured_photo(reference,end)
+        assert caught.value.code=='recovery_required'
+    assert wire.shots==1 and wire.photos
+    assert sum(op==0x1009 for op,_params,_data in wire.commands)==before
 
 
 @pytest.mark.parametrize('width,height',[(0,0),(0,240),(320,0)])
@@ -276,7 +369,8 @@ def test_uncertain_shutter_reconciles_without_another_shutter(tmp_path):
     real.connect()
     with pytest.raises(CameraError,match='previous Sony capture'):real.capture_photo(str(uuid.uuid4()),end)
     reference=real.recover_capture(identifier,end)
-    assert real.get_captured_photo(reference,end).data!=wire.preview and wire.shots==1
+    with pytest.raises(CameraError) as retry:real.get_captured_photo(reference,end)
+    assert retry.value.code=='recovery_required' and wire.shots==1 and wire.photos
 
 
 def test_changed_camera_buffer_is_not_assigned_to_old_capture(tmp_path):
@@ -328,7 +422,7 @@ def test_real_driver_host_api_slots_retake_replay_and_originals(tmp_path,monkeyp
         assert wire.shots==count+1 and wire.open_count==1
 
 
-def test_host_api_recovers_lost_shutter_response_with_same_key(tmp_path):
+def test_host_api_lost_shutter_ack_never_rebinds_unknown_buffer_or_refires(tmp_path):
     from app.config import Settings
     settings=Settings(tmp_path/'host',camera_adapter='sony_zve10',camera_guest_enabled=True)
     app=create_app(settings);wire=FakeWia()
@@ -341,8 +435,8 @@ def test_host_api_recovers_lost_shutter_response_with_same_key(tmp_path):
         assert response.status_code==504 and response.json()['error']['uncertain']
         assert client.post(base+'/connect',headers=headers()).status_code==200
         response=client.post(base+'/captures',headers=headers(operation),json={'slot_index':0})
-        assert response.status_code==200,response.text
-        assert wire.shots==1 and response.json()['capture']['status']=='captured'
+        assert response.json()['error']['code']=='recovery_required'
+        assert wire.shots==1 and wire.photos
 
 
 def test_wia_timeout_closes_only_its_owned_process(monkeypatch):
@@ -433,7 +527,8 @@ def test_transfer_timeout_is_reported_as_transfer_not_a_new_shutter(tmp_path):
         assert response.status_code==504
         assert response.json()['error']['stage']=='transfer'
         assert client.post(base+'/connect',headers=headers()).status_code==200
-        assert client.post(base+'/captures',headers=headers(operation),json={'slot_index':0}).status_code==200
+        retry=client.post(base+'/captures',headers=headers(operation),json={'slot_index':0})
+        assert retry.json()['error']['code']=='recovery_required' and retry.json()['error']['stage']=='transfer'
         assert wire.shots==1
 
 
@@ -447,7 +542,7 @@ def test_large_native_jpeg_does_not_use_browser_upload_limit(tmp_path):
     class LargeCamera(FakeWia):
         def command(self,opcode,params=(),**kwargs):
             result=super().command(opcode,params,**kwargs)
-            if opcode==0x9207 and kwargs.get('data')==b'\2\0':self.photos[-1]=(large,self.shots)
+            if opcode==0x9207 and params==(SHUTTER_RELEASE,) and kwargs.get('data')==b'\2\0':self.photos[-1]=(large,self.shots)
             return result
     wire=LargeCamera()
     with TestClient(create_app(settings)) as client:

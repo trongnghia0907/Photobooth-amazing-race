@@ -37,13 +37,14 @@ def test_cancel_preserves_receipt_blocks_old_key_and_allows_new_capture(tmp_path
     assert wire.shots==shots+1
 
 
-@pytest.mark.parametrize('unsafe',['no_confirmation','buffer_has_image','release_pending','metadata','cached_jpeg'])
+@pytest.mark.parametrize('unsafe',['no_confirmation','buffer_has_image','release_pending','half_release_pending','metadata','cached_jpeg'])
 def test_unsafe_cancellation_is_refused_without_touching_records(tmp_path,unsafe):
     camera,wire,capture_id=pending(tmp_path)
     journal,saved=camera._paths(capture_id)
     if unsafe!='buffer_has_image':wire.photos.clear()
     record=json.loads(journal.read_text())
     if unsafe=='release_pending':record['release_pending']=True
+    if unsafe=='half_release_pending':record['half_release_pending']=True
     if unsafe=='metadata':record['object']={'size':100}
     journal.write_text(json.dumps(record))
     if unsafe=='cached_jpeg':saved.write_bytes(b'preserve this fixture')

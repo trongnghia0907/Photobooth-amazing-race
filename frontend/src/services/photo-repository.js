@@ -292,7 +292,7 @@ export async function confirmAndSaveSession(app,publishToEvent=false) {
 export function forgetSession(app) {
   const retiringCamera=!!app.hostCaptureOperation&&!app.pendingPhotos.some(Boolean)&&!app.pendingDeletion
     &&!app.finalOperation?.confirmationStarted&&!app.resumeRecoveryPending;
-  if (app.persistenceBusy || app.captureBusy || app.shareBusy || (pending(app)||app.persistenceError)&&!retiringCamera) {
+  if (app.persistenceBusy || app.captureBusy || app.hostCaptureRequestActive || app.shareBusy || (pending(app)||app.persistenceError)&&!retiringCamera) {
     app.showToast('This session still has unsaved data. Retry saving before starting a new guest session.', 'info');
     return false;
   }

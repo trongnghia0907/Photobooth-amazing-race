@@ -6,6 +6,7 @@ from pathlib import Path
 import secrets
 import sys
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
@@ -13,6 +14,7 @@ from PIL import Image
 from app.config import Settings
 from app.main import create_app
 from app.public_main import create_public_app
+from app.services import public_gateway
 from test_event_display import saved, approve
 from test_printing import login
 from test_sessions import create, headers, key
@@ -138,16 +140,15 @@ def test_mobile_gateway_isolation_accepts_only_the_enabled_read_only_gallery(set
         spec=importlib.util.spec_from_file_location('gallery_mobile_isolation',scripts/'mobile_qr_demo.py')
         mobile=importlib.util.module_from_spec(spec);spec.loader.exec_module(mobile)
         with TestClient(create_public_app(settings)) as public:
-            def get(url,**kwargs):
-                response=public.get(url)
-                return response.status_code,response.content,dict(response.headers)
-            monkeypatch.setattr(mobile,'get',get)
-            class Opener:
-                def open(self,request,**kwargs):
-                    response=public.request(request.get_method(),request.full_url)
-                    assert response.status_code in (404,405)
-                    raise mobile.HTTPError(request.full_url,response.status_code,'Denied',dict(response.headers),BytesIO(response.content))
-            monkeypatch.setattr(mobile,'build_opener',lambda *args:Opener())
+            # Isolation now uses httpx, not the launcher's urllib helper. Keep
+            # the real route checks while preventing any external DNS/network.
+            real_client=httpx.Client
+            def serve(request):
+                response=public.request(request.method,str(request.url))
+                return httpx.Response(response.status_code,content=response.content,
+                                      headers=dict(response.headers),request=request)
+            monkeypatch.setattr(public_gateway.httpx,'Client',
+                lambda **kwargs:real_client(transport=httpx.MockTransport(serve),**kwargs))
             mobile.denied('http://testserver',True)
             assert public.get('/gallery').status_code==200
             assert public.get('/gallery/api/photos').json()['items']==[]

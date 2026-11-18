@@ -5,6 +5,7 @@ the transport ownership mutex also prevents concurrent diagnostic/Host access.
 No camera images are deleted and no hardware verification flag is granted.
 """
 import argparse
+from contextlib import ExitStack
 import json
 from pathlib import Path
 import platform
@@ -23,6 +24,7 @@ ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'backend'))
 from app.services.camera.sony_zve10 import SonyZvE10CameraAdapter
 from app.services.camera.base import CameraError
+from app.runtime_lock import RuntimeLock
 
 
 PNP_QUERY=r"""$ErrorActionPreference='Stop'
@@ -81,7 +83,14 @@ def diagnostic(timeout=15, *, connect_preview=False, capture=False, output_dir=N
     if not connect_preview and not capture:return result
     if capture and not output_dir:raise ValueError('Capture requires an explicit output directory')
     # Do not read runtime configuration, photos or OAuth credentials.
-    with tempfile.TemporaryDirectory(prefix='photobooth-sony-check-') as temporary:
+    with tempfile.TemporaryDirectory(prefix='photobooth-sony-check-') as temporary, ExitStack() as ownership:
+        if capture:
+            storage=Path(output_dir)
+            storage.mkdir(parents=True,exist_ok=True)
+            if (storage/'photobooth.sqlite3').exists():
+                raise ValueError('Use a separate diagnostics output directory; Host database reconciliation belongs to the Host controller.')
+            for name in ('.host-app.lock','.camera-controller.lock'):
+                lease=RuntimeLock(storage/name).acquire();ownership.callback(lease.close)
         adapter=SonyZvE10CameraAdapter(storage_root=Path(output_dir) if capture else Path(temporary),timeout=timeout)
         result.update(mode='CONFIRMED_PHYSICAL_CAPTURE' if capture else 'READ_ONLY_PTP',camera_access='OPENING')
         check='usb_ptp_session'
@@ -90,7 +99,12 @@ def diagnostic(timeout=15, *, connect_preview=False, capture=False, output_dir=N
             result['camera_access']='OPENED'
             result['protocol_checks'][check]='PASS'
             result['identified_model']=adapter.get_status()['model']
-            check='live_view'
+            if capture:
+                check='stale_capture_preflight'
+                result['reconciliation']=adapter.driver.reconcile_previous_captures(str(uuid.uuid4()),time.monotonic()+timeout)
+                result['protocol_checks'][check]='PASS'
+                check='live_view'
+            else:check='live_view'
             adapter.start_live_view()
             preview_deadline=time.monotonic()+timeout
             while True:

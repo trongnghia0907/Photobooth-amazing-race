@@ -199,6 +199,24 @@ async function refreshNetwork(){
     }
   }catch{$('overviewNetwork').textContent='Không đọc được trạng thái';$('qrNetworkStatus').textContent='Mất kết nối backend. Hệ thống sẽ thử lại.';}
 }
+function refreshPrinters(printer){
+  $('printerStatus').textContent=printer.message;
+  const select=$('printers');
+  const signature=JSON.stringify([printer.items,printer.selected]);
+  if(select.dataset.inventory===signature)return;
+  const pending=select.value!==select.dataset.saved?select.value:'';
+  const options=printer.items.map(device=>{
+    const suffix={offline:' · Ngoại tuyến',blocked:' · Lỗi / tạm dừng'}[device.status]||'';
+    const option=el('option',device.name+suffix);
+    option.value=device.id;
+    return option;
+  });
+  select.replaceChildren(...options);
+  select.value=options.some(option=>option.value===pending)?pending:printer.selected;
+  select.dataset.saved=printer.selected;
+  select.dataset.inventory=signature;
+  $('selectPrinter').disabled=!options.length;
+}
 async function refresh(){
   if(refreshing||!csrf)return;refreshing=true;
   try{
@@ -206,7 +224,7 @@ async function refresh(){
     $('backendBadge').textContent='Backend online';$('backendBadge').classList.remove('error');$('overviewBackend').textContent='Online';
     $('kpiSessions').textContent=status.sessions;$('kpiCompleted').textContent=status.composites;
     $('kpiPending').textContent=status.queued+status.processing;$('kpiFailed').textContent=status.failed;
-    $('system').textContent='Backend online';$('printerStatus').textContent=status.printer.message;
+    $('system').textContent='Backend online';refreshPrinters(status.printer);
     $('overviewPrinter').textContent=status.printer.mode==='mock'?'Mock / DEMO':status.printer.available?'Sẵn sàng theo cấu hình':'Chưa sẵn sàng';
     const readiness=status.readiness;
     $('systemFacts').replaceChildren();
@@ -234,9 +252,8 @@ async function refresh(){
   }finally{refreshing=false;}
 }
 async function enter(){
-  $('login').hidden=true;$('dashboard').hidden=false;message('');ensureCameraDiagnosticPanel();showPage(location.hash.slice(1)||'overview',{focus:false});const printers=await api('/printers');$('printers').replaceChildren();
+  $('login').hidden=true;$('dashboard').hidden=false;message('');ensureCameraDiagnosticPanel();showPage(location.hash.slice(1)||'overview',{focus:false});
   const camera=await api('/camera');$('cameraAdapter').value=camera.capabilities.adapter;$('cameraGuestEnabled').checked=camera.guest_enabled;
-  for(const p of printers.items){const option=el('option',p.name);option.value=p.id;option.selected=p.id===printers.selected;$('printers').append(option);}
   await refresh();await refreshFrames();clearInterval(timer);timer=setInterval(refresh,3000);
 }
 $('login').addEventListener('submit',async event=>{event.preventDefault();const form=event.currentTarget;const submit=form.querySelector('button');submit.disabled=true;
@@ -255,7 +272,13 @@ $('revokeDisplayCode').addEventListener('click',async event=>{
   try{await api('/event-display/access/revoke',{method:'POST'});$('eventDisplayCode').textContent='';await refresh();}
   catch(error){message(error.message);}finally{$('revokeDisplayCode').disabled=false;}
 });
-exclusive('selectPrinter',async()=>{await api('/printers/selected',{method:'PUT',body:{printer_id:$('printers').value}});message('Đã chọn máy in.');await refresh();});
+exclusive('selectPrinter',async()=>{
+  const value=$('printers').value;
+  if(!value)throw new Error('Hãy chọn một máy in trong danh sách.');
+  await api('/printers/selected',{method:'PUT',body:{printer_id:value}});
+  $('printers').dataset.saved=value;
+  message('Đã chọn máy in.');await refresh();
+});
 exclusive('saveCamera',async()=>{await api('/camera/config',{method:'PUT',body:{adapter:$('cameraAdapter').value,guest_enabled:$('cameraGuestEnabled').checked}});message('Đã cập nhật camera host.');await refresh();});
 exclusive('disconnectCamera',async()=>{await api('/camera/disconnect',{method:'POST'});message('Đã ngắt camera host.');await refresh();});
  $('refreshCameraDiagnostics').addEventListener('click',refreshCameraDiagnostics);

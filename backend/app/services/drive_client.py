@@ -42,12 +42,20 @@ class GoogleDriveClient:
     def request(self,method,path,**kwargs):
         try:
             saved=self.store.load()
+            from google.auth.exceptions import RefreshError
             from google.oauth2.credentials import Credentials
             from google.auth.transport.requests import Request
             with self.lock:
                 credentials=Credentials.from_authorized_user_info(json.loads(saved),[SCOPE])
                 if not credentials.valid:
-                    credentials.refresh(Request());self.store.save(credentials.to_json())
+                    try:
+                        credentials.refresh(Request())
+                    except RefreshError as error:
+                        details = error.args[1] if len(error.args)>1 else None
+                        if isinstance(details,dict) and details.get('error')=='invalid_grant':
+                            raise DriveError('Google OAuth (invalid_grant): quyền đã hết hạn hoặc bị thu hồi. Chạy scripts/connect_google_drive.py --pick-folder để cấp quyền lại; ảnh local vẫn được giữ.') from None
+                        raise
+                    self.store.save(credentials.to_json())
                 response=httpx.request(method,'https://www.googleapis.com/'+path,
                     headers={'Authorization':'Bearer '+credentials.token,**kwargs.pop('headers',{})},timeout=45,**kwargs)
             if response.status_code==404:return None

@@ -6,5 +6,5 @@ test('UUID fallback uses cryptographic bytes with UUIDv4 version/variant; missin
   let called=false;
   const id=newId({getRandomValues(bytes){called=true;bytes.fill(255);return bytes;}});
   assert.equal(called,true);assert.equal(id,'ffffffff-ffff-4fff-bfff-ffffffffffff');
-  assert.throws(()=>newId({}),/ngẫu nhiên an toàn/);
+  assert.throws(()=>newId({}),/does not support secure random numbers/);
 });

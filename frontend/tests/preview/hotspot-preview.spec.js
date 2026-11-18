@@ -47,12 +47,12 @@ test('frame timeout is explicit, stops capture safely and recovers without a cam
   expect(await page.evaluate(()=>app.isCapturingSequence)).toBe(false);
 });
 
-for(const origin of ['http://172.20.10.2:8000','http://192.168.43.23:8000'])test(`built Guest requests follow DHCP origin ${origin}`,async({page})=>{
+for(const origin of ['http://127.0.0.1:8028','http://172.20.10.2:8000','http://192.168.43.23:8000'])test(`built Booth requests stay on ${origin}`,async({page})=>{
   const requests=[];
   page.on('request',r=>requests.push(r.url()));
   // Simulate two different DHCP networks while running the real built UI and
   // backend. There is no Vite or localhost URL in the browser's Guest traffic.
-  await page.route(origin+'/**',async route=>{
+  if(origin!=='http://127.0.0.1:8028')await page.route(origin+'/**',async route=>{
     const url=new URL(route.request().url());
     try{
       const response=await route.fetch({url:'http://127.0.0.1:8028'+url.pathname+url.search});
@@ -63,10 +63,12 @@ for(const origin of ['http://172.20.10.2:8000','http://192.168.43.23:8000'])test
       if(!closingPages.has(page))throw error;
     }
   });
-  await page.goto(origin+'/booth');
+  await page.goto(origin+'/booth?previewStats=1');
   await page.locator('#boothPairKey').fill('preview-only-disposable-pairing-key');
   await page.locator('#boothPairForm button').click();
   await page.waitForFunction(()=>window.app?.hostPreviewHealthy);
+  await expect(page.locator('#hostPreviewStats')).toContainText('frame age');
+  await expect.poll(()=>page.locator('#hostCameraPreview').evaluate(image=>image.naturalWidth)).toBeGreaterThan(0);
   await page.locator('#frameCardLandscape4').click();
   await expect.poll(()=>page.evaluate(()=>app.persistenceBusy)).toBe(false);
   await page.evaluate(()=>app.capturePhoto(0));

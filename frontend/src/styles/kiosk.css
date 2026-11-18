@@ -95,8 +95,10 @@ body[data-screen] #guestDeliveryPanel a{min-height:44px;display:inline-flex;alig
   body[data-screen] #guestResultColumns{flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,.9fr);gap:10px}
   body[data-screen] #guestResultColumns>div{grid-column:auto;min-width:0;min-height:0;overflow:auto;gap:10px}
   body[data-screen] #guestCompositeCard{padding:10px;min-height:0}
-  body[data-screen] #compositeCanvas{max-height:38vh;max-height:38dvh;object-fit:contain}
-  body[data-screen][data-workflow=delivery] #compositeCanvas{max-height:27vh;max-height:27dvh}
+  body[data-screen][data-workflow=review] #guestResultLayout.automatic-layout{grid-template-columns:minmax(0,2.7fr) minmax(280px,1fr)}
+  body[data-screen][data-workflow=review] #guestResultColumns{grid-template-columns:minmax(0,1.5fr) minmax(240px,1fr)}
+  body[data-screen][data-workflow=review] #guestCompositeCard>div:nth-child(2){flex:none}
+  body[data-screen][data-workflow=review] #compositeCanvas{max-height:calc(100dvh - 320px);object-fit:contain}
   body[data-screen] #guestCompositeCard>div:first-child{margin-bottom:6px;flex-wrap:wrap;gap:4px 8px}
   body[data-screen] #guestCompositeCard>div:nth-child(2){padding:6px}
   body[data-screen] #guestCapturedPanel{height:100%;padding:12px;gap:10px;overflow:auto}
@@ -169,6 +171,10 @@ body.official-event-guest #setupRecentSidebar h2,body.official-event-guest #gues
 body.official-event-guest #setupOptions h2,body.official-event-guest #guestResultWorkspace>.glass-card>div{color:#154965;-webkit-text-fill-color:currentColor;background-clip:border-box}
 body.official-event-guest #recentEmptyState,body.official-event-guest #recentGalleryStatus{background:#e7f6ffcc;border-radius:10px;padding:8px;color:#20486b}
 body.official-event-guest #recentPhotoList{margin-top:8px}
+/* Equal media frames for mixed landscape/portrait completed composites. */
+#setupRecentSidebar #recentPhotoList{grid-auto-rows:max-content;align-content:start;align-items:start;gap:10px;padding:2px;scrollbar-gutter:stable;-webkit-overflow-scrolling:touch}
+#setupRecentSidebar .recent-gallery-card{display:grid;place-items:center;width:100%;aspect-ratio:1;min-width:0;min-height:0;margin:0;padding:8px;border:1px solid #ffffff80;border-radius:14px;overflow:hidden;background:#e7f6ffb3}
+#setupRecentSidebar .recent-gallery-card img{display:block;width:100%;height:100%;min-width:0;min-height:0;max-height:none;object-fit:contain;object-position:center;border-radius:8px}
 body.official-event-guest #guestCapturedPanel{gap:8px}
 body.official-event-guest #screenCapture>.grid{align-items:start}
 body.official-event-guest #screenCapture>.grid>div:last-child>.glass-card{flex:none;height:auto;min-height:0;padding:0;border:0;gap:8px}
@@ -193,3 +199,53 @@ body.official-event-guest #guestResultLayout:not(.automatic-layout) #guestResult
 }
 @media(max-width:580px){body.official-event-guest #guestResultLayout:not(.automatic-layout) #guestResultColumns{grid-template-columns:1fr}}
 @media(max-width:700px){body.official-event-guest header>.max-w-7xl{height:56px}body.official-event-guest main{padding:10px 12px}body.official-event-guest #screenHome{gap:10px}}
+
+/* Final delivery only: full composite on the left, QR and actions on the right. */
+body[data-workflow=delivery] main{justify-content:flex-start;overflow-y:auto}
+body[data-workflow=delivery] #guestResultLayout,
+body[data-workflow=delivery] #guestResultWorkspace{height:auto;min-height:0}
+body[data-workflow=delivery] #guestResultWorkspace>.glass-card{justify-content:center;margin-bottom:4px}
+body[data-workflow=delivery] #guestResultTitle{font-size:clamp(18px,2vw,26px);line-height:1.3}
+body[data-screen=result][data-workflow=delivery] #guestResultLayout #guestResultColumns{display:grid;grid-template-columns:minmax(0,1fr) minmax(290px,330px);gap:clamp(12px,1.5vw,24px);align-items:start}
+body[data-workflow=delivery] #guestResultColumns{width:100%;max-width:calc(150dvh + 115px);margin-inline:auto}
+body[data-workflow=delivery] #guestResultLayout:has(#compositeCanvas[width="1200"]) #guestResultColumns{max-width:calc(75dvh + 250px)}
+body[data-workflow=delivery] #guestResultColumns>div{grid-column:auto;min-width:0;max-height:none;overflow:visible;gap:14px;align-self:start}
+body[data-workflow=delivery] #guestCompositeCard{width:100%;padding:0;gap:8px}
+body[data-workflow=delivery] #guestCompositeCard>div:first-child{display:none}
+body[data-workflow=delivery] #guestCompositeCard>div:nth-child(2){width:100%;padding:0;background:transparent;border:0}
+body[data-workflow=delivery] #compositeCanvas,
+body[data-workflow=delivery] #printReadyPreview{display:block;width:auto;height:auto;max-width:100%;max-height:clamp(280px,calc(100dvh - 225px),885px);object-fit:contain;margin:0 auto;border-radius:12px}
+body[data-workflow=delivery] #printReadyBox{width:100%;margin:0}
+body[data-workflow=delivery] #printReadyBox summary{margin:0 0 8px;font-size:12px;line-height:1.5;text-align:center;list-style-position:inside;color:#20486b;background:#e7f6ffdb;padding:5px 10px;border-radius:10px}
+body[data-workflow=delivery] #printReadyDownload{display:none}
+body[data-workflow=delivery] #finalPhotoNotice{width:100%;margin:0;padding:6px 10px;font-size:12px;line-height:1.5}
+body[data-workflow=delivery] #guestDeliveryPanel{width:100%;padding:16px;gap:10px;border-radius:18px;background:#e7f6ffc9;border:1px solid #ffffff70}
+body[data-workflow=delivery] #qrCodeContainer{width:clamp(168px,18vw,216px);max-width:100%;min-height:44px}
+body[data-workflow=delivery] #qrExpiryMessage{max-width:100%;font-size:13px;line-height:1.5;background:transparent;padding:0}
+body[data-workflow=delivery] #guestDeliveryActions{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px;align-items:center;padding:16px;border:1px solid #ffffff70;border-radius:18px;background:#e7f6ffdb}
+body[data-workflow=delivery] #guestDeliveryActions #downloadPhotoBtn{grid-column:1/-1;min-height:52px;padding:12px 16px;background:var(--btn-gradient);border:0;color:#fff;box-shadow:0 5px 14px #08718c25}
+body[data-workflow=delivery] #guestDeliveryActions>label{display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0;margin:0;font-size:13px;line-height:1.4}
+body[data-workflow=delivery] #printCopies{min-height:44px;min-width:72px;max-width:100%;padding:8px;background:#ffffffb3}
+body[data-workflow=delivery] #printPhotoBtn{min-height:48px;padding:10px;background:#eaf7ff99;color:#145374;border:1px solid #087d9480;box-shadow:none;font-size:14px}
+body[data-workflow=delivery] #printStatus{grid-column:1/-1;min-width:0;margin:0;padding:0;background:transparent;font-size:12px;line-height:1.6;overflow-wrap:anywhere}
+body[data-workflow=delivery] #guestDeliveryActions>button:last-child{grid-column:1/-1;justify-self:start;min-height:44px;text-align:left}
+@media(min-width:960px){
+  body[data-screen=result][data-workflow=delivery] main{padding-top:6px}
+  body[data-screen=result][data-workflow=delivery] #sessionPersistencePanel{margin-bottom:4px}
+  body[data-screen=result][data-workflow=delivery] #guestResultWorkspace>.glass-card{padding-block:0;margin-bottom:0}
+}
+@media(max-width:959px){
+  body[data-workflow=delivery]{height:auto;min-height:100dvh;overflow-y:auto}
+  body[data-screen=result][data-workflow=delivery] #guestResultLayout #guestResultColumns{grid-template-columns:minmax(0,1fr);gap:20px}
+  body[data-workflow=delivery] #guestResultColumns>div{width:100%}
+  body[data-workflow=delivery] #compositeCanvas,
+  body[data-workflow=delivery] #printReadyPreview{max-height:65dvh}
+  body[data-workflow=delivery] #guestDeliveryPanel,
+  body[data-workflow=delivery] #guestDeliveryActions{max-width:480px;margin-inline:auto}
+  body[data-workflow=delivery] #qrCodeContainer{width:192px}
+}
+@media(max-width:420px){
+  body[data-workflow=delivery] #guestDeliveryActions{gap:10px;padding:12px}
+  body[data-workflow=delivery] #guestDeliveryActions>label,
+  body[data-workflow=delivery] #printPhotoBtn{grid-column:1/-1}
+}

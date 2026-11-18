@@ -218,7 +218,7 @@ def test_windows_gdi_contract_contain_copies_and_ambiguous_failure_without_devic
     from PIL import ImageWin
     monkeypatch.setattr(ImageWin,'Dib',Dib)
     adapter=WindowsPrinterAdapter(True)
-    monkeypatch.setattr(adapter,'list_printers',lambda:[{'id':'fake-driver'}])
+    monkeypatch.setattr(adapter,'list_printers',lambda:[{'id':'fake-driver','status':'driver_available'}])
     source=tmp_path/'input.png';source.write_bytes(image(size=(800,1200)))
     receipt=adapter.print_image(source,2,{'printer_id':'fake-driver','job_id':'test'})
     assert events.count('page')==events.count('endpage')==2
@@ -229,6 +229,37 @@ def test_windows_gdi_contract_contain_copies_and_ambiguous_failure_without_devic
     monkeypatch.setattr(DC,'EndPage',fail)
     with pytest.raises(PrinterError) as caught:adapter.print_image(source,1,{'printer_id':'fake-driver','job_id':'test'})
     assert caught.value.uncertain and events[-2:]==['abort','delete']
+
+
+def test_windows_default_and_saved_selection_with_spooler_status(settings,monkeypatch):
+    import sys
+    from types import SimpleNamespace
+    names = ('ERROR','PAUSED','NOT_AVAILABLE','PAPER_OUT','PAPER_JAM','USER_INTERVENTION','NO_TONER','DOOR_OPEN','OFFLINE')
+    status_flags = {f'PRINTER_STATUS_{name}':1<<i for i,name in enumerate(names)}
+    def queue(name, port, status=0):
+        return {'pPrinterName':name,'pPortName':port,'pDriverName':'Generic driver','Status':status,'Attributes':0}
+    queues = [queue('OneNote','Microsoft.Office.OneNoteVirtualPrinter_test'),
+              queue('PDF','PORTPROMPT:'),queue('USB A','USB001'),
+              queue('USB B','USB002',status_flags['PRINTER_STATUS_OFFLINE'])]
+    monkeypatch.setitem(sys.modules,'win32print',SimpleNamespace(
+        EnumPrinters=lambda flags, name, level: queues,GetDefaultPrinter=lambda:'USB A',PRINTER_ENUM_LOCAL=2,
+        PRINTER_ATTRIBUTE_FAX=16384,PRINTER_ATTRIBUTE_WORK_OFFLINE=1024,**status_flags))
+    monkeypatch.setattr(WindowsPrinterAdapter,'diagnostic',lambda self:'')
+    settings=replace(settings,printer_mode='windows',enable_physical_printing=True)
+    app=create_app(settings)
+    with TestClient(app) as client:
+        csrf=login(client,settings)
+        inventory=client.get('/api/admin/printers').json()
+        assert inventory['selected']=='USB A' and inventory['available']
+        assert [p['id'] for p in inventory['items']]==['USB A','USB B']
+        assert client.put('/api/admin/printers/selected',headers=csrf,json={'printer_id':'USB B'}).status_code==200
+        assert client.get('/api/admin/status').json()['printer']['selected']=='USB B'
+        config=client.get('/api/print-config').json()
+        assert not config['available'] and 'ngoại tuyến' in config['message']
+        with pytest.raises(PrinterError,match='ngoại tuyến'):
+            app.state.printing.adapter.print_image(None,1,{'printer_id':'USB B'})
+        queues.clear()
+        assert 'Không tìm thấy' in client.get('/api/print-config').json()['message']
 
 
 def test_legacy_phase3_share_backfill_preserves_token_and_original(settings):

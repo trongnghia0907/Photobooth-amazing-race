@@ -1,15 +1,23 @@
 ﻿import {test,expect} from '@playwright/test';
 import {readFileSync} from 'node:fs';
 const ui=new URL('../../../backend/app/event_ui/',import.meta.url);
-const photo=(id,stamp)=>({id,approved_at:stamp,image_url:'/event-display/media/'+id,width:800,height:1200});
+const artwork=new URL('../../public/assets/official-theme.png',import.meta.url);
+const photo=(id,stamp)=>({id,approved_at:stamp,image_url:'/event-display/media/'+id,
+  width:stamp%2?800:1200,height:stamp%2?1200:800});
 const a=photo('a',1),b=photo('b',2),c=photo('c',3),d=photo('d',4),e=photo('e',5),f=photo('f',6),g=photo('g',7),h=photo('h',8);
 async function fixture(page,initial){
   const state={items:initial,offline:false,blocked:new Set(),downloads:[]};
-  const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=','base64');
   await page.route('http://gallery.test/**',async route=>{
     const path=new URL(route.request().url()).pathname;
     if(path.endsWith('/api/photos'))return state.offline?route.abort():route.fulfill({json:{items:state.items}});
-    if(path.includes('/media/')){const id=path.split('/').at(-1);state.downloads.push(id);return route.fulfill(state.blocked.has(id)?{status:404}:{contentType:'image/png',body:png});}
+    if(path==='/p/assets/theme.png')return route.fulfill({contentType:'image/png',body:readFileSync(artwork)});
+    if(path.includes('/media/')){
+      const id=path.split('/').at(-1);
+      state.downloads.push(id);
+      if(state.blocked.has(id))return route.fulfill({status:404});
+      const {width,height}=state.items.find(item=>item.id===id);
+      return route.fulfill({contentType:'image/svg+xml',body:`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><rect width="100%" height="100%" fill="#154965"/></svg>`});
+    }
     const name=path.endsWith('.js')?'display.js':path.endsWith('.css')?'display.css':'index.html';
     return route.fulfill({contentType:name.endsWith('.js')?'text/javascript':name.endsWith('.css')?'text/css':'text/html',body:readFileSync(new URL(name,ui))});
   });
@@ -21,12 +29,23 @@ async function shown(page,expected){await expect.poll(()=>ids(page)).toEqual(exp
 test('four fixed corners, initial latest four, sequential oldest replacement, no timer rotation or duplicate downloads',async({page})=>{
   const state=await fixture(page,[e,d,c,b,a]);await shown(page,['b','c','d','e']);
   await expect(page.locator('#photoWall figure')).toHaveCount(4);
+  expect(await page.locator('#photoWall img').evaluateAll(images=>images.map(i=>i.naturalWidth/i.naturalHeight))).toEqual([1.5,2/3,1.5,2/3]);
   await expect(page.locator('#displayPresentation button,#displayPresentation select')).toHaveCount(0);
-  const boxes=await page.locator('#photoWall figure').evaluateAll(nodes=>nodes.map(n=>{const r=n.getBoundingClientRect();return {x:r.x,y:r.y,w:r.width,h:r.height};}));
-  expect(boxes[0].x).toBe(boxes[2].x);expect(boxes[1].x).toBe(boxes[3].x);expect(boxes[0].y).toBe(boxes[1].y);expect(boxes[2].y).toBe(boxes[3].y);
-  for(const box of boxes){expect(box.w).toBeCloseTo(boxes[0].w,1);expect(box.h).toBeCloseTo(boxes[0].h,1);}
-  expect(boxes[0].x+boxes[0].w).toBeLessThan(1920*.4);expect(boxes[1].x).toBeGreaterThan(1920*.6);
-  expect(await page.evaluate(()=>document.documentElement.scrollHeight<=innerHeight&&document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+  for(const viewport of [{width:1366,height:768},{width:1920,height:1080}]){
+    await page.setViewportSize(viewport);
+    const boxes=await page.locator('#photoWall figure').evaluateAll(nodes=>nodes.map(n=>{const r=n.getBoundingClientRect();return {x:r.x,y:r.y,w:r.width,h:r.height};}));
+    expect(boxes[0].x).toBe(boxes[2].x);expect(boxes[1].x).toBe(boxes[3].x);expect(boxes[0].y).toBe(boxes[1].y);expect(boxes[2].y).toBe(boxes[3].y);
+    for(const box of boxes){
+      expect(box.w).toBeGreaterThan(viewport.width*.45);
+      expect(box.h).toBeGreaterThan(viewport.height*.40);
+    }
+    expect(boxes[0].x+boxes[0].w).toBeLessThan(boxes[1].x);
+    expect(boxes[0].y+boxes[0].h).toBeLessThan(boxes[2].y);
+    const title=await page.locator('h1').boundingBox(),status=await page.locator('#displayStatus').boundingBox();
+    expect(title.y+title.height).toBeLessThan(boxes[0].y);
+    expect(status.y).toBeGreaterThanOrEqual(boxes[2].y+boxes[2].h);
+    expect(await page.evaluate(()=>document.documentElement.scrollHeight<=innerHeight&&document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+  }
   expect(await page.locator('#photoWall img').first().evaluate(i=>getComputedStyle(i).objectFit)).toBe('contain');
   await page.evaluate(()=>{window.changes=[];new MutationObserver(records=>{for(const r of records)if(r.target.classList.contains('fading'))window.changes.push(r.target.dataset.slot);}).observe(document.getElementById('photoWall'),{subtree:true,attributes:true,attributeFilter:['class']});});
   state.items=[f,e,d,c,b,a];await shown(page,['f','c','d','e']);

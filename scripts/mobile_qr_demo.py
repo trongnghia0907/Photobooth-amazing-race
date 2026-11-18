@@ -9,10 +9,12 @@ from pathlib import Path
 import re
 import secrets
 import shutil
+import socket
 import subprocess
 import sys
 import time
 from urllib.error import HTTPError, URLError
+from urllib.parse import urlsplit
 from urllib.request import Request, ProxyHandler, build_opener
 import uuid
 
@@ -46,6 +48,23 @@ def wait_for_proof(check,seconds=40):
         except GatewayCheckError as error:
             if not error.retryable or time.monotonic()>=deadline:raise
             time.sleep(min(1,max(0,deadline-time.monotonic())))
+
+
+def wait_for_tunnel_dns(origin, tunnel, stop, seconds=120):
+    """Allow fresh Quick Tunnel DNS records to reach the Host resolver."""
+    hostname=urlsplit(origin).hostname
+    deadline=time.monotonic()+seconds
+    while True:
+        if stop.exists():raise RuntimeError('Stopped during tunnel DNS startup')
+        if tunnel.poll() is not None:raise RuntimeError('Cloudflare tunnel exited during DNS startup; check cloudflared.log.')
+        try:
+            socket.getaddrinfo(hostname,443,type=socket.SOCK_STREAM)
+            return
+        except socket.gaierror as error:
+            remaining=deadline-time.monotonic()
+            if remaining<=0:
+                raise RuntimeError(f'Host DNS could not resolve {hostname} ({error}). Check the network DNS resolver, then restart only the mobile QR tunnel.') from None
+            time.sleep(min(2,remaining))
 
 
 def attached_host_health(port, seconds=8):
@@ -272,6 +291,9 @@ def serve(args):
             if origin and 'Registered tunnel connection' in content:break
             time.sleep(.25)
         if not origin:raise RuntimeError('cloudflared did not return an HTTPS Quick Tunnel URL')
+        dns_started=time.perf_counter()
+        wait_for_tunnel_dns(origin,tunnel,stop)
+        performance['tunnel_dns_ms']=round((time.perf_counter()-dns_started)*1000,1)
         # Do not advertise a public-ready QR until the live HTTPS gateway is verified.
         proof_started=time.perf_counter()
         try:
@@ -395,7 +417,7 @@ def main():
                               (['--require-drive'] if args.require_drive else []),
                 cwd=ROOT,stdin=subprocess.DEVNULL,stdout=log,stderr=log,
                 creationflags=subprocess.CREATE_NO_WINDOW if os.name=='nt' else 0)
-    for _ in range(180):
+    for _ in range(300):
         if state.exists():
             data=json.loads(state.read_text(encoding='utf-8'))
             if data['phase']=='running':

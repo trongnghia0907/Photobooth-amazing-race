@@ -50,19 +50,24 @@ class DriveStorage:
         if not row:return False
         cid=row['composite_id']
         started=time.perf_counter()
+        stage='privacy'
         try:
             self.check() # Fail closed before every attempted upload, including retries.
             logging.getLogger(__name__).info('drive_privacy_ms=%.1f',(time.perf_counter()-started)*1000)
+            stage='local_file'
             path=(self.repo.settings.storage_root/row['path']).resolve()
             if not path.is_relative_to(self.repo.settings.storage_root.resolve()) or not path.is_file():raise DriveError('Staged composite bị mất. Không upload hoặc xóa dữ liệu.')
             data=path.read_bytes()
             if hashlib.sha256(data).hexdigest()!=row['sha256']:raise DriveError('Checksum staging không khớp; giữ file để Host kiểm tra.')
+            stage='reserve_id'
             file_id=row['drive_file_id'] or self.client.reserve_id()
             with self.repo.db.connect() as db:
                 db.execute("UPDATE drive_uploads SET drive_file_id=?,state='UPLOADING' WHERE composite_id=?",(file_id,cid))
+            stage='upload'
             upload_started=time.perf_counter()
             metadata=self.client.upload(file_id,path,cid)
             logging.getLogger(__name__).info('drive_upload_ms=%.1f',(time.perf_counter()-upload_started)*1000)
+            stage='verify'
             verify_started=time.perf_counter()
             expected=hashlib.md5(data).hexdigest()
             if not metadata or metadata.get('id')!=file_id or metadata.get('md5Checksum')!=expected or int(metadata.get('size',-1))!=len(data) or metadata.get('parents')!=[self.repo.settings.google_drive_folder_id] or metadata.get('trashed'):
@@ -79,6 +84,8 @@ class DriveStorage:
             delay=min(300,2**min(row['attempts']+1,8))
             with self.repo.db.connect() as db:
                 db.execute("UPDATE drive_uploads SET state='FAILED',attempts=attempts+1,next_attempt=?,error=? WHERE composite_id=?",(time.time()+delay,message,cid))
+            logging.getLogger(__name__).warning('drive_upload_failed composite_id=%s stage=%s attempt=%d retry_in_s=%d: %s',
+                cid,stage,row['attempts']+1,delay,message)
         return True
     def local(self,composite_id):
         with self.repo.db.connect() as db:
@@ -143,7 +150,8 @@ class DriveStorage:
         def run():
             while not self.stop_event.is_set():
                 try:self.process_one()
-                except (OSError,sqlite3.Error):pass
+                except (OSError,sqlite3.Error) as error:
+                    logging.getLogger(__name__).warning('drive_worker_retry error_type=%s',type(error).__name__)
                 self.stop_event.wait(2)
         self.thread=threading.Thread(target=run,daemon=True,name='photobooth-drive-sync');self.thread.start()
     def stop(self):

@@ -1,6 +1,7 @@
 from dataclasses import replace
 from io import BytesIO
 import threading,time,hashlib,json
+from urllib.parse import urlsplit
 import pytest,zxingcpp,httpx
 from PIL import Image
 from fastapi.testclient import TestClient
@@ -30,6 +31,7 @@ def test_qr_and_local_public_photo_do_not_wait_for_background_upload(setup,monke
         share=state['share'];token=share['share_url'].rsplit('/',1)[1]
         feed=approved_photo_feed(EventDisplay(repo),100,'/event-display/media')
         assert len(feed['items'])==1 and not repo.drive.ready(cid)
+        monkeypatch.setenv('MOBILE_QR_PHOTO_ONLY','true')
         with TestClient(create_public_app(settings)) as public:
             public.app.state.repository.drive.client=fake
             public_repo=public.app.state.repository
@@ -39,7 +41,8 @@ def test_qr_and_local_public_photo_do_not_wait_for_background_upload(setup,monke
                 def __init__(self,**kwargs):pass
                 def __enter__(self):return self
                 def __exit__(self,*args):pass
-                def get(self,url):return public.get('/p/'+token+'/status')
+                def request(self,method,url,**kwargs):return public.request(method,urlsplit(url).path)
+                def get(self,url):return self.request('GET',url)
             monkeypatch.setattr(httpx,'Client',Probe)
             probe_started=time.perf_counter();verified=repo.sharing.verify_public(sid,'a'*64)
             print(f'GATEWAY_REGISTRATION_MOCK_MS={(time.perf_counter()-probe_started)*1000:.1f}')
@@ -64,9 +67,9 @@ def test_pending_page_recovers_without_changing_token_and_offline_upload_keeps_s
     path=settings.storage_root/f'composites/{sid}/{cid}.png';saved=path.with_suffix('.test-held');path.rename(saved)
     with TestClient(create_public_app(settings)) as public:
         public.app.state.repository.drive.client=fake
-        assert public.get('/p/'+token+'/status').json()['registered']
+        assert public.get('/p/'+token+'/status').status_code==503
         page=public.get('/p/'+token);assert page.status_code==202 and 'Ảnh đang được xử lý' in page.text and 'setTimeout' in page.text
-        assert 'guestDownload' not in page.text
+        assert 'id="guestDownload"' not in page.text
         saved.rename(path)
         fake.offline=True;repo.drive.process_one();assert path.is_file() and not repo.drive.ready(cid)
         assert public.get('/p/'+token).status_code==200
@@ -81,7 +84,7 @@ def test_gateway_unavailable_never_verifies_public_qr(setup,monkeypatch):
         def __init__(self,**kwargs):pass
         def __enter__(self):return self
         def __exit__(self,*args):pass
-        def get(self,url):raise httpx.ConnectError('offline')
+        def request(self,*args,**kwargs):raise httpx.ConnectError('offline')
     monkeypatch.setattr(httpx,'Client',Offline)
     response=client.get('/api/sessions/'+sid+'/public-status',headers=headers())
     assert response.status_code==503

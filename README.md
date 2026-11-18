@@ -181,6 +181,8 @@ Localhost refers to the device opening the page. Use the laptop's LAN address on
    ```
 
 4. Use the active Wi-Fi address, not a VPN address. Open the printed `/booth` URL in Safari and enter the pairing code.
+
+**Live Preview check.** On the Host laptop, open `http://localhost:8000/booth?previewStats=1`. For a separate test over Wi-Fi, close the laptop Booth tab and open `http://LAPTOP_IP:8000/booth?previewStats=1` on a second phone joined to the same hotspot. Keep the Dashboard on the laptop and only one Booth viewer active. Pair the second phone, keep its Booth page in the foreground for two minutes, and note FPS, request p95, estimated frame age and any freezes. Move an object in view periodically to confirm the picture keeps updating. Repeat in Safari on the iPad before the event. The laptop's LAN address opened on the laptop does not measure Wi-Fi between devices. Omit `previewStats=1` for the regular Booth view.
 5. If automatic detection chooses another interface, stop Host and replace `--lan-ip auto` with `--lan-ip LAPTOP_IP`, using the actual current address. Reopen the URL after DHCP changes; no fixed IP is required.
 
 On a trusted hotspot, use a Windows **Private** network profile. If needed, an administrator can add a Private-network-only rule; replace `Wi-Fi` with the actual interface alias:
@@ -207,7 +209,7 @@ Skip this for a local-only test. A new Windows installation needs its own Google
    & ./backend/.venv/Scripts/python.exe -m pip install -r backend/requirements-drive-optional.txt
    ```
 
-2. In your Google Cloud project, enable Drive and Picker APIs, configure a Desktop OAuth client and authorize a test user if required. Store its client JSON privately at `.tools/google-drive/client_secret.json`. The account needs Editor/Owner access to the existing target folder `1ixmork-KFJ8xdtQCFJIpUTQm-SnJqeez`; this checkout does not support substituting another folder.
+2. In your Google Cloud project, enable Drive and Picker APIs, configure a Desktop OAuth client and authorize a test user if required. Store its client JSON privately at `.tools/google-drive/client_secret.json`. The account needs Editor/Owner access to the approved target folder `1QO_i__d-JzrQOCL7muz9lkgjOe1JxNGH`. Update `GOOGLE_DRIVE_FOLDER_ID` if your existing environment file still specifies the previous folder.
 3. Grant that exact folder through the existing Picker and run the privacy check:
 
    ```powershell
@@ -242,7 +244,9 @@ Keep the laptop, Internet and tunnel running. Quick Tunnel domains are temporary
 
 ### G. Optional physical printing
 
-Mock printing is the safe default and sends nothing to a physical printer. For Windows printing, install the printer's manufacturer driver and verify it prints from Windows. Stop Host, add `--printer windows --enable-physical-printing` to the same Host command, then select the installed queue in `/admin`. A print-ready image with QR requires a verified public photo URL. Check paper size, orientation and one real print before event use; Mock tests do not verify a printer.
+For USB printing on Windows, connect the printer, install its manufacturer driver, and print a Windows test page from **Settings → Bluetooth & devices → Printers & scanners → Printer properties**. Set the paper size and orientation in **Printing preferences**.
+
+Stop Host and append `--printer windows --enable-physical-printing` to your usual Host command. Open **/admin → Hàng đợi in** to check availability. Host uses the Windows default printer unless you select another in the dashboard or set `PRINTER_NAME`. If the Windows default is a virtual queue such as Print to PDF or OneNote, select the physical printer in the dashboard. Open a completed session with a print-ready image, enter the copy count, and choose **In lại**. A print-ready image with QR requires a verified public photo URL. The queue's **Submitted** status means Windows accepted the job. Check the physical output and QR on paper.
 
 ### H. Basic end-to-end check
 

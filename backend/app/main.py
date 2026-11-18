@@ -135,6 +135,19 @@ def create_app(settings: Settings | None = None):
         response=await call_next(request)
         if request.url.path.startswith('/api/'):
             response.headers['Cache-Control']='no-store'
+        if settings.frontend_dist and path.startswith(('/api/sessions/', '/api/booth/')):
+            # Prevent a measured HTTP/1.1 keep-alive stall when the laptop
+            # accesses its own Wi-Fi address. Remote kiosks retain keep-alive.
+            local_socket = request.scope.get('server')
+            if (request.scope.get('http_version') == '1.1' and local_socket and request.client
+                    and request.client.host == local_socket[0]):
+                try:
+                    address = ipaddress.ip_address(request.client.host)
+                except ValueError:
+                    pass
+                else:
+                    if not (getattr(address, 'ipv4_mapped', None) or address).is_loopback:
+                        response.headers['Connection'] = 'close'
         return response
 
     @app.exception_handler(CameraError)
