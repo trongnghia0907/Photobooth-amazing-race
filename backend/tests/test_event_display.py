@@ -66,6 +66,32 @@ def test_open_display_has_no_pin_but_still_only_serves_approved_composites(setti
         assert host.get('/event-display/api/photos').json()=={'items':[]}
 
 
+def test_display_skips_missing_approved_files_without_drive_restore(settings,monkeypatch):
+    settings=replace(settings,event_display_pin_required=False)
+    with TestClient(create_app(settings)) as host:
+        csrf=login(host,settings)
+        present,_=saved(host)
+        missing,state=saved(host)
+        assert approve(host,present,csrf).status_code==200
+        assert approve(host,missing,csrf).status_code==200
+        before=host.get('/event-display/api/photos').json()['items']
+        assert len(before)==2
+        composite_id=state['composite']['id']
+        (settings.storage_root/'composites'/missing/(composite_id+'.png')).unlink()
+        repo=host.app.state.repository
+        with repo.db.connect() as db:
+            db.execute("INSERT INTO drive_uploads(composite_id,state) VALUES (?,'SYNCED')",(composite_id,))
+
+        def unexpected_restore(_):
+            raise AssertionError('The local display attempted to restore a historical photo from Drive')
+
+        monkeypatch.setattr(repo.drive,'local',unexpected_restore)
+        assert host.get('/event-display/api/photos?limit=1').json()=={'items':[before[1]]}
+        assert host.get(before[0]['image_url']).status_code==404
+        with repo.db.connect() as db:
+            assert db.execute('SELECT COUNT(*) FROM event_display_photos WHERE approved=1').fetchone()[0]==2
+
+
 def test_default_private_consent_required_and_only_official_final(settings):
     with TestClient(create_app(settings)) as client:
         assert client.get('/event-display').status_code==200

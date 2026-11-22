@@ -39,7 +39,8 @@ def health(request: Request):
             'runtime_id':hashlib.sha256(str(request.app.state.settings.storage_root.resolve()).encode()).hexdigest(),
             'storage':{'provider':'google_drive' if request.app.state.settings.google_drive_enabled else 'local'},
             'capture_mode': 'physical_camera_required' if request.app.state.settings.operation_mode=='event' else 'demo/webcam_frame/manual_upload/host_adapter',
-            'sharing': request.app.state.repository.sharing.configuration()}
+            'sharing': {**request.app.state.repository.sharing.configuration(),
+                        'cloud_configured': request.app.state.repository.cloud.configured}}
 
 
 @router.post('/sessions')
@@ -122,6 +123,11 @@ def finalize(request: Request, session_id: UUID, payload: CompleteSession, owner
 @router.get('/sessions/{session_id}/public-status')
 def public_status(request:Request,session_id:UUID,owner:Auth):
     return request.app.state.repository.sharing.verify_public(str(session_id),owner)
+
+
+@router.get('/sessions/{session_id}/cloud-share')
+def cloud_share(request: Request, session_id: UUID, owner: Auth):
+    return request.app.state.repository.cloud.share(str(session_id),owner)
 
 
 @router.get('/sessions/{session_id}/{kind}/{image_id}/image')

@@ -1,3 +1,4 @@
+import json
 from typing import Literal
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
@@ -101,10 +102,13 @@ def detail(request: Request,sid: UUID):
         for c in db.execute('SELECT c.* FROM composites c JOIN session_finals f ON f.composite_id=c.id WHERE f.session_id=?',(str(sid),)).fetchall():
             share = db.execute('SELECT id FROM shares WHERE composite_id=?',(c['id'],)).fetchone()
             ready = db.execute('SELECT * FROM print_ready WHERE final_id=?',(share['id'],)).fetchone() if share else None
+            cloud = db.execute('''SELECT version,synced_version,approved,size_bytes,thumbnail_bytes,last_error
+                FROM cloud_publications WHERE composite_id=?''',(c['id'],)).fetchone()
             composites.append({**repo.composite_metadata(c),
                 'image_url':f"/api/admin/sessions/{sid}/images/composites/{c['id']}",
                 'final_id':share['id'] if share else None,
-                'print_ready_url':f"/api/admin/sessions/{sid}/images/print_ready/{share['id']}" if ready else None})
+                'print_ready_url':f"/api/admin/sessions/{sid}/images/print_ready/{share['id']}" if ready else None,
+                'cloud':{**dict(cloud),'configured':repo.cloud.configured} if cloud else None})
         return {**dict(row),'composites':composites,'event_display':dict(event) if event else {'approved':False,'approval_basis':None}}
 
 
@@ -171,6 +175,19 @@ def printers(request: Request):
 
 class Selection(BaseModel):
     printer_id: str = Field(max_length=500)
+    paper_id: StrictInt | None = Field(default=None,gt=0,le=32767)
+    orientation: Literal['portrait','landscape'] | None = None
+
+
+@admin.get('/printers/media',dependencies=[Depends(host)])
+def media(request: Request,printer_id: str):
+    return request.app.state.printing.media(printer_id)
+
+
+@admin.get('/printers/preview',dependencies=[Depends(host)])
+def preview(request: Request,printer_id: str,paper_id: int | None=None,
+            orientation: Literal['portrait','landscape'] | None=None):
+    return request.app.state.printing.preview(printer_id,paper_id,orientation)
 
 
 @admin.put('/printers/selected',dependencies=[Depends(host)])
@@ -178,7 +195,14 @@ def select_printer(request: Request,payload: Selection):
     service = request.app.state.printing
     if payload.printer_id not in [p['id'] for p in service.printers()]:
         raise HTTPException(422,'Máy in không có trong danh sách driver')
+    if payload.paper_id is not None or payload.orientation is not None:
+        service.preview(payload.printer_id,payload.paper_id,payload.orientation)
     with service.repo.db.connect() as db:
+        db.execute('BEGIN IMMEDIATE')
         db.execute('INSERT INTO host_settings VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',
                    ('printer:'+service.settings.printer_mode,payload.printer_id))
+        if payload.model_fields_set.intersection({'paper_id','orientation'}):
+            db.execute('INSERT INTO host_settings VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',
+                       ('print-options:'+payload.printer_id,json.dumps(payload.model_dump(exclude={'printer_id'}))))
+        db.commit()
     return {'selected':payload.printer_id}

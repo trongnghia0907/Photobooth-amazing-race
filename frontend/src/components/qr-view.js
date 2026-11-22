@@ -10,13 +10,13 @@ export function copyQRLink(app) {
 
 export function renderQRCodeVisual(app,targetUrl) {
   const container=document.getElementById('qrCodeContainer');
-  const share=app.activeShare;
+  const share=app.cloudShare?.share_url===targetUrl ? app.cloudShare : app.activeShare;
   if(!container || !share || targetUrl!==share.share_url) return;
   if(share.local_only||share.lan_only||!share.public_ready||!share.expires_at){
     showQRUnavailable(app,'Waiting for the gateway to verify the HTTPS photo page. Your photo is safely saved.','processing');return;
   }
   const markReady=image=>{
-    if(!image.isConnected || app.activeShare?.share_url!==targetUrl) return;
+    if(!image.isConnected || ![app.cloudShare?.share_url,app.activeShare?.share_url].includes(targetUrl)) return;
     if(document.getElementById('compositeCanvas')?.toDataURL('image/png')!==app.lastSavedImage) {
       showQRUnavailable(app,'Your photo has changed. Select “Confirm & Create QR” to save the new version.');
       return;
@@ -49,7 +49,7 @@ export function renderQRCodeVisual(app,targetUrl) {
   image.className='guest-qr-image';
   image.onload=()=>markReady(image);
   image.onerror=()=>{
-    if(!image.isConnected || app.activeShare?.share_url!==targetUrl) return;
+    if(!image.isConnected || ![app.cloudShare?.share_url,app.activeShare?.share_url].includes(targetUrl)) return;
     app.shareError='Your photo is saved, but the QR PNG could not be downloaded. Select “Confirm & Create QR” to retry; you do not need to retake the photo.';
     showQRUnavailable(app,app.shareError,'error');
     app.syncPersistenceUI();
@@ -57,7 +57,7 @@ export function renderQRCodeVisual(app,targetUrl) {
   container.appendChild(image);
   clearTimeout(app.qrImageTimer);
   app.qrImageTimer=setTimeout(()=>{
-    if(image.isConnected && app.activeShare?.share_url===targetUrl && app.qrPhase==='loading')image.onerror();
+    if(image.isConnected && app.qrPhase==='loading')image.onerror();
   },10000);
-  image.src=share.qr_image_url+'?origin='+encodeURIComponent(new URL(targetUrl).origin);
+  image.src=share.qr_image_data || share.qr_image_url+'?origin='+encodeURIComponent(new URL(targetUrl).origin);
 }

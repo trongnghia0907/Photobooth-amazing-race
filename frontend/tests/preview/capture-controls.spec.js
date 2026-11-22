@@ -138,12 +138,75 @@ test('slow validation keeps the curtain closed past the minimum hold',async({pag
   await expect(shutter).toBeHidden();
   await expect(page.locator('#capturedCountBadge')).toHaveText('1 / 6 complete');
 });
+
+async function expectFullscreenPreview(page){
+  const preview=page.locator('#cameraPreviewPanel');
+  await expect(preview).toBeVisible();
+  expect(await preview.evaluate(panel=>{
+    const {x,y,width,height}=panel.getBoundingClientRect();
+    return [x,y,width-innerWidth,height-innerHeight];
+  })).toEqual([0,0,0,0]);
+  await expect(page.locator('#hostCameraPreview')).toHaveCSS('object-fit','contain');
+  expect(await preview.evaluate(panel=>{
+    const box=id=>document.getElementById(id).getBoundingClientRect();
+    const {width,height,left,right,top}=panel.querySelector('.capture-preview-feed').getBoundingClientRect();
+    const progress=box('hostShotProgress'), countdown=box('countdownOverlay');
+    const reads=[document.getElementById('hostShotProgress'),document.getElementById('countdownNumber')];
+    return height===innerHeight&&top===0&&Math.abs(left-(innerWidth-right))<1
+      &&Math.abs(progress.width-countdown.width)<1&&width>innerWidth*.7
+      &&progress.right<=left&&countdown.left>=right&&progress.top===countdown.top
+      &&reads.every(el=>el.scrollWidth<=el.clientWidth);
+  })).toBe(true);
+  await expect(page.locator('#countdownLabel')).toHaveCount(0);
+  for(const selector of ['#boothHeader','#setupOptions','#sixSlotsGrid','#manualInstantSnapBtn','.capture-preview-guide']){
+    await expect(page.locator(selector)).toBeHidden();
+  }
+}
+
+test('fullscreen countdown restores Booth after Escape and automatic JPEG failure',async({page,context})=>{
+  await context.addCookies(cookies);
+  await page.goto('/');await page.waitForFunction(()=>window.app?.hostPreviewHealthy);
+  await page.locator('#timerBtn10').click();await page.locator('#setupStartCaptureBtn').click();
+  await expect(page.locator('#countdownNumber')).toHaveText('10');
+  await expectFullscreenPreview(page);
+  await page.setViewportSize({width:390,height:844});
+  await expectFullscreenPreview(page);
+  await page.setViewportSize({width:1920,height:1080});
+  await expectFullscreenPreview(page);
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#boothHeader')).toBeVisible();
+  await expect(page.locator('#countdownOverlay')).toBeHidden();
+  await expect(page.locator('#manualInstantSnapBtn')).toBeVisible();
+  expect(await page.evaluate(()=>app.photos.filter(Boolean).length)).toBe(0);
+
+  const transitions=await holdCaptureUntilValidation(page);
+  await page.locator('#mainCaptureBtn').click();
+  await expect.poll(()=>transitions.current?.checks||0,{timeout:20000}).toBeGreaterThan(0);
+  const shot=transitions.current,shutter=page.locator('#captureShutter');
+  try{
+    shot.ack=true;
+    await expect(shutter).toHaveClass('is-closed');
+    expect(await shutter.boundingBox()).toEqual({x:0,y:0,width:1920,height:1080});
+    await page.waitForTimeout(4550);
+    await expect(shutter).toHaveClass('is-closed');
+    await expect(page.locator('#hostShotProgress')).toHaveText('0 / 6');
+    shot.fail=true;
+  }finally{shot.release();}
+  await expect(shutter).toBeHidden();
+  await expect(page.locator('#boothHeader')).toBeVisible();
+  await expect(page.locator('#retrySessionSaveBtn')).toBeVisible();
+  await expect(page.locator('#capturedCountBadge')).toHaveText('0 / 6 complete');
+});
+
 for(const count of [4,6])test(`compact pause control: ${count} photos and automatic review`,async({page,context})=>{
   await context.addCookies(cookies);await page.setViewportSize({width:1024,height:768});
   let finalizations=0;page.on('request',r=>{if(r.method()==='POST'&&/\/(complete|finalize)$/.test(r.url()))finalizations++;});
   await page.goto('/');await page.waitForFunction(()=>window.app?.hostPreviewHealthy);
   if(count===4){await page.locator('#frameCardLandscape4').click();await expect.poll(()=>page.evaluate(()=>app.persistenceBusy)).toBe(false);}
   await page.locator('#timerBtn3').click();await page.locator('#setupStartCaptureBtn').click();
+  await expect(page.locator('#countdownNumber')).toBeVisible();
+  await expectFullscreenPreview(page);
+  await expect(page.locator('#hostShotProgress')).toHaveText(`0 / ${count}`);
   await expect(page.locator('#countdownNumber')).toHaveText('2');
   await page.locator('#mainCaptureBtn').click();await expect(page.locator('#mainCaptureBtnText')).toHaveText('Resume Capture');
   await expect(page.locator('body')).not.toHaveClass(/host-capture-fullscreen/);
@@ -155,9 +218,14 @@ for(const count of [4,6])test(`compact pause control: ${count} photos and automa
   const remaining=await page.locator('#countdownNumber').textContent();await page.waitForTimeout(1300);
   await expect(page.locator('#countdownNumber')).toHaveText(remaining);expect(await page.evaluate(()=>app.photos.filter(Boolean).length)).toBe(0);
   await page.locator('#mainCaptureBtn').click();await expect(page.locator('#mainCaptureBtnText')).toHaveText('Pause');
+  await expect(page.locator('#hostShotProgress')).toHaveText(`1 / ${count}`,{timeout:18000});
+  await expect(page.locator('#countdownNumber')).toBeVisible();
+  await expectFullscreenPreview(page);
   await expect(page.locator('body')).toHaveAttribute('data-workflow','review',{timeout:70000});
+  await expect(page.locator('body')).not.toHaveClass(/host-capture-fullscreen/);
   expect(await page.evaluate(()=>app.photos.filter(Boolean).length)).toBe(count);
   expect(await page.evaluate(()=>app.serverSession.finalized)).toBe(false);expect(finalizations).toBe(0);
+  expect(await page.evaluate(()=>app.serverSession.photos.map(photo=>photo.slot_index))).toEqual(Array.from({length:count},(_,i)=>i));
   await expect(page.locator('#guestReviewShots button')).toHaveCount(count);
   await expect(page.locator('#confirmSessionBtn')).toBeVisible();
   expect(await page.evaluate(()=>!app.countdownTimerId&&!app.sequenceTimerId&&!app.countdownState)).toBe(true);

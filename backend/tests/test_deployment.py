@@ -244,7 +244,7 @@ def test_upgrade_preserves_preexisting_completed_files(settings,monkeypatch):
     with sqlite3.connect(settings.storage_root/'photobooth.sqlite3') as db:db.execute('PRAGMA user_version=6')
     with TestClient(create_app(settings)) as client:
         with client.app.state.repository.db.connect() as db:
-            assert db.execute('PRAGMA user_version').fetchone()[0]==9
+            assert db.execute('PRAGMA user_version').fetchone()[0]==10
             assert db.execute('SELECT cleanup_status FROM session_finals WHERE session_id=?',(sid,)).fetchone()[0]=='retained_legacy'
         for relative,digest in files.items():assert hashlib.sha256((settings.storage_root/relative).read_bytes()).hexdigest()==digest
         assert client.get(state['share']['download_url']).status_code==200

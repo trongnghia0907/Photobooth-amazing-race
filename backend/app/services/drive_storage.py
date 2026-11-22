@@ -120,6 +120,8 @@ class DriveStorage:
                 raise DriveError('Còn job in đang chờ/xử lý/lỗi. Giữ cache.')
             if db.execute("SELECT 1 FROM event_display_photos WHERE session_id=? AND approved=1",(row['session_id'],)).fetchone():
                 raise DriveError('Ảnh đang trình chiếu; giữ cache để Event Gallery hoạt động ổn định.')
+            if db.execute('SELECT 1 FROM cloud_publications WHERE composite_id=? AND version>0',(composite_id,)).fetchone():
+                raise DriveError('Giữ bản composite thuộc hàng đợi cloud trên Host.')
             candidate=self.repo.settings.storage_root/row['path'];path=candidate.resolve()
             if candidate!=path or not path.is_relative_to(self.repo.settings.storage_root.resolve()):raise DriveError('Đường dẫn cache không an toàn.')
             if path.is_file() and hashlib.sha256(path.read_bytes()).hexdigest()!=row['sha256']:raise DriveError('Cache không toàn vẹn; không xóa.')

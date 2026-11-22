@@ -17,6 +17,13 @@ class PrinterError(Exception):
         self.uncertain = uncertain
 
 
+def printable_box(width, height, dpi_x, dpi_y, image_width, image_height):
+    scale = min(width / (image_width * dpi_x), height / (image_height * dpi_y))
+    w, h = max(1, round(image_width * dpi_x * scale)), max(1, round(image_height * dpi_y * scale))
+    x, y = (width - w) // 2, (height - h) // 2
+    return x, y, x + w, y + h
+
+
 class WindowsPrinterAdapter:
     """Render PNG through a GDI printer DC; never send PNG bytes as RAW data."""
     def __init__(self, enabled=False):
@@ -68,6 +75,75 @@ class WindowsPrinterAdapter:
             devices.append({'id': name, 'name': name, 'status': state})
         return devices
 
+    def capabilities(self, printer):
+        import win32con as con
+        import win32print
+
+        handle = win32print.OpenPrinter(printer)
+        try:
+            port = win32print.GetPrinter(handle, 2)['pPortName'].split(',')[0].strip()
+        finally:
+            win32print.ClosePrinter(handle)
+        ids = win32print.DeviceCapabilities(printer, port, con.DC_PAPERS)
+        names = win32print.DeviceCapabilities(printer, port, con.DC_PAPERNAMES)
+        sizes = win32print.DeviceCapabilities(printer, port, con.DC_PAPERSIZE)
+        papers = []
+        if isinstance(ids,tuple) and isinstance(names,tuple) and isinstance(sizes,tuple):
+            papers = [{'id': ident, 'name': name, 'width_mm': size['x']/10, 'height_mm': size['y']/10}
+                      for ident, name, size in zip(ids, names, sizes) if ident > 0 and size['x'] > 0 and size['y'] > 0]
+        orientations = ['portrait', 'landscape'] if win32print.DeviceCapabilities(printer, port, con.DC_ORIENTATION) in (90, 270) else []
+        return {'papers': papers, 'orientations': orientations}
+
+    def create_dc(self, printer, paper_id=None, orientation=None):
+        import win32ui
+
+        if paper_id is None and orientation is None:
+            dc = win32ui.CreateDC()
+            dc.CreatePrinterDC(printer)
+            return dc
+        import win32con as con
+        import win32gui
+        import win32print
+
+        handle = win32print.OpenPrinter(printer)
+        try:
+            requested = win32print.GetPrinter(handle, 2)['pDevMode']
+            accepted = win32print.GetPrinter(handle, 2)['pDevMode']
+            if paper_id is not None:
+                requested.Fields &= ~(con.DM_PAPERLENGTH | con.DM_PAPERWIDTH | con.DM_FORMNAME)
+                requested.Fields |= con.DM_PAPERSIZE
+                requested.PaperSize = paper_id
+            if orientation:
+                requested.Fields |= con.DM_ORIENTATION
+                requested.Orientation = con.DMORIENT_PORTRAIT if orientation == 'portrait' else con.DMORIENT_LANDSCAPE
+            result = win32print.DocumentProperties(0, handle, printer, accepted, requested, con.DM_IN_BUFFER | con.DM_OUT_BUFFER)
+            if (result != con.IDOK or (paper_id is not None and accepted.PaperSize != paper_id)
+                    or (orientation and accepted.Orientation != requested.Orientation)):
+                raise PrinterError('Driver từ chối khổ giấy hoặc hướng in đã chọn.')
+            dc_handle = win32gui.CreateDC('WINSPOOL', printer, accepted)
+            try:
+                return win32ui.CreateDCFromHandle(dc_handle)
+            except Exception:
+                win32gui.DeleteDC(dc_handle)
+                raise
+        finally:
+            win32print.ClosePrinter(handle)
+
+    @staticmethod
+    def page_metrics(dc):
+        return tuple(dc.GetDeviceCaps(cap) for cap in (8, 10, 88, 90, 110, 111, 112, 113))
+
+    def preview(self, printer, paper_id, orientation):
+        dc = self.create_dc(printer, paper_id, orientation)
+        try:
+            w, h, dx, dy, full_w, full_h, x, y = self.page_metrics(dc)
+            if min(w, h, dx, dy, full_w, full_h) <= 0:
+                raise PrinterError('Driver không trả về khổ giấy hợp lệ.')
+            return {'ratio': (full_w/dx)/(full_h/dy), 'left': x/full_w, 'top': y/full_h,
+                    'width': w/full_w, 'height': h/full_h}
+        finally:
+            dc.DeleteDC()
+
     def print_image(self, file_path, copies, options):
         if not self.enabled:
             raise PrinterError('In thật chưa được bật trên host.')
@@ -81,25 +157,25 @@ class WindowsPrinterAdapter:
             raise PrinterError('Windows báo máy in lỗi hoặc tạm dừng. Kiểm tra giấy, mực và hàng đợi in.')
         dc, started = None, False
         try:
-            import win32ui
             from PIL import ImageWin
-            dc = win32ui.CreateDC()
-            dc.CreatePrinterDC(printer)
-            spool_id = dc.StartDoc('AMAZING RACE 2026 ' + options['job_id'])
-            started = True
-            width, height = dc.GetDeviceCaps(8), dc.GetDeviceCaps(10)  # HORZRES / VERTRES
+            dc = self.create_dc(printer, options.get('paper_id'), options.get('orientation'))
+            width, height, dpi_x, dpi_y, *_ = self.page_metrics(dc)
+            if min(width, height, dpi_x, dpi_y) <= 0:
+                raise PrinterError('Driver không trả về vùng in hợp lệ.')
             with Image.open(file_path) as image:
                 dib = ImageWin.Dib(image.convert('RGB'))
-                scale = min(width / image.width, height / image.height)
-                w, h = round(image.width * scale), round(image.height * scale)
-                x, y = (width-w)//2, (height-h)//2
+                box = printable_box(width, height, dpi_x, dpi_y, image.width, image.height)
+                spool_id = dc.StartDoc('AMAZING RACE 2026 ' + options['job_id'])
+                started = True
                 for _ in range(copies):
                     dc.StartPage()
-                    dib.draw(dc.GetHandleOutput(), (x,y,x+w,y+h))
+                    dib.draw(dc.GetHandleOutput(), box)
                     dc.EndPage()
             dc.EndDoc()
             return {'mode':'windows','spooler_job_id':spool_id,'copies':copies,'physical_print_confirmed':False}
         except Exception as error:
+            if isinstance(error, PrinterError) and not started:
+                raise
             if dc and started:
                 try:
                     dc.AbortDoc()

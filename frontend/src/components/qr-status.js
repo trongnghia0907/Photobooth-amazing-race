@@ -21,7 +21,7 @@ export function showQRUnavailable(app, message, phase='unconfirmed') {
   const container = document.getElementById('qrCodeContainer');
   if (container) {
     container.dataset.phase=phase;
-    container.textContent = ({unconfirmed:'Photo awaiting confirmation',processing:'Preparing QR code…',loading:'Preparing QR code…',
+    container.textContent = ({unconfirmed:'Photo awaiting confirmation',processing:'Preparing QR code…',loading:'Preparing QR code…',cloud_pending:'Photo saved. Publishing…',
       tunnel_connecting:'Preparing to share…',tunnel_disconnected:'Sharing unavailable',
       configuration_error:'Sharing unavailable',unavailable:'Sharing unavailable',expired:'QR code expired'})[phase] || 'Sharing unavailable';
     if(['configuration_error','tunnel_disconnected','unavailable'].includes(phase) && typeof app.generateQRCodeForCurrentPhoto==='function'){
@@ -39,7 +39,7 @@ export function showQRUnavailable(app, message, phase='unconfirmed') {
   const expiry=document.getElementById('qrExpiryMessage');if(expiry)expiry.hidden=true;
   const description=document.getElementById('qrDescriptionText');
   if(description){
-    const pending=['processing','loading','tunnel_connecting'].includes(phase);
+    const pending=['processing','loading','tunnel_connecting','cloud_pending'].includes(phase);
     description.hidden=pending;
     description.textContent=pending?'':phase==='unconfirmed'?'Confirm your photo to get the QR code.':
       phase==='error'?'Retrying. Ask event staff if the issue continues.':

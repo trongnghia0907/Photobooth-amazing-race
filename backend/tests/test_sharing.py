@@ -147,7 +147,7 @@ def test_upgrade_v1_database_is_non_destructive(tmp_path):
     with TestClient(create_app(settings)) as client:
         assert client.get(f'/api/sessions/{sid}',headers=headers()).status_code==200
         with sqlite3.connect(settings.storage_root/'photobooth.sqlite3') as db:
-            assert db.execute('PRAGMA user_version').fetchone()[0]==9
+            assert db.execute('PRAGMA user_version').fetchone()[0]==10
 
 
 def test_access_log_redacts_share_token():

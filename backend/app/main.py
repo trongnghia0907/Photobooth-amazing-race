@@ -92,6 +92,8 @@ def create_app(settings: Settings | None = None):
             app.state.repository.temporary_assets.start()
             cleanup.callback(app.state.repository.drive.stop)
             app.state.repository.drive.start()
+            cleanup.callback(app.state.repository.cloud.stop)
+            app.state.repository.cloud.start()
             yield
 
     app = FastAPI(title='AMAZING RACE 2026 Photobooth', lifespan=lifespan,

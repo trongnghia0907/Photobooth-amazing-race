@@ -5,11 +5,40 @@
 #hostPreviewStats[hidden]{display:none}
 #hostPreviewStats{position:absolute;right:12px;bottom:64px;z-index:25;max-width:calc(100% - 24px);padding:6px 10px;border-radius:8px;background:#0f172acc;color:#fff;font:12px/1.4 system-ui;pointer-events:none;white-space:pre-line}
 #hostShotProgress{display:none}
-.host-capture-fullscreen{overflow:hidden}
-.host-capture-fullscreen #cameraPreviewPanel{position:fixed;inset:var(--booth-brand-bottom) 0 0;z-index:100;width:100%;height:calc(100dvh - var(--booth-brand-bottom));max-width:none;aspect-ratio:auto;border:0;border-radius:0;background:#020617}
-.host-capture-fullscreen header{visibility:hidden}
-.host-capture-fullscreen #hostShotProgress{display:block;position:absolute;bottom:22px;right:24px;color:white;background:#0f172acc;padding:12px 20px;border-radius:20px;font-size:28px;font-weight:800;z-index:35}
-.host-capture-fullscreen #countdownNumber{font-size:min(28vh,16rem)}
+.capture-preview-feed{position:absolute;inset:0;display:flex;align-items:center;justify-content:center}
+body.host-capture-fullscreen[data-screen=capture]{
+  --capture-counter-size:clamp(15px,3vw,28px);
+  --capture-gutter:max(6px,env(safe-area-inset-left),env(safe-area-inset-right));
+  overflow:hidden;
+}
+body.host-capture-fullscreen[data-screen=capture] :is(#boothHeader,#sessionPersistencePanel,
+  #screenCapture > div:not(.grid),#screenCapture > .grid > :last-child,
+  #capturePreviewMount + div > :not(#mainCaptureBtn),#mainCaptureBtn:disabled){visibility:hidden}
+body.host-capture-fullscreen[data-screen=capture] #cameraPreviewPanel{
+  position:fixed;inset:0;z-index:100;width:100vw;height:100dvh;max-width:none;max-height:none;
+  aspect-ratio:auto;border:0;border-radius:0;background:#020617;
+  --capture-side:calc(3ch + 2 * var(--capture-gutter));
+  display:grid;grid-template-columns:var(--capture-side) minmax(0,1fr) var(--capture-side);
+  grid-template-rows:minmax(0,1fr);align-items:stretch;
+  font:700 var(--capture-counter-size)/1 ui-monospace,monospace;color:white;
+}
+.host-capture-fullscreen .capture-preview-feed{position:relative;inset:auto;grid-area:1/2;min-width:0;min-height:0}
+.host-capture-fullscreen #cameraPreviewPanel :is(#hostCameraPreview,#liveVideo,#simLiveCanvas){object-fit:contain}
+.host-capture-fullscreen #cameraPreviewPanel :is(#hostPreviewStats,#retakeBanner,.capture-preview-guide){display:none}
+.host-capture-fullscreen #cameraPreviewPanel :is(#hostShotProgress,#countdownOverlay){
+  position:static;align-self:start;justify-self:stretch;
+  padding-top:max(12px,env(safe-area-inset-top));text-align:center;
+  background:none;border:0;backdrop-filter:none;
+}
+.host-capture-fullscreen #hostShotProgress{display:block;grid-area:1/1;white-space:nowrap;word-spacing:-1ch}
+.host-capture-fullscreen #countdownOverlay{grid-area:1/3}
+.host-capture-fullscreen #countdownOverlay:not(.hidden){display:block}
+.host-capture-fullscreen #countdownNumber{font:inherit;filter:none}
+body.host-capture-fullscreen[data-screen=capture] #mainCaptureBtn:not(:disabled){
+  position:fixed;left:max(2px,env(safe-area-inset-left));bottom:max(12px,env(safe-area-inset-bottom));
+  z-index:140;padding:10px 2px;font-size:clamp(9px,1.6vw,12px);
+}
+.host-capture-fullscreen #mainCaptureBtn svg{display:none}
 #retakeBanner{top:64px;z-index:30}
 
 #captureShutter{
@@ -23,6 +52,9 @@
 }
 #captureShutter::before{clip-path:inset(0 50% 0 0);transform:translateX(-50%)}
 #captureShutter::after{clip-path:inset(0 0 0 50%);transform:translateX(50%)}
+body.host-capture-fullscreen[data-screen=capture] #captureShutter{inset:0}
+body.host-capture-fullscreen[data-screen=capture] #captureShutter::before,
+body.host-capture-fullscreen[data-screen=capture] #captureShutter::after{background-position:center env(safe-area-inset-top,0px)}
 body[data-screen=capture] #captureShutter.is-closed{visibility:visible;transition-delay:0s}
 body[data-screen=capture] #captureShutter.is-closed::before,
 body[data-screen=capture] #captureShutter.is-closed::after{transform:translateX(0);transition-duration:300ms}

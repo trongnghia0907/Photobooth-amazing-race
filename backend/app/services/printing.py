@@ -43,6 +43,32 @@ class PrintingService:
         devices = self.printers()
         return {'items':devices,'selected':selected,**self.config(selected, devices)}
 
+    def preferences(self, db, printer_id):
+        row = db.execute('SELECT value FROM host_settings WHERE key=?', ('print-options:'+printer_id,)).fetchone()
+        return json.loads(row[0]) if row else {'paper_id':None, 'orientation':None}
+
+    def media(self, printer_id):
+        if printer_id not in {p['id'] for p in self.printers()}:
+            raise HTTPException(404,'Máy in không có trong danh sách driver.')
+        try:
+            capabilities = getattr(self.adapter,'capabilities',lambda _: {'papers': [], 'orientations': []})(printer_id)
+        except Exception:
+            raise HTTPException(503,'Không đọc được khổ giấy từ driver.') from None
+        with self.repo.db.connect() as db:
+            return {**capabilities,'selected':self.preferences(db,printer_id)}
+
+    def preview(self, printer_id, paper_id, orientation):
+        media = self.media(printer_id)
+        if ((paper_id is not None and paper_id not in {paper['id'] for paper in media['papers']})
+                or (orientation is not None and orientation not in media['orientations'])):
+            raise HTTPException(422,'Driver không hỗ trợ khổ giấy hoặc hướng in đã chọn.')
+        if not hasattr(self.adapter,'preview'):
+            return None
+        try:
+            return self.adapter.preview(printer_id,paper_id,orientation)
+        except Exception:
+            raise HTTPException(422,'Driver không tạo được vùng in với thiết lập này.') from None
+
     def config(self, selected=None, devices=None):
         if selected is None:
             with self.repo.db.connect() as db:
@@ -76,7 +102,7 @@ class PrintingService:
 
     @staticmethod
     def metadata(row):
-        result = {k:row[k] for k in ('id','session_id','final_id','copies','status','mode','printer_id','retry_of','error_message','created_at','updated_at')}
+        result = {k:row[k] for k in ('id','session_id','final_id','copies','status','mode','printer_id','retry_of','error_message','created_at','updated_at','paper_id','orientation')}
         result.update(uncertain=bool(row['uncertain']),physical_print_confirmed=False)
         if row['receipt_json']:
             result['receipt'] = json.loads(row['receipt_json'])
@@ -121,11 +147,15 @@ class PrintingService:
             printer = self.config(selected)
             if not printer['available']:
                 raise HTTPException(503, printer['message'])
+            preferences = self.preferences(db,selected)
+            if retry_of and selected == previous['printer_id']:
+                preferences = {field:previous[field] for field in ('paper_id','orientation')}
             job_id, stamp = str(uuid.uuid4()), now()
             db.execute('''INSERT INTO print_jobs
-                (id,session_id,final_id,print_ready_file,sha256,copies,status,mode,printer_id,scope,request_key,payload_hash,retry_of,created_at,updated_at)
-                VALUES (?,?,?,?,?,?,'queued',?,?,?,?,?,?,?,?)''',
-                (job_id,sid,final_id,ready['path'],ready['sha256'],copies,self.settings.printer_mode,selected,scope,key,fingerprint,retry_of,stamp,stamp))
+                (id,session_id,final_id,print_ready_file,sha256,copies,status,mode,printer_id,scope,request_key,payload_hash,retry_of,created_at,updated_at,paper_id,orientation)
+                VALUES (?,?,?,?,?,?,'queued',?,?,?,?,?,?,?,?,?,?)''',
+                (job_id,sid,final_id,ready['path'],ready['sha256'],copies,self.settings.printer_mode,selected,scope,key,fingerprint,retry_of,stamp,stamp,
+                 preferences['paper_id'],preferences['orientation']))
             result = self.metadata(db.execute('SELECT * FROM print_jobs WHERE id=?', (job_id,)).fetchone())
             db.commit()
             return result
@@ -160,7 +190,9 @@ class PrintingService:
             if not active:
                 raise PrinterError('QR đã hết hạn/bị thu hồi khi job đang chờ. Không gửi in.')
             path = self.checked_file(row['print_ready_file'],row['sha256'])
-            receipt = self.adapter.print_image(path,row['copies'],{'job_id':row['id'],'printer_id':row['printer_id']})
+            options = {'job_id':row['id'],'printer_id':row['printer_id']}
+            options.update({key:row[key] for key in ('paper_id','orientation') if row[key] is not None})
+            receipt = self.adapter.print_image(path,row['copies'],options)
         except Exception as exc:
             status = 'failed'
             uncertain = getattr(exc,'uncertain',not isinstance(exc,(HTTPException,PrinterError)))

@@ -1,0 +1,30 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
+  "buildCommand": "npm run build",
+  "outputDirectory": "public",
+  "functions": {"api/*.mjs":{"maxDuration":30}},
+  "rewrites": [
+    {"source":"/","destination":"/gallery/index.html"},
+    {"source":"/gallery","destination":"/gallery/index.html"},
+    {"source":"/event-display","destination":"/event-display/index.html"},
+    {"source":"/gallery/api/photos","destination":"/api/public?view=gallery"},
+    {"source":"/event-display/api/photos","destination":"/api/public?view=event"},
+    {"source":"/gallery/preview/:id","destination":"/api/public?view=preview&id=:id"},
+    {"source":"/event-display/media/:id","destination":"/api/public?view=event-media&id=:id"},
+    {"source":"/gallery/photo/:id","destination":"/api/public?view=detail&id=:id"},
+    {"source":"/gallery/photo/:id/image","destination":"/api/public?view=image&id=:id"},
+    {"source":"/gallery/photo/:id/download","destination":"/api/public?view=download&id=:id"},
+    {"source":"/p/:token","destination":"/api/public?view=personal&token=:token"},
+    {"source":"/p/:token/image","destination":"/api/public?view=personal-image&token=:token"},
+    {"source":"/p/:token/download","destination":"/api/public?view=personal-download&token=:token"}
+  ],
+  "headers": [
+    {"source":"/:path*","headers":[
+      {"key":"X-Robots-Tag","value":"noindex, nofollow"},
+      {"key":"X-Content-Type-Options","value":"nosniff"},
+      {"key":"Referrer-Policy","value":"no-referrer"},
+      {"key":"Content-Security-Policy","value":"default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'"}
+    ]}
+  ]
+}

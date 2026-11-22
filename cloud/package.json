@@ -1,0 +1,8 @@
+{
+  "name": "amazing-race-2026-public",
+  "private": true,
+  "type": "module",
+  "engines": { "node": "22.x" },
+  "scripts": { "build": "node build.mjs", "test": "node --test" },
+  "dependencies": { "@neondatabase/serverless": "^1.0.2", "@vercel/blob": "^2.0.0" }
+}

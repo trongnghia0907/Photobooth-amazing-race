@@ -67,12 +67,14 @@ class EventDisplay:
                 WHERE c.id=1 AND c.access_hash IS NOT NULL AND s.token_hash=? AND s.expires_at>?''',(digest(token),time.time())).fetchone()
         if not row:raise HTTPException(401,'Nhập mã màn hình sự kiện để tiếp tục trình chiếu.')
 
-    def file(self,row,verify=False):
+    def file(self,row,verify=False,*,restore=True):
         if row['path']!=f"composites/{row['session_id']}/{row['id']}.png":
             raise HTTPException(404,'Composite không còn sẵn sàng để trình chiếu.')
         root=self.repo.settings.storage_root.resolve();candidate=root/row['path'];path=candidate.resolve()
-        if not path.is_file():self.repo.drive.local(row['id'])
-        if path!=candidate or not path.is_relative_to(root) or not path.is_file():
+        if path!=candidate or not path.is_relative_to(root):
+            raise HTTPException(404,'Composite không còn sẵn sàng để trình chiếu.')
+        if restore and not path.is_file():self.repo.drive.local(row['id'])
+        if not path.is_file():
             raise HTTPException(404,'Composite không còn sẵn sàng để trình chiếu.')
         if verify and hashlib.sha256(path.read_bytes()).hexdigest()!=row['sha256']:
             raise HTTPException(409,'Composite không toàn vẹn; chưa thể duyệt trình chiếu.')
@@ -98,6 +100,7 @@ class EventDisplay:
                     (sid,row['id'],str(uuid4()),1,payload.approval_basis,self.repo.settings.admin_username,time.time()))
             else:
                 db.execute('UPDATE event_display_photos SET approved=0,hidden_at=? WHERE session_id=?',(time.time(),sid))
+            self.repo.cloud.set_approval(db,row['id'],payload.approved)
             db.commit()
         return {'approved':payload.approved}
 
@@ -157,7 +160,7 @@ def lock(request:Request,response:Response):
     return {'locked':True}
 
 
-def approved_photo_feed(display,limit,media_prefix,newest_completion=False):
+def approved_photo_feed(display,limit,media_prefix,newest_completion=False,*,restore=True):
     items=[]
     order='f.confirmed_at DESC,e.display_id DESC' if newest_completion else 'e.approved_at DESC,e.display_id DESC'
     with display.repo.db.connect() as db:
@@ -165,34 +168,37 @@ def approved_photo_feed(display,limit,media_prefix,newest_completion=False):
             JOIN session_finals f ON f.session_id=e.session_id AND f.composite_id=e.composite_id
             JOIN sessions s ON s.id=f.session_id AND s.status='completed' AND s.composite_id=f.composite_id
             JOIN composites c ON c.id=e.composite_id WHERE e.approved=1
-            ORDER BY '''+order+''' LIMIT ?''',(limit,)).fetchall()
+            ORDER BY '''+order+''' LIMIT ?''',(limit if restore else -1,)).fetchall()
         for row in rows:
-            try:display.file(row)
+            try:display.file(row,restore=restore)
             except HTTPException:continue
             items.append({'id':row['display_id'],'image_url':f"{media_prefix}/{row['display_id']}"+('?thumbnail=true' if newest_completion else ''),
                           'width':row['width'],'height':row['height'],'approved_at':row['approved_at']})
+            if len(items)==limit:break
     return {'items':items}
 
 
-def approved_photo_file(display,display_id):
+def approved_photo_file(display,display_id,*,restore=True):
     with display.repo.db.connect() as db:
         row=db.execute('''SELECT c.path,c.id,c.session_id FROM event_display_photos e
             JOIN session_finals f ON f.session_id=e.session_id AND f.composite_id=e.composite_id
             JOIN sessions s ON s.id=f.session_id AND s.status='completed' AND s.composite_id=f.composite_id
             JOIN composites c ON c.id=e.composite_id WHERE e.display_id=? AND e.approved=1''',(str(display_id),)).fetchone()
         if not row:raise HTTPException(404,'Ảnh không được duyệt trình chiếu.')
-        return display.file(row)
+        return display.file(row,restore=restore)
 
 
 @router.get('/api/photos',dependencies=[Depends(display_read_access)])
 def photos(request:Request,response:Response,limit:int=Query(60,ge=1,le=100)):
     response.headers.update(HEADERS)
-    return approved_photo_feed(service(request),limit,f'{PREFIX}/media')
+    # Polling is local-only. Missing historical files must not trigger serial
+    # Drive downloads or delay newer, available photos.
+    return approved_photo_feed(service(request),limit,f'{PREFIX}/media',restore=False)
 
 
 @router.get('/media/{display_id}',dependencies=[Depends(display_read_access)])
 def media(request:Request,display_id:UUID):
-    path=approved_photo_file(service(request),display_id)
+    path=approved_photo_file(service(request),display_id,restore=False)
     return FileResponse(path,media_type='image/png',headers=HEADERS)
 
 

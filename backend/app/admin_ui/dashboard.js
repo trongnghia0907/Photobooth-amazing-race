@@ -110,8 +110,28 @@ async function showDetail(sid){
   }
   for(const c of session.composites){
     const card=el('article');card.append(el('p',`Composite revision ${c.revision}`));imageLink(card,c.image_url,'composite gốc');
+    if(c.cloud?.version){
+      const cloud=c.cloud;const queued=cloud.synced_version!==cloud.version;
+      const state=queued ? (cloud.approved?'Chờ đăng cloud':'Chờ gỡ khỏi cloud') : (cloud.approved?'Đã đăng cloud':'Đã gỡ khỏi cloud');
+      const info=el('p',`${state}${queued&&!cloud.configured?' (thiếu cấu hình)':''} · ${(cloud.size_bytes/1e6).toFixed(2)} MB`);
+      info.className='muted';card.append(info);
+    }
     if(c.print_ready_url){
       imageLink(card,c.print_ready_url,'bản in có QR');
+      const preview=el('section');preview.className='print-page-preview';card.append(preview);
+      preview.append(button('Xem trước trên giấy',async()=>{
+        const printerId=$('printers').dataset.saved;
+        const {selected}=await api('/printers/media?printer_id='+encodeURIComponent(printerId));
+        const params=new URLSearchParams({printer_id:printerId});
+        if(selected.paper_id)params.set('paper_id',selected.paper_id);
+        if(selected.orientation)params.set('orientation',selected.orientation);
+        const page=await api('/printers/preview?'+params);
+        if(!page)throw new Error('Driver của máy in đã chọn chưa cung cấp vùng in.');
+        const paper=el('div');paper.className='print-paper';paper.style.aspectRatio=page.ratio;
+        const image=el('img');image.src=c.print_ready_url;image.alt='Bản in có QR trong vùng in của khổ giấy';
+        for(const field of ['left','top','width','height'])image.style[field]=`${page[field]*100}%`;
+        paper.append(image);preview.querySelector('.print-paper')?.remove();preview.append(paper);
+      }));
       const controls=el('div');controls.className='actions';const copies=el('input');copies.type='number';copies.min=1;copies.max=maxCopies;copies.value=1;copies.setAttribute('aria-label','Số bản in lại');controls.append(copies);card.append(controls);
       let operation;
       controls.append(button('In lại',async()=>{
@@ -250,6 +270,21 @@ function refreshPrinters(printer){
   select.dataset.saved=printer.selected;
   select.dataset.inventory=signature;
   $('selectPrinter').disabled=!options.length;
+  loadPrinterMedia().catch(error=>{$('printerMediaStatus').textContent=error.message;});
+}
+async function loadPrinterMedia(){
+  const id=$('printers').dataset.saved;
+  $('printerMedia').hidden=true;$('printerMediaStatus').textContent='';
+  if(!id||!Array.from($('printers').options).some(option=>option.value===id))return;
+  const result=await api('/printers/media?printer_id='+encodeURIComponent(id));
+  if($('printers').dataset.saved!==id)return;
+  const paper=$('paperSize'),orientation=$('paperOrientation');
+  paper.replaceChildren(new Option('Mặc định của driver',''),...result.papers.map(item=>
+    new Option(`${item.name} (${item.width_mm} × ${item.height_mm} mm)`,item.id)));
+  orientation.replaceChildren(new Option('Mặc định của driver',''),...result.orientations.map(value=>
+    new Option(value==='portrait'?'Dọc':'Ngang',value)));
+  paper.value=result.selected.paper_id??'';orientation.value=result.selected.orientation??'';
+  $('printerMedia').hidden=!result.papers.length&&!result.orientations.length;
 }
 async function refresh(){
   if(refreshing||!csrf)return;refreshing=true;
@@ -318,6 +353,14 @@ exclusive('selectPrinter',async()=>{
   await api('/printers/selected',{method:'PUT',body:{printer_id:value}});
   $('printers').dataset.saved=value;
   message('Đã chọn máy in.');await refresh();
+});
+exclusive('savePrinterMedia',async()=>{
+  const printer_id=$('printers').dataset.saved;
+  const paper_id=Number($('paperSize').value)||null;
+  const orientation=$('paperOrientation').value||null;
+  await api('/printers/selected',{method:'PUT',body:{printer_id,paper_id,orientation}});
+  $('printerMediaStatus').textContent='Đã lưu. Thiết lập áp dụng cho job in mới.';
+  document.querySelectorAll('.print-paper').forEach(paper=>paper.remove());
 });
 exclusive('saveCamera',async()=>{await api('/camera/config',{method:'PUT',body:{adapter:$('cameraAdapter').value,guest_enabled:$('cameraGuestEnabled').checked}});message('Đã cập nhật camera host.');await refresh();});
 exclusive('disconnectCamera',async()=>{await api('/camera/disconnect',{method:'POST'});message('Đã ngắt camera host.');await refresh();});

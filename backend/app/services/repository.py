@@ -50,6 +50,8 @@ class Repository:
         self.temporary_assets = TemporaryAssets(self)
         from .drive_storage import DriveStorage
         self.drive = DriveStorage(self)
+        from .cloud_publish import CloudPublisher
+        self.cloud = CloudPublisher(self)
 
     def ensure_disk_space(self, extra_bytes=0):
         if shutil.disk_usage(self.settings.storage_root).free < self.settings.min_free_space_mb*1024*1024+extra_bytes:
@@ -266,6 +268,7 @@ class Repository:
             db.execute('INSERT INTO session_finals(session_id,composite_id,confirmed_at) VALUES (?,?,?)',(sid,composite_id,now()))
             self.temporary_assets.queue(db,sid,composite_id)
             self.drive.queue(db,composite_id)
+            self.cloud.enroll(db,composite_id,final_path.stat().st_size)
             # Host policy AND this final snapshot's explicit guest consent.
             # Run once in the durable completion transaction; retries must not
             # undo a subsequent Host hide/revocation.
@@ -274,6 +277,7 @@ class Repository:
                 db.execute('''INSERT OR IGNORE INTO event_display_photos
                     VALUES (?,?,?,?,?,?,?,NULL)''',
                     (sid,composite_id,str(uuid.uuid4()),1,'guest_consent','guest-consent:auto',time.time()))
+                self.cloud.set_approval(db,composite_id,True)
         try:
             result = self.operation(sid, token, key, {'action': 'complete', 'composite_id': composite_id}, mutate)
             logging.getLogger(__name__).info('completion_and_durable_upload_job_ms=%.1f',(time.perf_counter()-started)*1000)

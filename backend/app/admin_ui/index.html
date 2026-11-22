@@ -27,7 +27,7 @@
 <section id="detail" class="card" hidden><h2>Chi tiết phiên</h2><p id="sessionInfo"></p><div id="eventDisplayApproval"></div><div id="composites" class="detail-composites"></div></section>
 </section>
 <section data-panel="prints" aria-label="Hàng đợi in" hidden>
-<section class="card"><h2>Máy in</h2><p id="printerStatus"></p><div class="form-row"><label>Máy in <select id="printers"></select></label><button id="selectPrinter">Chọn máy in</button></div></section>
+<section class="card"><h2>Máy in</h2><p id="printerStatus"></p><div class="form-row"><label>Máy in <select id="printers"></select></label><button id="selectPrinter">Chọn máy in</button></div><div id="printerMedia" hidden><div class="form-row"><label>Khổ giấy <select id="paperSize"></select></label><label>Hướng in <select id="paperOrientation"></select></label><button id="savePrinterMedia">Lưu thiết lập in</button></div></div><p id="printerMediaStatus" role="status"></p></section>
 <p class="muted">Submitted = đã gửi spooler, chưa xác nhận giấy đã in. Mock chỉ mô phỏng.</p><p id="jobsStatus" role="status"></p><div class="table-scroll"><table><thead><tr><th>Phiên / Job</th><th>Thời gian</th><th>Máy in</th><th>Bản</th><th>Trạng thái</th><th>Thao tác</th></tr></thead><tbody id="jobs"></tbody></table></div><div class="pagination"><button id="latestJobs">Job mới hơn</button><button id="olderJobs">Job cũ hơn</button></div>
 </section>
 <section data-panel="camera" aria-label="Camera" hidden>

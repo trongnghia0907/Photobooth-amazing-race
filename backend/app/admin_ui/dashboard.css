@@ -25,3 +25,6 @@ input:focus-visible,select:focus-visible,button:focus-visible,a:focus-visible,su
   .sidebar nav button{min-height:44px}
   .form-row label{min-width:min(100%,180px)}
 }
+.print-page-preview{margin-block:12px}
+.print-paper{position:relative;width:min(100%,320px);margin-block:10px;background:#fff;outline:1px solid #9aaac4}
+.print-paper img{position:absolute;display:block;object-fit:contain;outline:1px dashed #9aaac4}

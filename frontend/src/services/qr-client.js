@@ -17,6 +17,31 @@ function confirmedSnapshot(app) {
     && !app.pendingPhotos.some(Boolean) && !app.pendingDeletion;
 }
 
+function cloudQR(app) {
+  return confirmedSnapshot(app) && app.cloudShare?.composite_id === app.finalOperation.compositeId
+    ? app.cloudShare : null;
+}
+
+function showSharingState(app) {
+  const cloud=cloudQR(app);
+  if(cloud?.state==='ready')app.renderQRCodeVisual(cloud.share_url);
+  else if(currentShare(app)&&app.activeShare.public_ready)app.renderQRCodeVisual(app.activeShare.share_url);
+  else if(cloud?.state==='pending')showQRUnavailable(app,'','cloud_pending');
+  else if(cloud?.state==='expired')showQRUnavailable(app,'','expired');
+  else return false;
+  return true;
+}
+
+async function refreshCloudShare(app,config) {
+  const context=app.sessionContext;
+  const operation=app.finalOperation;
+  if(!config.cloud_configured){app.cloudShare=null;return;}
+  const cloud=await request(`/sessions/${context.id}/cloud-share`,{token:context.token}).catch(()=>null);
+  if(context===app.sessionContext&&operation===app.finalOperation&&confirmedSnapshot(app)){
+    app.cloudShare=cloud?.composite_id===operation.compositeId?cloud:null;
+  }
+}
+
 function showNextStep(app) {
   if (confirmedSnapshot(app)) {
     const missingPublicOrigin=app.shareError?.includes('PUBLIC_BASE_URL');
@@ -51,17 +76,19 @@ export function loadSharingConfig(app, force=false) {
 
 /** Read-only polling: never saves a composite or creates/rotates a share token. */
 export async function refreshPublicQR(app) {
-  if(app.currentScreen!=='result'||!confirmedSnapshot(app)||(app.qrRetryFailures||0)>=12
+  if(app.currentScreen!=='result'||!confirmedSnapshot(app)||((app.qrRetryFailures||0)>=12&&!app.sharingConfig?.cloud_configured)
       ||app.publicQRChecking||app.persistenceBusy||app.shareBusy||app.captureBusy)return;
   if(!currentShare(app))return generateQRCodeForCurrentPhoto(app,true,true);
   app.publicQRChecking=true;
   try{
     const configuration=await app.loadSharingConfig(true);
+    await refreshCloudShare(app,configuration);
     if(app.currentScreen!=='result'||!currentShare(app))return;
     // Starting the tunnel is an expected wait, not a failed photo verification.
     // It can take longer than the normal retry budget on a new connection.
     if(configuration.tunnel_status==='connecting'){
       app.activeShare.public_ready=false;
+      if(showSharingState(app))return;
       showQRUnavailable(app,'','tunnel_connecting');
       app.syncPrintUI?.();
       return;
@@ -69,28 +96,30 @@ export async function refreshPublicQR(app) {
     if(!configuration.configured||configuration.local_only||configuration.lan_only){
       if(!configuration.configured)app.qrRetryFailures=(app.qrRetryFailures||0)+1;
       app.activeShare.public_ready=false;
+      if(showSharingState(app))return;
       showQRUnavailable(app,'','configuration_error');return;
     }
     if(configuration.tunnel_status==='disconnected'){
       app.activeShare.public_ready=false;app.syncPrintUI?.();
+      if(showSharingState(app))return;
       showQRUnavailable(app,'','tunnel_disconnected');
       return;
     }
     const context=app.sessionContext,operation=app.finalOperation;
     const share=await request(`/sessions/${context.id}/public-status`,{token:context.token});
     if(app.sessionContext!==context||app.finalOperation!==operation||!currentShare(app))return;
-    if(!share){app.activeShare.public_ready=false;showQRUnavailable(app,'This QR code has expired or was revoked.','expired');app.syncPrintUI?.();return;}
+    if(!share){app.activeShare.public_ready=false;if(!showSharingState(app))showQRUnavailable(app,'This QR code has expired or was revoked.','expired');app.syncPrintUI?.();return;}
     if(share?.composite_id!==operation.compositeId)return;
     if(share.share_url.split('/p/')[1]!==app.activeShare.share_url.split('/p/')[1])throw new Error('Share token changed unexpectedly');
     app.activeShare=share;
     app.qrRetryFailures=0;
-    app.renderQRCodeVisual(share.share_url);
+    if(!showSharingState(app))app.renderQRCodeVisual(share.share_url);
     app.syncPrintUI?.();
   }catch(error){
     app.qrRetryFailures=(app.qrRetryFailures||0)+1;
     if(app.activeShare)app.activeShare.public_ready=false;
     if(error.status===404)app.qrRetryFailures=12;
-    showQRUnavailable(app,'',error.status===404?'expired':app.qrRetryFailures>=12?'unavailable':'error');
+    if(!showSharingState(app))showQRUnavailable(app,'',error.status===404?'expired':app.qrRetryFailures>=12?'unavailable':'error');
     app.syncPrintUI?.();
   }finally{app.publicQRChecking=false;}
 }
@@ -106,6 +135,7 @@ export function startPublicQRMonitor(app){
 export function scheduleQRCodeUpdate(app) {
   // Editing only updates visibility. It NEVER uploads, finalizes or rotates a token.
   if(app.currentScreen !== 'result') return;
+  if(showSharingState(app))return;
   if(currentShare(app)) app.renderQRCodeVisual(app.activeShare.share_url);
   else showNextStep(app);
 }
@@ -144,8 +174,11 @@ export async function generateQRCodeForCurrentPhoto(app, forceNotify=false, auto
   document.getElementById('qrLoadingOverlay')?.classList.remove('hidden');
   try {
     const configuration=await app.loadSharingConfig(true);
+    await refreshCloudShare(app,configuration);
+    showSharingState(app);
     if(configuration.tunnel_status==='connecting'){
       if(app.activeShare)app.activeShare.public_ready=false;
+      if(showSharingState(app))return;
       showQRUnavailable(app,'','tunnel_connecting');
       return;
     }
@@ -165,6 +198,7 @@ export async function generateQRCodeForCurrentPhoto(app, forceNotify=false, auto
         || !share.qr_image_url?.startsWith('/p/')) throw new Error('The backend did not confirm a valid share URL.');
     app.activeShare=share;
     if(share.local_only||share.lan_only||configuration.tunnel_status==='disconnected'){
+      if(showSharingState(app))return;
       showQRUnavailable(app,'',configuration.tunnel_status==='disconnected'?'tunnel_disconnected':'configuration_error');
       return;
     }
@@ -175,14 +209,14 @@ export async function generateQRCodeForCurrentPhoto(app, forceNotify=false, auto
     }
     app.shareError='';
     app.qrRetryFailures=0;
-    app.renderQRCodeVisual(share.share_url);
+    if(!showSharingState(app))app.renderQRCodeVisual(share.share_url);
   } catch(error) {
     if(app.activeShare)app.activeShare.public_ready=false;
     app.shareError=error.message;
     const missingPublicOrigin=error.message.includes('PUBLIC_BASE_URL');
     app.qrRetryFailures=(app.qrRetryFailures||0)+1;
     if(/hết hạn|thu hồi/.test(error.message)||error.status===404)app.qrRetryFailures=12;
-    showQRUnavailable(app,'',missingPublicOrigin?'configuration_error':app.qrRetryFailures>=12?'unavailable':'error');
+    if(!showSharingState(app))showQRUnavailable(app,'',missingPublicOrigin?'configuration_error':app.qrRetryFailures>=12?'unavailable':'error');
   } finally {
     app.shareBusy=false;
     app.syncPersistenceUI();

@@ -10,7 +10,7 @@ class Database:
         with self.connect() as db:
             db.execute('PRAGMA journal_mode=WAL')
             version = db.execute('PRAGMA user_version').fetchone()[0]
-            if version > 9:
+            if version > 10:
                 raise RuntimeError('Database schema newer than this backend')
             if version == 0:
                 migration = Path(__file__).parent / 'migrations/001_initial.sql'
@@ -57,6 +57,17 @@ class Database:
             if version == 8:
                 migration = Path(__file__).parent / 'migrations/009_drive_storage.sql'
                 db.executescript('BEGIN IMMEDIATE;\n' + migration.read_text() + '\nCOMMIT;')
+                version = 9
+            if version == 9:
+                migration = Path(__file__).parent / 'migrations/010_cloud_and_print_options.sql'
+                db.executescript('BEGIN IMMEDIATE;\n' + migration.read_text())
+                columns = {row['name'] for row in db.execute('PRAGMA table_info(print_jobs)')}
+                if 'paper_id' not in columns:
+                    db.execute('ALTER TABLE print_jobs ADD COLUMN paper_id INTEGER')
+                if 'orientation' not in columns:
+                    db.execute('ALTER TABLE print_jobs ADD COLUMN orientation TEXT')
+                db.execute('PRAGMA user_version=10')
+                db.commit()
 
     @contextmanager
     def connect(self):
