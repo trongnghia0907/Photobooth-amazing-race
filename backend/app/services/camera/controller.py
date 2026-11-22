@@ -29,10 +29,12 @@ class CameraController:
         self.control = threading.RLock()
         self.capture_lock = threading.Lock()
         self.io = threading.Lock()
+        self.transitioning = False
         self.owner = None
         self.release_requested = None
         self.reconciled_session = None
         self.capture_progress = None
+        self.capture_progress_request = None
         self.lease_until = 0
         self.state = 'idle'
         self.last_error = None
@@ -100,22 +102,79 @@ class CameraController:
                 AND NOT EXISTS(SELECT 1 FROM session_finals f WHERE f.session_id=s.id)""").fetchall()
             for row in rows:
                 journal,_=driver._paths(row['id'])
-                if not journal.is_file() or not (driver.root/'cancelled'/journal.name).is_file():continue
-                record=json.loads(journal.read_text(encoding='utf-8'))
+                archive=driver.root/'cancelled'/journal.name
+                if not journal.is_file() or not archive.is_file():continue
+                raw=journal.read_bytes()
+                record=json.loads(raw)
                 if record.get('status')!='cancelled':continue
+                uncertain=record.get('physical_outcome')=='uncertain'
+                if uncertain and (not record.get('isolation_verified_at') or archive.read_bytes()!=raw):continue
                 db.execute("""UPDATE camera_captures SET status='failed',error_code='capture_cancelled',
-                    error_message=?,uncertain=0,updated_at=? WHERE id=?""",
-                    ('Reconciled durable cancellation receipt; original receipt and photos retained.',now(),row['id']))
+                    error_message=?,uncertain=?,updated_at=? WHERE id=?""",
+                    ('Reconciled durable cancellation receipt; original receipt and photos retained.',int(uncertain),now(),row['id']))
+
+    def _reserve_transition(self, stage='connect'):
+        # Caller holds control. Reserve first so new frames cannot overtake a
+        # disconnect waiting for an already running frame to leave I/O.
+        self._check_work(stage)
+        if self.capture_lock.locked():
+            raise CameraError('busy','Camera đang chụp/truyền ảnh.',stage=stage)
+        self.transitioning = True
+        self.preview_epoch += 1
+        self.last_frame_at = None
+
+    def _check_work(self, stage):
+        if self.stop_event.is_set():
+            raise CameraError('disconnected','Host đang dừng camera.',stage=stage)
+        if self.transitioning:
+            raise CameraError('busy','Camera đang kết nối hoặc đang đóng phiên.',stage=stage)
+
+    @contextmanager
+    def _transition_io(self, acquired=False):
+        if not acquired:self.io.acquire()
+        try:
+            if self.stop_event.is_set():
+                raise CameraError('disconnected','Host đang dừng camera.',stage='connect')
+            yield
+        finally:
+            self.io.release()
+            with self.control:self.transitioning = False
+
+    def _close_camera(self):
+        # Adapter.disconnect owns its Live View teardown as well as the device.
+        # Keep the lease if cleanup fails: another session cannot take over.
+        try:self.adapter.disconnect()
+        except Exception as error:
+            with self.control:
+                if self.last_error != str(error):
+                    logging.getLogger(__name__).warning('Camera cleanup failed; ownership retained (%s)',error)
+                self.release_requested = self.owner
+                self.state = 'error'
+                self.last_error = str(error)
+            raise
+        with self.control:
+            self.owner = self.release_requested = None
+            self.lease_until = 0
+            self.state = 'disconnected'
+            self.last_error = self.last_frame_at = None
 
     def _expire(self):
-        if self.owner and time.monotonic() > self.lease_until and not self.capture_lock.locked():
-            self.preview_epoch += 1
-            self.adapter.stop_live_view();self.adapter.disconnect()
-            self.owner = None;self.state = 'disconnected';self.last_frame_at = None
+        with self.control:
+            if (self.stop_event.is_set() or self.transitioning or self.capture_lock.locked()
+                    or not self.owner or (self.release_requested != self.owner and time.monotonic() <= self.lease_until)):
+                return
+            if not self.io.acquire(blocking=False):return
+            try:self._reserve_transition()
+            except CameraError:
+                self.io.release()
+                return  # A capture may have just acquired its admission lock.
+        try:
+            with self._transition_io(acquired=True):self._close_camera()
+        except Exception:
+            pass  # _close_camera reports the failure; the lease monitor retries.
 
     def _owned(self, sid):
-        self._expire()
-        if self.owner != sid:
+        if self.owner != sid or self.release_requested == sid or time.monotonic() > self.lease_until:
             raise CameraError('not_connected','Phiên chưa giữ camera. Bấm Kết nối lại camera.',stage='connect')
         self.lease_until = time.monotonic()+self.settings.camera_lease_seconds
 
@@ -126,21 +185,36 @@ class CameraController:
         if self.settings.operation_mode=='event' and not (cap.capture and cap.physical_shutter and cap.original_file and cap.hardware_verified):
             raise CameraError('event_hardware_required','Camera/SDK chưa được xác minh chụp JPG gốc trên máy này. Nhờ Host kiểm tra thiết bị.',stage='connect')
 
-    def status(self, sid=None, token=None):
+    def status(self, sid=None, token=None, *, progress_key=None, check_capture=False):
         if sid:self.authorize(sid,token)
+        self._expire()
         with self.control:
-            self._expire()
             cap = self.adapter.get_capabilities().json()
             status = self.adapter.get_status()
             fresh = bool(status['previewing'] and self.last_frame_at and time.time()-self.last_frame_at <= self.settings.camera_stale_seconds)
+            driver=getattr(self.adapter,'driver',None)
+            if check_capture and isinstance(driver,SonyPtpDriver):driver.check_capture_abandonment()
+            if not status['connected']:capture_readiness='disconnected'
+            elif self.capture_lock.locked():capture_readiness='busy'
+            elif isinstance(driver,SonyPtpDriver) and driver.unresolved:capture_readiness='reconciliation_required'
+            else:capture_readiness='preflight_required'
+            progress=self.capture_progress if sid is None or sid==self.owner else None
+            driver_progress=getattr(driver,'capture_progress',None)
+            if sid and progress_key and progress and self.capture_progress_request==(sid,progress_key,progress['capture_id']):
+                stage, timings = progress['stage'], progress['timings_ms']
+                fresh_shot=stage=='shutter' or 'shutter' in timings
+                native_ack=driver_progress and driver_progress['capture_id']==progress['capture_id'] and driver_progress.get('shutter_acknowledged')
+                progress={**progress,
+                    'shutter_acknowledged':bool(fresh_shot and (native_ack or stage=='receiving_original' or 'receiving_original' in timings)),
+                    'jpeg_validated':stage in ('saving_original','saving_slot','complete') or 'saving_original' in timings,
+                    'jpeg_saved':stage=='complete'}
             return {'state':self.state,**status,'capabilities':cap,'guest_enabled':self.enabled(),
                     'busy':self.capture_lock.locked(),'owned_by_session':bool(sid and self.owner==sid),
-                    'lease_active':bool(self.owner),'preview_healthy':fresh,
+                    'lease_active':bool(self.owner),'preview_healthy':fresh,'capture_readiness':capture_readiness,
                     'last_frame_at':self.last_frame_at,'last_error':self.last_error,
                     'frame_diagnostics':dict(self.frame_diagnostics),
-                    'capture_progress': self.capture_progress if sid is None or sid==self.owner else None,
-                    'camera_progress': getattr(getattr(self.adapter,'driver',None),'capture_progress',None)
-                        if sid is None or sid==self.owner else None,
+                    'capture_progress':progress,
+                    'camera_progress':driver_progress if sid is None or sid==self.owner else None,
                     'preview_performance':self.preview_performance(),
                     'timeout_seconds':self.settings.camera_timeout_seconds,
                     'stale_seconds':self.settings.camera_stale_seconds,
@@ -148,8 +222,9 @@ class CameraController:
 
     def _capture_stage(self, capture_id, stage):
         stamp=time.monotonic();previous=self.capture_progress
-        timings=dict(previous['timings_ms']) if previous and previous['capture_id']==capture_id and previous['stage'] not in ('complete','error') else {}
-        if timings or (previous and previous['capture_id']==capture_id and previous['stage'] not in ('complete','error')):
+        continuing=stage!='preparing' and previous and previous['capture_id']==capture_id
+        timings=dict(previous['timings_ms']) if continuing else {}
+        if continuing:
             timings[previous['stage']]=round((stamp-previous['monotonic'])*1000,2)
         self.capture_progress={'capture_id':capture_id,'stage':stage,'at':now(),'monotonic':stamp,'timings_ms':timings}
         logging.getLogger('uvicorn.error').info('camera_capture capture_id=%s stage=%s at=%s timings_ms=%s',capture_id,stage,self.capture_progress['at'],timings)
@@ -158,7 +233,7 @@ class CameraController:
     def _capture_io(self, deadline):
         remaining=deadline-time.monotonic()
         if remaining<=0 or not self.io.acquire(timeout=remaining):
-            raise CameraError('busy','Camera I/O is still occupied. No new shutter was sent; retry the same request after the current operation ends.',stage='capture')
+            raise CameraError('busy','Camera I/O is still occupied. No new shutter was sent; retry the same request after the current operation ends.',stage='capture',shutter_dispatched=False)
         try:yield
         finally:self.io.release()
 
@@ -169,8 +244,8 @@ class CameraController:
         A real shutter test needs a separate, explicitly confirmed test
         session so a dashboard click cannot trigger an untracked photo.
         """
+        self._expire()
         with self.control:
-            self._expire()
             capabilities = self.adapter.get_capabilities()
             adapter_status = self.adapter.get_status()
             checked_at = now()
@@ -213,38 +288,49 @@ class CameraController:
 
     def connect(self, sid, token):
         self.repo.require_working(self.authorize(sid,token))
+        self._expire()
         with self.control:
-            self._acquire_process();self._expire()
+            self._check_work('connect')
             if not self.enabled():raise CameraError('disabled','Host chưa bật camera guest control.',stage='connect')
             if self.owner and self.owner != sid:raise CameraError('busy','Camera đang phục vụ một phiên khác.',stage='connect')
             if self.capture_lock.locked():raise CameraError('busy','Camera đang chụp/truyền ảnh.',stage='connect')
+            if self.release_requested or (self.owner and time.monotonic() > self.lease_until):
+                raise CameraError('busy','Phiên camera trước chưa được nhả.',stage='connect')
+            self._acquire_process()
+            self.check_event_capabilities()
+            current = self.adapter.get_status()
+            if self.owner == sid and current['connected']:
+                self.lease_until = time.monotonic()+self.settings.camera_lease_seconds
+                self.state = 'previewing' if current['previewing'] else 'ready'
+                return self.status(sid,token)
+            self._reserve_transition()
             self.state = 'connecting'
+        with self._transition_io():
             try:
-                self.check_event_capabilities()
-                if self.owner == sid and self.adapter.get_status()['connected']:
-                    self.lease_until = time.monotonic() + self.settings.camera_lease_seconds
-                    self.state = 'previewing' if self.adapter.get_status()['previewing'] else 'ready'
-                    return self.status(sid, token)
                 self.adapter.connect()
+            except CameraError as error:
+                error.stage = 'connect'
+                logging.getLogger(__name__).warning('camera_connect_failed adapter=%s code=%s: %s',self.mode,error.code,error)
+                with self.control:self.state = 'error';self.last_error = str(error)
+                raise
+            with self.control:
                 self.reconciled_session = None
-                self.preview_epoch += 1
                 self.last_frame_sequence = None
                 self.preview_samples.clear()
                 self.owner = sid;self.lease_until = time.monotonic()+self.settings.camera_lease_seconds
                 self.state = 'ready';self.last_error = None
-            except CameraError as error:
-                logging.getLogger(__name__).warning('camera_connect_failed adapter=%s code=%s: %s',self.mode,error.code,error)
-                self.state = 'error';self.last_error = str(error);raise
         return self.status(sid,token)
 
     def live(self, sid, token, start):
         self.authorize(sid,token)
         with self.control:
+            self._check_work('preview')
             self._owned(sid)
-            if self.capture_lock.locked():raise CameraError('busy','Camera đang chụp/truyền ảnh.',stage='preview')
-            if start:self.adapter.start_live_view();self.state = 'previewing'
-            else:self.adapter.stop_live_view();self.state = 'ready';self.last_frame_at = None
-            self.preview_epoch += 1
+            self._reserve_transition('preview')
+        with self._transition_io():
+            if start:self.adapter.start_live_view()
+            else:self.adapter.stop_live_view()
+            with self.control:self.state = 'previewing' if start else 'ready'
         return self.status(sid,token)
 
     def disconnect(self, sid=None, token=None):
@@ -256,16 +342,15 @@ class CameraController:
                 # never interrupt WIA or strand the next session until lease expiry.
                 self.release_requested=self.owner
                 raise CameraError('busy','Đang chụp/truyền ảnh; camera sẽ được nhả khi yêu cầu hiện tại kết thúc.',stage='connect')
-            self.preview_epoch += 1
-            self.adapter.stop_live_view();self.adapter.disconnect()
-            self.owner = None;self.last_frame_at = None;self.state = 'disconnected'
-            self.release_requested = None
+            self._reserve_transition()
+        with self._transition_io():self._close_camera()
         return {'state':'disconnected'}
 
     def frame(self, sid, token):
         self.authorize(sid,token)
         waiting=time.perf_counter()
         with self.control:
+            self._check_work('preview')
             self._owned(sid)
             self.frame_diagnostics['requests'] += 1
             if self.capture_lock.locked() or not self.io.acquire(blocking=False):
@@ -275,13 +360,13 @@ class CameraController:
             epoch=self.preview_epoch
             lock_ms=(time.perf_counter()-waiting)*1000
         # Serialize camera I/O, but do not hold the controller/status lock while
-        # USB waits. Disconnect/switch may finish while this request unwinds.
+        # USB waits. A reserved transition invalidates an in-flight frame.
         try:
             started = time.perf_counter()
             try:
                 frame = adapter.get_preview_frame()
                 with self.control:
-                    if self.adapter is not adapter or self.owner!=sid or self.preview_epoch!=epoch:
+                    if self.adapter is not adapter or self.owner!=sid or self.preview_epoch!=epoch or time.monotonic()>self.lease_until:
                         raise CameraError('not_connected','Camera preview belongs to a released session.',stage='preview')
                     if time.time()-frame.captured_at > self.settings.camera_stale_seconds:
                         self.last_frame_at = None
@@ -296,13 +381,15 @@ class CameraController:
                         'lock_ms':lock_ms,'age_ms':max(0,(time.time()-frame.captured_at)*1000),**(frame.timings or {})})
                     return frame
             except CameraError as error:
+                error.stage = 'preview'
                 with self.control:
                     if self.adapter is adapter and self.owner==sid and self.preview_epoch==epoch:
                         self.frame_diagnostics['failures'] += 1
                         if self.frame_diagnostics['last_failure']!=error.code or self.last_error!=str(error):
                             logging.getLogger(__name__).warning('camera_preview_failed adapter=%s code=%s: %s',self.mode,error.code,error)
                         self.frame_diagnostics['last_failure'] = error.code
-                        self.state = 'waiting' if error.code in ('preview_pending','not_ready','busy') else 'error'
+                        self.state = ('waiting' if error.code in ('preview_pending','not_ready','busy') else
+                                      'disconnected' if error.code in ('disconnected','transport_failed') else 'error')
                         self.last_error = str(error)
                         if error.code not in ('preview_pending','not_ready','busy'):self.last_frame_at = None
                 raise
@@ -350,6 +437,7 @@ class CameraController:
         # flight here. Older tabs cannot supersede a newer session's capture.
         driver=getattr(self.adapter,'driver',None)
         if not isinstance(driver,SonyPtpDriver):return
+        driver.require_unassigned_recovery_complete()
         with self.repo.db.connect() as db:
             # A retry of the CURRENT session already owns the camera buffer.
             # Do not let an empty old tombstone consume its pending JPEG.
@@ -366,6 +454,7 @@ class CameraController:
                 JOIN sessions old ON old.id=c.session_id JOIN sessions current ON current.id=?
                 WHERE c.adapter_mode='sony_zve10' AND c.session_id!=?
                 AND old.created_at<current.created_at AND c.status!='captured'
+                AND COALESCE(c.error_code,'')!='capture_cancelled'
                 AND (c.error_code IS NULL OR c.error_code!='capture_superseded' OR c.native_path IS NULL)
                 AND old.status!='completed'
                 AND NOT EXISTS(SELECT 1 FROM session_finals f WHERE f.session_id=old.id)
@@ -380,7 +469,7 @@ class CameraController:
                 # The receipt is the durable write-ahead audit. If the process
                 # crashes before this DB update, the next handoff reconciles it.
                 record=json.loads(journal.read_text(encoding='utf-8'))
-                if record.get('superseded_by'):
+                if record.get('superseded_by') and record.get('status')!='cancelled':
                     with self.repo.db.connect() as db:
                         db.execute("""UPDATE camera_captures SET status='failed',error_code='capture_superseded',
                             error_message=?,uncertain=?,native_path=COALESCE(native_path,?),
@@ -399,9 +488,12 @@ class CameraController:
             driver.reconcile_previous_captures(sid,deadline,exclude=known)
             self.reconciled_session=sid
 
-    def capture(self, sid, token, key, slot):
+    def capture(self, sid, token, key, slot, *, recovery_only=False):
         session = self.authorize(sid,token)
-        with self.control:self._acquire_process()
+        with self.control:
+            if self.stop_event.is_set():
+                raise CameraError('disconnected','Host đang dừng camera.',shutter_dispatched=False)
+            self._acquire_process()
         if not 0 <= slot < session['slot_count']:raise HTTPException(422,'Slot nằm ngoài phiên')
         # Replay saved ACKs before needing device/lease. A lost response must
         # never issue another shutter command, including after a restart.
@@ -409,14 +501,17 @@ class CameraController:
             old = db.execute('SELECT * FROM camera_captures WHERE session_id=? AND request_key=?',(sid,key)).fetchone()
         replay=self._capture_replay(old,sid,token,slot)
         if replay is not None:return replay
+        if recovery_only and not old:
+            raise CameraError('capture_not_found','The Host has no capture to recover for this request. No new shutter command was sent.',stage='transfer',shutter_dispatched=False)
         self.repo.require_working(session)
         # Native camera transfer is not a browser upload. Keep HTTP upload limits
         # unchanged while honoring the Sony transport's bounded original size.
         camera_settings=replace(self.settings,max_upload_bytes=max(self.settings.max_upload_bytes,SONY_MAX_TRANSFER)) if self.mode=='sony_zve10' else self.settings
         reserve=camera_settings.max_upload_bytes+self.settings.max_image_pixels*4 if self.mode=='sony_zve10' else self.settings.max_upload_bytes*2
         self.repo.ensure_disk_space(reserve)
-        if not self.capture_lock.acquire(blocking=False):raise CameraError('busy','Một lệnh chụp đang được xử lý. Đọc trạng thái/thử lại cùng key.')
+        if not self.capture_lock.acquire(blocking=False):raise CameraError('busy','Một lệnh chụp đang được xử lý. Đọc trạng thái/thử lại cùng key.',shutter_dispatched=False)
         capture_id = old['id'] if old else str(uuid.uuid4())
+        shutter_dispatched = False
         try:
             self._capture_stage(capture_id,'preparing')
             # A request may have been descheduled between lookup and lock
@@ -427,6 +522,7 @@ class CameraController:
             if old:capture_id=old['id']
             replay=self._capture_replay(old,sid,token,slot)
             if replay is not None:return replay
+            self.capture_progress_request=(sid,key,capture_id)
             with self.control:
                 # An unused session may have changed layout while this command
                 # was waiting for the controller. Check the current slot bound
@@ -434,6 +530,7 @@ class CameraController:
                 session = self.authorize(sid,token)
                 if not 0 <= slot < session['slot_count']:
                     raise HTTPException(422,'Slot nằm ngoài phiên')
+                self._check_work('capture')
                 self._owned(sid)
                 if not self.enabled():raise CameraError('disabled','Host đã tắt điều khiển camera.')
                 capabilities = self.adapter.get_capabilities()
@@ -455,14 +552,23 @@ class CameraController:
                 self._capture_stage(capture_id,'recovering' if old else 'shutter')
                 if not old:
                     self.state = 'capturing'
+                    shutter_dispatched = None  # A failed command may have reached the camera.
                     reference = self.adapter.capture_photo(capture_id,deadline)
+                    shutter_dispatched = True
                     with self.repo.db.connect() as db:
                         db.execute("UPDATE camera_captures SET adapter_reference=?,status='transferring',updated_at=? WHERE id=?",(reference,now(),capture_id))
                 elif old['status']=='failed' and self.mode=='sony_zve10':
                     # The real Sony driver checks its durable intent first:
                     # existing intent -> reconcile ONLY; no intent -> preflight
                     # failed before shutter and the same ID may try once safely.
-                    reference = self.adapter.capture_photo(capture_id,deadline)
+                    if recovery_only:
+                        driver=getattr(self.adapter,'driver',None)
+                        if not isinstance(driver,SonyPtpDriver) or not driver._paths(capture_id)[0].is_file():
+                            raise CameraError('capture_not_found','The Host has no shutter receipt to recover. No new shutter command was sent.',stage='transfer',uncertain=bool(old['uncertain']),shutter_dispatched=False)
+                        reference = self.adapter.recover_capture(capture_id,deadline)
+                    else:
+                        shutter_dispatched = None
+                        reference = self.adapter.capture_photo(capture_id,deadline)
                     with self.repo.db.connect() as db:
                         db.execute("UPDATE camera_captures SET adapter_reference=?,status='transferring',updated_at=? WHERE id=?",(reference,now(),capture_id))
                 else:reference = old['adapter_reference']
@@ -490,7 +596,7 @@ class CameraController:
                 self._capture_stage(capture_id,'saving_original')
                 atomic_write(self.settings.storage_root/relative,data)
                 with self.repo.db.connect() as db:
-                    db.execute("UPDATE camera_captures SET native_path=?,native_sha256=?,mime=?,status='transferring',updated_at=? WHERE id=?",(relative,hashlib.sha256(data).hexdigest(),mime,now(),capture_id))
+                    db.execute("UPDATE camera_captures SET native_path=?,native_sha256=?,mime=?,status='transferring',updated_at=? WHERE id=?",(relative,validated.input_hash,mime,now(),capture_id))
                     current = db.execute('SELECT expected_revision FROM camera_captures WHERE id=?',(capture_id,)).fetchone()[0]
                 self._capture_stage(capture_id,'saving_slot')
                 self.repo.upload_photo(sid,token,'camera_'+capture_id,slot,source,validated,current,capture_id)
@@ -500,35 +606,43 @@ class CameraController:
             self.lease_until = time.monotonic()+self.settings.camera_lease_seconds
             return self.result(sid,token,capture_id)
         except Exception as error:
-            self._capture_stage(capture_id,'error')
-            if isinstance(error,CameraError):error.capture_id = capture_id
+            if isinstance(error,CameraError):
+                error.capture_id = capture_id
+                if error.shutter_dispatched is None:error.shutter_dispatched = shutter_dispatched
+                driver=getattr(self.adapter,'driver',None)
+                if (error.shutter_dispatched is False and not error.uncertain
+                        and (not old or not (old['uncertain'] or old['adapter_reference'] or old['native_path']))
+                        and (not isinstance(driver,SonyPtpDriver) or not driver._paths(capture_id)[0].exists())):
+                    error.clear_pending=True
+            self._capture_stage(capture_id,'blocked_before_shutter' if isinstance(error,CameraError)
+                and error.shutter_dispatched is False and error.code in ('camera_recovery_pending','recovery_required')
+                and not old else 'error')
             self.last_error = str(error) if isinstance(error,CameraError) else 'Không lưu/nhận được ảnh camera. File cũ vẫn giữ; thử lại cùng key.'
-            self.state = 'disconnected' if isinstance(error,CameraError) and error.code=='disconnect' else 'error'
+            self.state = 'disconnected' if isinstance(error,CameraError) and error.code in ('disconnect','disconnected','transport_failed') else 'error'
             with self.repo.db.connect() as db:
                 record = db.execute('SELECT * FROM camera_captures WHERE id=?',(capture_id,)).fetchone()
-                if record and record['status']!='captured':
+                if record and record['status']!='captured' and not (recovery_only and getattr(error,'code',None)=='capture_not_found'):
                     transfer = bool(record['adapter_reference'])
+                    uncertain = bool(record['uncertain']) or getattr(error,'uncertain',not transfer)
                     db.execute('UPDATE camera_captures SET status=?,error_code=?,error_message=?,uncertain=?,updated_at=? WHERE id=?',
-                               ('transfer_failed' if transfer else 'failed',getattr(error,'code','transfer' if transfer else 'camera_error'),self.last_error,int(getattr(error,'uncertain',not transfer)),now(),capture_id))
+                               ('transfer_failed' if transfer else 'failed',getattr(error,'code','transfer' if transfer else 'camera_error'),self.last_error,int(uncertain),now(),capture_id))
             raise
         finally:
             self.capture_lock.release()
-            with self.control:
-                if self.release_requested and self.release_requested==self.owner and not self.capture_lock.locked():
-                    try:self.disconnect()
-                    except Exception as error:
-                        self.last_error='Không nhả được camera sau khi truyền ảnh; nhờ Host kết nối lại.'
-                        self.state='error'
-                        logging.getLogger(__name__).warning('Deferred camera release failed (%s)',type(error).__name__)
+            self._expire()
 
     def configure(self, mode=None, guest_enabled=None):
+        self._expire()
         with self.control:
-            self._expire()
             if self.capture_lock.locked() or self.owner:raise CameraError('busy','Ngắt phiên camera đang dùng trước khi đổi cấu hình.',stage='connect')
+            self._reserve_transition()
+        with self._transition_io():
             if mode:
                 adapter=self.make_adapter(mode)
                 self.check_event_capabilities(adapter)
-                self.adapter.disconnect();self.adapter = adapter;self.mode = mode;self.state = 'idle';self.last_error = None
+                self._close_camera()
+                with self.control:
+                    self.adapter = adapter;self.mode = mode;self.state = 'idle'
             if guest_enabled is not None:
                 with self.repo.db.connect() as db:
                     db.execute("INSERT INTO host_settings VALUES ('camera_guest_enabled',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",('true' if guest_enabled else 'false',))
@@ -543,13 +657,20 @@ class CameraController:
     def start(self):
         def monitor():
             while not self.stop_event.wait(.5):
-                with self.control:self._expire()
+                self._expire()
         self.thread = threading.Thread(target=monitor,daemon=True,name='photobooth-camera-lease')
         self.thread.start()
 
     def stop(self):
-        self.stop_event.set()
+        with self.control:
+            self.stop_event.set()
+            self.preview_epoch += 1
         if self.thread:self.thread.join(2)
-        if not self.capture_lock.locked():
-            self.disconnect()
-            if self.process_lock:self.process_lock.close();self.process_lock = None
+        # No new work can reach the device after stop_event. Let an admitted
+        # capture finish before releasing the process lease.
+        self.capture_lock.acquire(blocking=True)
+        try:
+            with self.io:
+                self._close_camera()
+                if self.process_lock:self.process_lock.close();self.process_lock = None
+        finally:self.capture_lock.release()

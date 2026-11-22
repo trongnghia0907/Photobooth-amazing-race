@@ -1,5 +1,4 @@
 :root{--kiosk-gap:18px}*{scroll-margin-top:100px}body{padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
-#eventCaptureHeading{font-size:clamp(1.5rem,3vw,2.6rem);line-height:1.2;letter-spacing:.04em;padding:18px 12px;color:#123c83;font-weight:900}
 #screenHome{max-width:1280px;display:grid;grid-template-columns:minmax(0,3fr) minmax(200px,1fr);gap:var(--kiosk-gap);align-items:start;width:100%}
 #screenHome.hidden{display:none}#setupWorkspace{display:grid;grid-template-columns:minmax(0,1.65fr) minmax(220px,1fr);gap:14px;min-width:0}
 #setupLaunchCard,#setupOptions{grid-column:auto;min-width:0}#setupOptions{grid-column:1/-1}#setupLaunchCard>.glass-card{padding:20px;max-width:none;height:100%;border-radius:20px}
@@ -40,7 +39,7 @@ button,select,input:not([type=checkbox]),summary{touch-action:manipulation}butto
 #guestResultLayout.automatic-layout #guestDeliveryPanel>.flex>:first-child{align-self:center}
 #guestResultLayout.automatic-layout #guestDeliveryPanel .flex-1{min-width:0}
 body[data-workflow=delivery] #guestDeliveryPanel label{display:none}
-body[data-event-mode=true] #kioskExtraControls,body[data-event-mode=true] #setupDeviceOptions,body[data-event-mode=true] #hostCameraTools,body[data-event-mode=true] #hostCameraStatus,body[data-event-mode=true] #demoModeBadge,body[data-event-mode=true] [data-development-only=true],body[data-event-mode=true] button[onclick="app.openMobilePreviewModal()"]{display:none!important}
+body[data-event-mode=true] #kioskExtraControls,body[data-event-mode=true] #setupDeviceOptions,body[data-event-mode=true] #hostCameraTools,body[data-event-mode=true] [data-development-only=true],body[data-event-mode=true] button[onclick="app.openMobilePreviewModal()"]{display:none!important}
 #readinessStatus{white-space:pre-wrap;overflow-wrap:anywhere}
 body[data-screen=capture]:not(.host-capture-fullscreen) main{overflow-y:auto;justify-content:flex-start}
 .guest-qr-card{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;text-align:center}
@@ -50,12 +49,10 @@ body[data-screen=capture]:not(.host-capture-fullscreen) main{overflow-y:auto;jus
 [data-guest-flow=true] #guestResultWorkspace>.glass-card{justify-content:center}
 /* Compact Guest kiosk: shared camera node and existing workflow stay intact. */
 body[data-screen] header>.max-w-7xl{height:56px;position:relative}
-body[data-screen] header .font-display-title{font-size:18px}
-body[data-screen] #eventCaptureHeading{display:none}
-body[data-screen] header .max-w-7xl>.flex{position:absolute;left:50%;transform:translateX(-50%);white-space:nowrap}
-body[data-screen] header .max-w-7xl>.flex>div:first-child,body[data-screen] header .max-w-7xl>.flex .hidden{display:none}
 body[data-screen] #newSessionButton{margin-left:auto;padding:8px 12px}
-body[data-screen] #demoModeBadge{padding:4px 10px;font-size:11px}
+#setupCameraStatus:empty,#printStatus:empty,#finalPhotoNotice:empty,
+#sessionPersistencePanel:not(:has(#sessionSaveStatus:not(:empty),button:not(.hidden))){display:none}
+#screenCapture:not(:has(#hostCameraStatus:not([hidden]))) #hostCameraTools{display:none}
 body[data-screen] #sessionPersistencePanel{padding:8px 12px;margin-bottom:10px;gap:6px;flex:none}
 body[data-screen] #setupWorkspace{grid-template-columns:minmax(0,1fr);gap:10px}
 body[data-screen] #setupLaunchCard>.glass-card{padding:0;border:0;background:transparent;box-shadow:none}
@@ -95,19 +92,13 @@ body[data-screen] #guestDeliveryPanel a{min-height:44px;display:inline-flex;alig
   body[data-screen] #guestResultColumns{flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,.9fr);gap:10px}
   body[data-screen] #guestResultColumns>div{grid-column:auto;min-width:0;min-height:0;overflow:auto;gap:10px}
   body[data-screen] #guestCompositeCard{padding:10px;min-height:0}
-  body[data-screen][data-workflow=review] #guestResultLayout.automatic-layout{grid-template-columns:minmax(0,2.7fr) minmax(280px,1fr)}
-  body[data-screen][data-workflow=review] #guestResultColumns{grid-template-columns:minmax(0,1.5fr) minmax(240px,1fr)}
-  body[data-screen][data-workflow=review] #guestCompositeCard>div:nth-child(2){flex:none}
-  body[data-screen][data-workflow=review] #compositeCanvas{max-height:calc(100dvh - 320px);object-fit:contain}
   body[data-screen] #guestCompositeCard>div:first-child{margin-bottom:6px;flex-wrap:wrap;gap:4px 8px}
   body[data-screen] #guestCompositeCard>div:nth-child(2){padding:6px}
   body[data-screen] #guestCapturedPanel{height:100%;padding:12px;gap:10px;overflow:auto}
   body[data-screen] #guestCapturedPanel h2{font-size:18px}
   body[data-screen] #guestReviewShots{gap:10px}
   body[data-screen] #confirmSessionBtn{margin-top:8px;min-height:48px;padding:10px;font-size:14px}
-  body[data-screen] #guestReviewEditor{min-height:0;gap:10px}
-  body[data-screen] #guestReviewEditor>.glass-card,body[data-screen] #guestDeliveryPanel{padding:12px;border-radius:16px}
-  body[data-screen] #guestReviewEditor button{min-height:44px;padding:8px}
+  body[data-screen] #guestDeliveryPanel{padding:12px;border-radius:16px}
   body[data-screen] #guestDeliveryActions button{padding:10px;min-height:44px}
   body[data-screen] #guestDeliveryActions .mt-5{margin-top:8px}
   body[data-screen] #finalPhotoNotice{font-size:12px;margin-top:6px}
@@ -127,14 +118,23 @@ body[data-screen] #guestDeliveryPanel a{min-height:44px;display:inline-flex;alig
 }
 
 /* Official artwork is local and static; these overrides affect Guest UI only. */
-body.official-event-guest{--btn-gradient:linear-gradient(110deg,#086b94,#087d94);--btn-gradient-hover:linear-gradient(110deg,#075776,#086b82);background:#bceafa;color:#16365b;isolation:isolate}
-body.official-event-guest::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;background:linear-gradient(#eafbff18,#eafbff18),url('/assets/official-theme.png') center top/cover no-repeat}
+body.official-event-guest{
+  --booth-theme:url('../../../theme/Theme-ptb-final.png');
+  --booth-brand-height:clamp(44px,5vw,110px);
+  --booth-brand-bottom:calc(env(safe-area-inset-top,0px) + var(--booth-brand-height));
+  --btn-gradient:linear-gradient(110deg,#086b94,#087d94);
+  --btn-gradient-hover:linear-gradient(110deg,#075776,#086b82);
+  background:linear-gradient(#80caef,#88d4f3) fixed;
+  color:#16365b;isolation:isolate;
+}
+body.official-event-guest::before{
+  content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;
+  background:var(--booth-theme) center env(safe-area-inset-top,0px) / 100% auto no-repeat;
+  /* The 1672×941 poster stays full width so its title and logos never crop. */
+  mask-image:linear-gradient(#000 calc(env(safe-area-inset-top,0px) + 56.28vw - 20px),transparent calc(env(safe-area-inset-top,0px) + 56.28vw));
+}
 body.official-event-guest header{background:transparent;border-color:transparent;backdrop-filter:none;box-shadow:none}
 body.official-event-guest header>.max-w-7xl{height:60px;max-width:1680px}
-body.official-event-guest header .max-w-7xl>.flex{position:static;transform:none;white-space:normal}
-body.official-event-guest header .max-w-7xl>.flex>div:last-child{display:block}
-body.official-event-guest header .font-display-title{font-size:clamp(13px,1.6vw,20px);color:#154965;background:none;-webkit-text-fill-color:currentColor}
-body.official-event-guest .official-event-brand{display:none!important}
 body.official-event-guest main{max-width:1680px;padding:12px clamp(12px,2vw,28px)}
 body.official-event-guest #screenHome{max-width:none;gap:14px}
 body.official-event-guest .glass-card{background:transparent;border-color:transparent;backdrop-filter:none;box-shadow:none}
@@ -142,9 +142,9 @@ body.official-event-guest #setupLaunchCard>.glass-card{background:transparent;bo
 body.official-event-guest #guestCompositeCard>div:nth-child(2){background:transparent;border-color:transparent}
 body.official-event-guest #guestResultWorkspace>.glass-card{background:transparent;border-color:transparent;box-shadow:none;padding-inline:0}
 body.official-event-guest #screenCapture>div[class~="bg-white/90"],body.official-event-guest #hostCameraTools{background:transparent;border-color:transparent;box-shadow:none;backdrop-filter:none;padding:0;gap:8px}
-body.official-event-guest #guestReviewEditor button.bg-white,body.official-event-guest #screenCapture button.bg-white,body.official-event-guest #guestDeliveryActions button.bg-white{background:#eaf7ff99;box-shadow:none}
-body.official-event-guest #guestReviewEditor button.bg-white:hover,body.official-event-guest #screenCapture button.bg-white:hover,body.official-event-guest #guestDeliveryActions button.bg-white:hover{background:#eaf7ffdb}
-body.official-event-guest #guestReviewEditor input[type=text],body.official-event-guest #setupOptions select,body.official-event-guest #setupOptions .layout-diagram{background:#eaf7ff80}
+body.official-event-guest #screenCapture button.bg-white,body.official-event-guest #guestDeliveryActions button.bg-white{background:#eaf7ff99;box-shadow:none}
+body.official-event-guest #screenCapture button.bg-white:hover,body.official-event-guest #guestDeliveryActions button.bg-white:hover{background:#eaf7ffdb}
+body.official-event-guest #setupOptions select,body.official-event-guest #setupOptions .layout-diagram{background:#eaf7ff80}
 body.official-event-guest .btn-primary-blue{box-shadow:0 5px 14px #08718c25;transition:background-color .15s,box-shadow .15s}
 body.official-event-guest .btn-primary-blue:hover,body.official-event-guest .btn-primary-blue:active{transform:none}
 body.official-event-guest #newSessionButton{background:#eaf7ffb3;color:#145374;border:1px solid #ffffff60}
@@ -158,16 +158,16 @@ body.official-event-guest .guest-review-photo,body.official-event-guest .recent-
 body.official-event-guest #confirmSessionBtn,body.official-event-guest #completeCaptureBtn{background:var(--btn-gradient);color:#fff}
 body.official-event-guest #cameraPreviewPanel{background:#0c1c31;box-shadow:0 6px 18px #173c6512}
 body.official-event-guest #cameraPreviewPanel #hostCameraPreview{object-fit:contain}
-body.official-event-guest #hostCameraStatus:not([data-state=error]){background:#12374bea}
+body.official-event-guest #hostCameraStatus:not([data-presentation=error],[data-presentation=disconnected]){background:#12374bea}
 body.official-event-guest #boothPairOverlay{background:#bceafa66}
 body.official-event-guest #boothPairForm{background:#eaf7ffe6;border-color:#ffffff80;box-shadow:0 6px 24px #17648a12}
 body.official-event-guest #boothPairForm button{background:#08718c}
 body.official-event-guest button:focus-visible,body.official-event-guest select:focus-visible,body.official-event-guest input:focus-visible{outline-color:#9355a8}
 /* Surfaces wrap text and controls, never the unused height of a column. */
-body.official-event-guest #setupOptions>.glass-card,body.official-event-guest #guestCompositeCard,body.official-event-guest #guestReviewEditor>.glass-card{padding:0;border:0}
+body.official-event-guest #setupOptions>.glass-card,body.official-event-guest #guestCompositeCard{padding:0;border:0}
 body.official-event-guest #guestCompositeCard>div:nth-child(2){padding:0}
 body.official-event-guest #setupCameraStatus{width:fit-content;max-width:100%;align-self:center;padding:3px 8px}
-body.official-event-guest #setupRecentSidebar h2,body.official-event-guest #guestCapturedPanel h2,body.official-event-guest #guestReviewProgress,body.official-event-guest #setupOptions h2,body.official-event-guest #guestResultWorkspace>.glass-card>div,body.official-event-guest #guestCompositeCard>div:first-child,body.official-event-guest #guestReviewEditor [class~="uppercase"],body.official-event-guest #setupOptions [class~="uppercase"]{width:fit-content;max-width:100%;background:#e7f6ffcc;border-radius:10px;padding:4px 8px}
+body.official-event-guest #setupRecentSidebar h2,body.official-event-guest #guestCapturedPanel h2,body.official-event-guest #guestReviewProgress,body.official-event-guest #setupOptions h2,body.official-event-guest #guestResultWorkspace>.glass-card>div,body.official-event-guest #guestCompositeCard>div:first-child,body.official-event-guest #setupOptions [class~="uppercase"]{width:fit-content;max-width:100%;background:#e7f6ffcc;border-radius:10px;padding:4px 8px}
 body.official-event-guest #setupOptions h2,body.official-event-guest #guestResultWorkspace>.glass-card>div{color:#154965;-webkit-text-fill-color:currentColor;background-clip:border-box}
 body.official-event-guest #recentEmptyState,body.official-event-guest #recentGalleryStatus{background:#e7f6ffcc;border-radius:10px;padding:8px;color:#20486b}
 body.official-event-guest #recentPhotoList{margin-top:8px}
@@ -248,4 +248,164 @@ body[data-workflow=delivery] #guestDeliveryActions>button:last-child{grid-column
   body[data-workflow=delivery] #guestDeliveryActions{gap:10px;padding:12px}
   body[data-workflow=delivery] #guestDeliveryActions>label,
   body[data-workflow=delivery] #printPhotoBtn{grid-column:1/-1}
+}
+
+/* Guest surfaces sit above the approved poster. The poster and workflow remain independent. */
+body.official-event-guest{
+  --event-ink:#102e47;
+  --event-edge:#a6cfdf;
+  --event-surface:#effaffeb;
+  --event-radius:18px;
+  --event-shadow:0 8px 26px #102e4726;
+  --btn-gradient:linear-gradient(110deg,#074f6b,#086d84);
+  --btn-gradient-hover:linear-gradient(110deg,#063d56,#07566b);
+  color:var(--event-ink);
+}
+body.official-event-guest #newSessionButton{background:var(--event-surface);border-color:var(--event-edge)}
+body.official-event-guest #sessionPersistencePanel{background:var(--event-surface);border-radius:10px}
+body.official-event-guest #setupOptions>.glass-card{
+  padding:clamp(10px,1.25vw,18px);border:1px solid var(--event-edge);
+  border-radius:var(--event-radius);background:var(--event-surface);box-shadow:var(--event-shadow);
+}
+body.official-event-guest #setupOptions h2,
+body.official-event-guest #setupOptions [class~="uppercase"]{
+  padding:0;background:none;color:var(--event-ink);
+}
+.layout-diagram .host-frame-preview{display:none}
+.layout-diagram.has-host-frame{display:block;padding:2px}
+.layout-diagram.has-host-frame>div{display:none}
+.layout-diagram.has-host-frame .host-frame-preview{display:block;width:46px;height:46px;object-fit:contain}
+body.official-event-guest #setupFrameChoices .layout-choice-card{background:#fff;border-color:var(--event-edge)}
+body.official-event-guest #setupFrameChoices .layout-choice-card[aria-checked=true]{
+  background:#d5f4f7;border-color:#086d84;box-shadow:inset 0 0 0 1px #086d84;
+}
+body.official-event-guest #setupStartCaptureBtn{
+  min-height:58px;border-radius:16px;letter-spacing:.035em;box-shadow:0 6px 16px #073d5560;
+}
+body.official-event-guest #cameraPreviewPanel{box-shadow:0 12px 28px #102e4752}
+body.official-event-guest #countdownNumber{font-variant-numeric:tabular-nums;text-shadow:0 4px 20px #000a}
+body.official-event-guest #hostShotProgress{border:1px solid #ffffff80;border-radius:14px}
+body.official-event-guest #setupRecentSidebar,
+body.official-event-guest #guestCapturedPanel{
+  padding:12px;background:var(--event-surface);border:1px solid var(--event-edge);border-radius:var(--event-radius);
+}
+body.official-event-guest #setupRecentSidebar h2,
+body.official-event-guest #guestCapturedPanel h2,
+body.official-event-guest #guestReviewProgress{
+  padding:0;background:none;color:var(--event-ink);
+}
+body.official-event-guest #setupRecentSidebar:not(:has(#recentPhotoList > *)){height:auto}
+body.official-event-guest #recentEmptyState{padding:8px 0 0;background:none}
+body.official-event-guest #setupRecentSidebar .recent-gallery-card,
+body.official-event-guest .guest-review-photo{background:#deeff6;border-color:#bddbe7}
+body.official-event-guest #guestResultWorkspace>.glass-card>div,
+body.official-event-guest #guestCompositeCard>div:first-child{
+  background:var(--event-surface);color:var(--event-ink);
+}
+body.official-event-guest #confirmSessionBtn{border-radius:14px}
+body.official-event-guest #compositeCanvas,
+body.official-event-guest #printReadyPreview{border-radius:3px;box-shadow:var(--event-shadow)}
+body.official-event-guest[data-workflow=delivery] #guestDeliveryPanel,
+body.official-event-guest[data-workflow=delivery] #guestDeliveryActions{
+  background:var(--event-surface);border:1px solid var(--event-edge);
+  border-radius:var(--event-radius);box-shadow:var(--event-shadow);
+}
+body.official-event-guest[data-workflow=delivery] #guestDeliveryActions #printPhotoBtn{background:#f9fdff}
+body.official-event-guest[data-workflow=delivery] #qrCodeContainer:has(.guest-qr-image){
+  outline:1px solid var(--event-edge);
+}
+@media(min-width:960px) and (min-height:650px) and (orientation:landscape){
+  body.official-event-guest[data-screen] #screenHome{grid-template-columns:minmax(0,1fr) clamp(200px,21vw,320px)}
+}
+body.official-event-guest #boothHeader>.max-w-7xl{height:var(--booth-brand-height)}
+body.official-event-guest :is(#toastContainer,#boothPairOverlay,#mobilePreviewModal,#flashOverlay){
+  top:var(--booth-brand-bottom);
+}
+body.official-event-guest #toastContainer{margin-top:8px}
+body.official-event-guest #boothPairOverlay{overflow-y:auto}
+body.official-event-guest[data-screen=home] #setupOptions>.glass-card{
+  display:grid;align-items:center;gap:8px 12px;padding:8px 10px;
+}
+body.official-event-guest[data-screen=home] #setupFrameChoices{
+  grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;margin:0;
+}
+body.official-event-guest[data-screen=home] #setupFrameChoices>.layout-choice-card{
+  min-height:46px;padding:4px 8px;gap:6px;border-radius:10px;
+}
+body.official-event-guest #setupFrameChoices .text-base{font-size:13px;line-height:1.25}
+body.official-event-guest #setupFrameChoices .host-frame-preview{width:32px;height:32px}
+body.official-event-guest #setupFrameChoices .layout-diagram:not(.has-host-frame){padding:4px;gap:2px}
+body.official-event-guest #setupFrameChoices .layout-diagram:not(.has-host-frame)>div{width:7px;height:7px}
+body.official-event-guest #setupCountdown .grid{gap:4px}
+body.official-event-guest[data-screen=home] #setupCountdown button{
+  padding:4px;font-size:12px;white-space:nowrap;border-radius:10px;
+}
+@media(min-width:960px) and (orientation:landscape){
+  body.official-event-guest[data-screen=home] #setupOptions>.glass-card{
+    grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);
+  }
+}
+@media(max-width:959px) and (orientation:portrait){
+  body.official-event-guest[data-screen=home] #screenHome{grid-template-columns:minmax(0,1fr)}
+  body.official-event-guest #setupPreviewMount #cameraPreviewPanel{max-height:56dvh}
+  body.official-event-guest #setupRecentSidebar{position:static}
+}
+@media(max-width:460px){
+  body.official-event-guest #boothHeader{padding-top:var(--booth-brand-height)}
+  body.official-event-guest #newSessionButton{font-size:13px;padding-inline:10px}
+}
+
+/* Review uses the available height for the composite and the numbered shots. */
+body[data-workflow=review] main{overflow-y:auto;justify-content:flex-start}
+body[data-workflow=review] #guestResultLayout.automatic-layout{
+  grid-template-columns:minmax(0,1.7fr) minmax(0,1fr);
+  grid-template-rows:auto auto;
+  align-content:start;
+  gap:10px clamp(12px,1.7vw,24px);
+  height:auto;
+}
+#guestResultLayout.automatic-layout :is(#guestResultWorkspace,#guestResultColumns,#guestPreviewColumn){display:contents}
+#guestResultLayout.automatic-layout #guestResultWorkspace>.glass-card{grid-column:1/-1;grid-row:1;margin:0}
+#guestResultLayout.automatic-layout #guestCompositeCard{
+  grid-column:1;grid-row:2;min-width:0;min-height:0;gap:10px;
+}
+#guestResultLayout.automatic-layout #guestCompositeCard>div:first-child{display:none}
+#guestResultLayout.automatic-layout #guestCompositeCard>div:nth-child(2){
+  min-height:0;padding:0;border:0;
+}
+#guestResultLayout.automatic-layout #guestCapturedPanel{
+  grid-column:2;grid-row:2;align-self:start;height:auto;max-height:none;overflow:visible;
+}
+#guestResultLayout.automatic-layout #compositeCanvas{
+  display:block;width:auto;height:auto;max-width:100%;max-height:52dvh;object-fit:contain;
+}
+#guestResultLayout.automatic-layout #confirmSessionBtn{
+  width:min(100%,360px);margin:0;min-height:48px;padding:10px 16px;flex:none;
+}
+#guestResultLayout.automatic-layout #guestReviewShots{
+  flex:1;min-height:0;gap:8px;
+}
+#guestResultLayout.automatic-layout .guest-review-photo{
+  width:100%;min-height:0;aspect-ratio:4/3;
+}
+#guestResultLayout.automatic-layout .guest-review-photo img{position:absolute;inset:0}
+@media(min-width:960px) and (min-height:650px) and (orientation:landscape){
+  body[data-workflow=review] #guestResultLayout.automatic-layout{
+    height:100%;grid-template-rows:auto minmax(0,1fr);align-content:stretch;
+  }
+  #guestResultLayout.automatic-layout #guestCompositeCard{
+    container-type:size;justify-content:center;
+  }
+  #guestResultLayout.automatic-layout #compositeCanvas{max-height:calc(100cqh - 64px)}
+  #guestResultLayout.automatic-layout #guestCompositeCard:has(#finalPhotoNotice:not([hidden])) #compositeCanvas{
+    max-height:calc(100cqh - 108px);
+  }
+  #guestResultLayout.automatic-layout #guestCapturedPanel{align-self:stretch}
+  #guestResultLayout.automatic-layout #guestReviewShots{grid-auto-rows:minmax(0,1fr);align-content:stretch}
+  #guestResultLayout.automatic-layout .guest-review-photo{aspect-ratio:auto}
+}
+@media(max-width:699px){
+  body[data-workflow=review] #guestResultLayout.automatic-layout{grid-template-columns:minmax(0,1fr);grid-template-rows:auto}
+  #guestResultLayout.automatic-layout #guestCapturedPanel{grid-column:1;grid-row:3}
+  #guestResultLayout.automatic-layout #compositeCanvas{max-height:42dvh}
 }

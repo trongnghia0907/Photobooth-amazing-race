@@ -33,7 +33,7 @@ test('state is isolated, all 9 filters and sticker library retained; auto print 
   assert.equal(b.photos[0], null);
   assert.equal(a.autoPrintPopup, false);
   assert.equal(a.filters.length, 9);
-  // English labels intentionally differ; filter algorithms and colors do not.
+  // Vietnamese display labels are independent of filter algorithms and colors.
   const behavior = filters => filters.map(({id,css,color})=>({id,css,color}));
   assert.equal(JSON.stringify(behavior(a.filters)), JSON.stringify(behavior(baseline.filters)));
   assert.deepEqual(a.filters.map(filter=>filter.name), ['Original','Black & White','Vintage','Warm','Cool','Dramatic','Soft Fade','Vivid','Sepia']);
@@ -95,6 +95,8 @@ test('legacy DOM IDs preserved except explicitly removed guest controls; styles 
   const current = readFileSync(new URL('../index.html',import.meta.url),'utf8');
   const ids = [...original.matchAll(/\bid="([^"]+)"/g)].map(m=>m[1]);
   const removed=new Set(['stepNavHome','stepNavCapture','stepNavResult','frameCardCustom','customFrameBadge','customFrameSubtext','calibrateSlotsBtn','customFrameInputMain','frameCardGrid3x2','qrProviderSelect','qrStatusBadge','qrReadyPill','qrExternalUrlInput','qrExternalOpenBtn','qrLocalWarning','qrLanWarning','confirmQRCodeBtn']);
+  for(const id of ['tabBtn_filters','tabBtn_stickers','tabBtn_color','tabBtn_text','tabPanel_filters','tabPanel_color','tabPanel_text',
+    'tabPanel_stickers','stickerCategoryBar','stickerItemsGrid','filterGridContainer','colorSwatchesGrid','customColorPicker','customColorHexLabel','inputTopText','inputCardTitle','inputBrandingText'])removed.add(id);
   for (const id of ids) {
     if(removed.has(id))assert.ok(!current.includes(`id="${id}"`),id+' must be removed');
     else assert.ok(current.includes(`id="${id}"`),id);
@@ -109,7 +111,7 @@ test('Guest layout selector exposes only portrait 2x3 and landscape 2x2 choices'
   assert.match(current, /id="setupLayoutChoices"/);
   assert.match(current, /id="frameCardGrid2x3"[^>]*>[^]*?2×3 Portrait/);
   assert.match(current, /id="frameCardLandscape4"[^>]*>[^]*?2×2 Landscape/);
-  assert.doesNotMatch(current, /customFrameInputMain|frameCardGrid3x2|Tải Frame PNG/);
+  assert.doesNotMatch(current, /customFrameInputMain|frameCardGrid3x2|Upload a PNG Frame/);
 });
 
 test('clearTimers cancels delayed start/next shot/print/QR and interval overlays', () => {

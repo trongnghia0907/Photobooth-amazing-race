@@ -10,25 +10,26 @@ export function initializeKioskUI(app){
   const [launch,options]=Array.from(home.children);
   launch.id='setupLaunchCard';options.id='setupOptions';
   const workspace=document.createElement('div');workspace.id='setupWorkspace';
-  const preview=document.createElement('div');preview.id='setupPreviewMount';preview.setAttribute('aria-label','Camera preview');
+  const preview=document.createElement('div');preview.id='setupPreviewMount';preview.setAttribute('aria-label','Camera Preview');
   workspace.append(preview,launch,options);
   const sidebar=document.createElement('aside');sidebar.id='setupRecentSidebar';sidebar.setAttribute('aria-label','Amazing Race Moments');
-  sidebar.innerHTML='<h2>Amazing Race Moments</h2><p id="recentGalleryStatus" role="status" hidden></p><div id="recentPhotoList" aria-live="polite"></div><p id="recentEmptyState">No approved photos to display yet.</p>';
+  sidebar.innerHTML='<h2>Amazing Race Moments</h2><p id="recentGalleryStatus" role="status" hidden></p><div id="recentPhotoList" aria-live="polite"></div><p id="recentEmptyState">No photos yet.</p>';
   home.replaceChildren(workspace,sidebar);
   const panel=document.getElementById('cameraPreviewPanel'),anchor=document.createElement('div');anchor.id='capturePreviewMount';
   panel.parentNode.insertBefore(anchor,panel);anchor.append(panel);
-  const start=launch.querySelector('button[onclick="app.startAutomaticSession()"]');start.id='setupStartCaptureBtn';start.setAttribute('aria-label','Start capturing');
+  const start=launch.querySelector('button[onclick="app.startAutomaticSession()"]');start.id='setupStartCaptureBtn';start.setAttribute('aria-label','Start Capturing');
   const cameraStatus=document.createElement('p');cameraStatus.id='setupCameraStatus';cameraStatus.setAttribute('role','status');launch.querySelector('.glass-card').append(cameraStatus);
   const choices=document.getElementById('frameCardGrid2x3')?.parentElement;choices.id='setupFrameChoices';
   const result=document.getElementById('screenResult'),resultLayout=document.createElement('div'),resultWorkspace=document.createElement('div');
   resultLayout.id='guestResultLayout';resultWorkspace.id='guestResultWorkspace';resultWorkspace.append(...Array.from(result.children));const reviewProgress=document.createElement('p');reviewProgress.id='guestReviewProgress';reviewProgress.className='font-bold text-brand-700';reviewProgress.setAttribute('role','status');const reviewShots=document.createElement('div');reviewShots.id='guestReviewShots';reviewShots.className='guest-review-shots';const capturedPanel=document.createElement('aside');capturedPanel.id='guestCapturedPanel';capturedPanel.setAttribute('aria-label','Captured Photos');const capturedHeading=document.createElement('h2');capturedHeading.textContent='Captured Photos';capturedPanel.append(capturedHeading,reviewProgress,reviewShots);resultLayout.append(resultWorkspace,capturedPanel);result.append(resultLayout);
   document.getElementById('qrCodeContainer').closest('.glass-card').id='guestDeliveryPanel';
-  const tabs=document.getElementById('tabBtn_filters').parentElement,tabContent=tabs.nextElementSibling,editor=document.createElement('div');editor.id='guestReviewEditor';editor.className='flex flex-col gap-5';tabs.parentElement.insertBefore(editor,tabs);editor.append(tabs,tabContent);
   const actions=document.createElement('div');actions.id='guestDeliveryActions';actions.className='w-full';
   const copies=document.getElementById('printCopies').closest('label'),printStatus=document.getElementById('printStatus'),printerCheck=printStatus.nextElementSibling,printButtons=document.getElementById('printPhotoBtn').parentElement;
   const previewCard=document.getElementById('compositeCanvas').closest('.glass-card');
   previewCard.id='guestCompositeCard';
-  previewCard.parentElement.parentElement.id='guestResultColumns';
+  const previewColumn=previewCard.parentElement;
+  previewColumn.id='guestPreviewColumn';
+  previewColumn.parentElement.id='guestResultColumns';
   const download=printButtons.querySelector('button[onclick="app.downloadCompositeImage()"]');
   download.id='downloadPhotoBtn';
   actions.append(download,copies,document.getElementById('printPhotoBtn'),printStatus,printerCheck);
@@ -54,32 +55,30 @@ export function syncSetupLayout(app){
 export function syncGuestWorkflowUI(app){
   if(!app.kioskInitialized)return;
   const active=app.guestWorkflowActive,delivered=!!app.serverSession?.finalized;
+  const reviewing=app.currentScreen==='result'&&!delivered;
   const sidebar=document.getElementById('setupRecentSidebar'),result=document.getElementById('guestResultLayout'),home=document.getElementById('screenHome');
   if(sidebar.parentElement!==home)home.append(sidebar);
-  result.classList.toggle('automatic-layout',active&&app.currentScreen==='result'&&!delivered);
+  result.classList.toggle('automatic-layout',reviewing);
   document.body.dataset.guestFlow=String(active);
   document.body.dataset.workflow=app.guestStarting?'preparing':app.currentScreen==='home'?'setup':app.currentScreen==='capture'?'capture':delivered?'delivery':'review';
-  document.getElementById('guestResultTitle').textContent=delivered?'Your Amazing Race Photo':'✨ Customize & Get Your Photo ✨';
-  for(const id of ['guestDeliveryPanel','guestDeliveryActions'])document.getElementById(id).hidden=active&&!delivered;
-  for(const id of ['guestReviewEditor','guestReviewShots'])document.getElementById(id).hidden=active&&delivered;
-  document.getElementById('guestCapturedPanel').hidden=!active||app.currentScreen!=='result'||delivered||!app.photos.some(Boolean);
-  const review=document.getElementById('guestReviewProgress');review.hidden=!(active&&app.currentScreen==='result'&&!delivered);review.textContent=`${app.photos.filter(Boolean).length} / ${app.slotCount} photos captured`;
+  document.getElementById('guestResultTitle').textContent=delivered?'Your Photo':'Customize Your Photo';
+  for(const id of ['guestDeliveryPanel','guestDeliveryActions'])document.getElementById(id).hidden=reviewing;
+  document.getElementById('guestReviewShots').hidden=delivered;
+  document.getElementById('guestCapturedPanel').hidden=!reviewing||!app.photos.some(Boolean);
+  const review=document.getElementById('guestReviewProgress');review.hidden=!reviewing;review.textContent=`${app.photos.filter(Boolean).length} / ${app.slotCount} photos captured`;
   const starting=app.guestStarting||app.persistenceBusy||app.captureBusy||app.shareBusy;
   document.getElementById('setupStartCaptureBtn').disabled=starting||app.hasPendingWork()||!app.eventConfigurationReady||app.resumeRecoveryPending;
   document.getElementById('newSessionButton').disabled=app.guestStarting||app.persistenceBusy||app.captureBusy;
   document.getElementById('setupOptions').inert=starting;
-  if(active&&!delivered)document.getElementById('confirmSessionBtn').textContent='Confirm, Display Photo & Get QR';
+  if(active&&!delivered)document.getElementById('confirmSessionBtn').textContent='Confirm & Display';
 }
 
 export function syncKioskStatus(app){
   const status=document.getElementById('setupCameraStatus');if(!status)return;
-  let text;
-  if(app.guestStarting)text='Checking camera…';
-  else if(app.eventConfig?.event_mode)text=app.persistenceError||!app.hostPreviewHealthy?'Camera is not ready. Please ask an event staff member for help.':'Camera ready';
-  else if(app.persistenceError)text=app.persistenceError;
-  else if(app.cameraSource!=='host')text='DEMO • Browser preview, not a real camera shutter';
-  else if(app.hostPreviewHealthy)text=`${app.hostCameraStatus?.capabilities?.name||'Host camera'} • Live View`;
-  else text=document.getElementById('hostCameraStatus').textContent||'Connecting to the host camera…';
+  const overlay=document.getElementById('hostCameraStatus');
+  const text=app.cameraSource==='host'
+    ? app.hostCaptureBlocker || (!app.hostPreviewHealthy&&!app.persistenceError&&overlay?.hidden ? 'Connecting camera...' : '')
+    : '';
   if(status.textContent!==text)status.textContent=text;
 }
 
@@ -88,7 +87,7 @@ export function renderRecentPhotos(app){
   const reviewShots=document.getElementById('guestReviewShots');
   if(!app.recentRenderedPhotos||app.recentRenderedPhotos.length!==app.photos.length||app.photos.some((canvas,index)=>canvas!==app.recentRenderedPhotos[index])){
   app.recentRenderedPhotos=app.photos.slice();reviewShots.replaceChildren();
-  app.photos.forEach((canvas,index)=>{if(!canvas)return;const button=document.createElement('button');button.type='button';button.className='guest-review-photo';button.setAttribute('aria-label',`Retake photo ${index+1}`);const image=document.createElement('img');image.src=thumbnail(canvas);image.alt=`Photo ${index+1} in the current session`;const number=document.createElement('span');number.className='guest-review-number';number.textContent=`#${index+1}`;button.append(image,number);button.addEventListener('click',()=>{app.goToScreen('capture');app.triggerSingleRetake(index);});reviewShots.append(button);});
+  app.photos.forEach((canvas,index)=>{if(!canvas)return;const button=document.createElement('button');button.type='button';button.className='guest-review-photo';button.setAttribute('aria-label',`Retake photo ${index+1}`);const image=document.createElement('img');image.src=thumbnail(canvas);image.alt=`Photo ${index+1}`;const number=document.createElement('span');number.className='guest-review-number';number.textContent=`#${index+1}`;button.append(image,number);button.addEventListener('click',()=>{app.goToScreen('capture');app.triggerSingleRetake(index);});reviewShots.append(button);});
   }
   const items=app.recentGalleryItems||[],galleryKey=JSON.stringify(items.map(item=>[item?.id,item?.image_url]));
   if(galleryKey!==app.recentGalleryRenderedKey){app.recentGalleryRenderedKey=galleryKey;
@@ -98,15 +97,16 @@ export function renderRecentPhotos(app){
     const previous=existing.get(item.id);
     if(previous?.querySelector('img')?.getAttribute('src')===item.image_url){next.push(previous);continue;}
     const card=document.createElement('figure');card.className='recent-gallery-card';
-    const image=document.createElement('img');image.src=item.image_url;image.alt='Completed Amazing Race photobooth photo';image.loading='lazy';image.decoding='async';image.dataset.displayId=item.id;
+    const image=document.createElement('img');image.src=item.image_url;image.alt='Amazing Race 2026 event photo';image.loading='lazy';image.decoding='async';image.dataset.displayId=item.id;
     card.append(image);next.push(card);
   }
   for(const card of Array.from(list.children))if(!next.includes(card))card.remove();
   next.forEach((card,index)=>{if(list.children[index]!==card)list.insertBefore(card,list.children[index]||null);});
   }
   const empty=document.getElementById('recentEmptyState');empty.hidden=list.childElementCount>0;
-  empty.textContent=app.recentGalleryError?'Could not load photos. Retrying automatically.':app.recentGalleryLoaded?'No approved photos to display yet.':'Loading recent photos…';
-  const status=document.getElementById('recentGalleryStatus');status.hidden=!app.recentGalleryError;status.textContent=app.eventConfig?.event_mode&&app.recentGalleryError?'The photo feed is temporarily unavailable. Reconnecting…':app.recentGalleryError;
+  empty.hidden=empty.hidden||!!app.recentGalleryError;
+  empty.textContent=app.recentGalleryLoaded?'No photos yet.':'Loading photos…';
+  const status=document.getElementById('recentGalleryStatus');status.hidden=!app.recentGalleryError;status.textContent=app.recentGalleryError?'Could not load photos. Retrying…':'';
 }
 
 export async function refreshRecentGallery(app){
@@ -131,12 +131,12 @@ export async function refreshRecentGallery(app){
 
 export function confirmNewGuestSession(app){
   if(!app.serverSession?.finalized&&(app.photos.some(Boolean)||app.hostCaptureOperation)&&!window.confirm(app.hostCaptureOperation
-    ?'Chuyển sang phiên mới? Yêu cầu camera cũ sẽ được giữ để khôi phục riêng; ảnh đã lưu không bị xóa.'
-    :'Your current photos have not been confirmed. Start a new session?'))return;
+    ?'Your photo is being processed. Start a new session?'
+    :'Your photo has yet to be confirmed. Start a new session?'))return;
   app.startNewGuestSession();
 }
 
 export function confirmResetShots(app){
-  if(app.photos.some(Boolean)&&!window.confirm('Retake all photos in this session?'))return;
+  if(app.photos.some(Boolean)&&!window.confirm('Discard the current shots and start over?'))return;
   return app.resetSessionShots();
 }

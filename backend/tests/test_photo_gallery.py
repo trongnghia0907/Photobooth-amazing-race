@@ -79,7 +79,7 @@ def test_pagination_newest_first_no_duplicates_and_no_share_mutation(settings):
         response=client.get('/gallery/api/photos')
         assert response.headers['cache-control']=='no-store'
         for item in response.json()['items']:
-            assert set(item)=={'id','preview_url','photo_url','width','height','expires_at'}
+            assert set(item)=={'id','preview_url','photo_url','width','height'}
         for private in ('drive_file_id','nonce','token_hash','originals','storage_root','/api/admin'):
             assert private not in response.text
         with repo.db.connect() as db:
@@ -93,7 +93,7 @@ def test_contained_thumbnail_and_existing_photo_detail_download(settings,count):
     with TestClient(create_app(settings)) as client:
         csrf=login(client,settings);sid,display_id,share=publish(client,csrf,count=count)
         item=client.get('/gallery/api/photos').json()['items'][0]
-        assert item['photo_url']==share['image_url'].removesuffix('/image')
+        assert item['photo_url']=='/gallery/photo/'+display_id
         preview=client.get(item['preview_url'])
         assert preview.status_code==200 and preview.headers['content-type']=='image/jpeg'
         assert preview.headers['cache-control']=='no-store' and 'attachment' not in preview.headers
@@ -102,14 +102,17 @@ def test_contained_thumbnail_and_existing_photo_detail_download(settings,count):
         assert abs(image.width/image.height-item['width']/item['height'])<.01
         assert client.get(item['photo_url']).status_code==200
         assert client.get(item['photo_url']+'/image').content==client.get(item['photo_url']+'/download').content
+        assert client.get(item['photo_url']+'/download').content==client.get(share['image_url']).content
         # Revoking event publication leaves the guest's existing private link intact.
         assert approve(client,sid,csrf,approved=False).status_code==200
         assert client.get(item['preview_url']).status_code==404
         assert client.get('/gallery/api/photos').json()['items']==[]
-        assert client.get(item['photo_url']).status_code==200
+        for suffix in ('','/image','/download'):
+            assert client.get(item['photo_url']+suffix).status_code==404
+        assert client.get(share['image_url']).status_code==200
 
 
-def test_only_published_official_finals_with_issued_unexpired_links(settings):
+def test_gallery_eligibility_ignores_qr_expiry_but_keeps_publication_rules(settings):
     with TestClient(create_app(settings)) as client:
         csrf=login(client,settings);repo=client.app.state.repository
         valid,visible,share=publish(client,csrf)
@@ -123,14 +126,26 @@ def test_only_published_official_finals_with_issued_unexpired_links(settings):
             db.execute("UPDATE sessions SET status='editing' WHERE id=?",(unfinished,))
         create(client)  # A new unfinished session can never join the feed.
         result=client.get('/gallery/api/photos').json()
-        assert result['total']==1 and result['items'][0]['id']==visible
-        for _,display_id,_ in cases:
-            assert client.get('/gallery/preview/'+display_id).status_code==404
+        assert result['total']==3
+        visible_ids={item['id'] for item in result['items']}
+        expected_ids={visible,cases[1][1],cases[3][1]}
+        assert visible_ids==expected_ids
+        for sid,display_id,_ in cases:
+            expected=200 if sid in (expired,unissued) else 404
+            assert client.get('/gallery/preview/'+display_id).status_code==expected
+            for suffix in ('','/image','/download'):
+                assert client.get('/gallery/photo/'+display_id+suffix).status_code==expected
         with repo.db.connect() as db:
             db.execute("UPDATE shares SET expires_at='2000-01-01T00:00:00+00:00' WHERE session_id=?",(valid,))
-        assert client.get('/gallery/preview/'+visible).status_code==404
-        empty=client.get('/gallery/api/photos?page=100').json()
-        assert empty=={'items':[],'total':0,'page':1,'pages':1,'page_size':10}
+        assert client.get('/gallery/preview/'+visible).status_code==200
+        assert client.get(share['image_url']).status_code==404
+        assert client.get(share['download_url']).status_code==404
+        last=client.get('/gallery/api/photos?page=100').json()
+        assert last==result
+        for sid in (valid,expired,unissued):
+            assert approve(client,sid,csrf,approved=False).status_code==200
+        assert client.get('/gallery/api/photos?page=100').json()=={
+            'items':[],'total':0,'page':1,'pages':1,'page_size':10}
 
 
 def test_mobile_gateway_isolation_accepts_only_the_enabled_read_only_gallery(settings,monkeypatch):

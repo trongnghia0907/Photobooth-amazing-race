@@ -7,6 +7,28 @@ test.beforeAll(async()=>{
   expect(response.ok()).toBe(true);cookies=(await api.storageState()).cookies;await api.dispose();
 });
 
+async function holdCaptureUntilValidation(page){
+  const state={current:null};
+  await page.route('**/camera/captures',async route=>{
+    const shot={key:route.request().headers()['idempotency-key'],ack:false,checks:0,fail:false};
+    const validated=new Promise(resolve=>{shot.release=resolve;});
+    state.current=shot;
+    await validated;
+    if(shot.fail)return route.fulfill({status:504,json:{error:{code:'timeout',stage:'transfer',uncertain:true,message:'Test JPEG transfer timeout'}}});
+    await route.fallback();
+  });
+  await page.route('**/camera/status',route=>{
+    const shot=state.current;
+    if(!shot||shot.key!==route.request().headers()['idempotency-key'])return route.fallback();
+    shot.checks++;
+    return route.fulfill({json:{
+      capture_progress:{capture_id:shot.key,stage:shot.ack?'receiving_original':'shutter',shutter_acknowledged:shot.ack},
+      camera_progress:{capture_id:shot.key,stage:'jpeg_transfer'},
+    }});
+  });
+  return state;
+}
+
 for(const count of [4,6])test(`paused manual ${count} photos: Complete opens existing Review without confirming`,async({page,context})=>{
   await context.addCookies(cookies);await page.setViewportSize({width:1024,height:768});
   let captures=0,confirmations=0;
@@ -17,13 +39,51 @@ for(const count of [4,6])test(`paused manual ${count} photos: Complete opens exi
   await page.goto('/');await page.waitForFunction(()=>window.app?.hostPreviewHealthy);
   if(count===4){await page.locator('#frameCardLandscape4').click();await expect.poll(()=>page.evaluate(()=>app.persistenceBusy)).toBe(false);}
   await page.locator('#setupStartCaptureBtn').click();
-  await expect(page.locator('#mainCaptureBtnText')).toHaveText('Tạm dừng');
+  await expect(page.locator('#mainCaptureBtnText')).toHaveText('Pause');
   await page.locator('#mainCaptureBtn').click();
   await expect(page.locator('#countdownOverlay')).toBeHidden();
+  const transitions=await holdCaptureUntilValidation(page);
+  const shutter=page.locator('#captureShutter');
+  const openPositions=await shutter.evaluate(element=>['::before','::after'].map(side=>{
+    const matrix=new DOMMatrixReadOnly(getComputedStyle(element,side).transform);
+    return [matrix.m41,matrix.m42];
+  }));
+  expect(openPositions[0][0]).toBeLessThan(0);expect(openPositions[1][0]).toBeGreaterThan(0);
+  expect(openPositions.map(pos=>pos[1])).toEqual([0,0]);
   for(let index=0;index<count;index++){
     await expect(page.locator('#completeCaptureBtn')).toBeHidden();
+    const previous=transitions.current;
     await page.locator('#manualInstantSnapBtn').click();
+    await expect.poll(()=>transitions.current!==previous&&transitions.current?.checks>0).toBe(true);
+    const shot=transitions.current;
+    try{
+      await expect(shutter).toBeHidden();
+      shot.ack=true;
+      await expect(shutter).toHaveClass('is-closed');
+      await expect(shutter).toBeVisible();
+      if(!index){
+        const coverage=await shutter.evaluate(element=>{
+          const rect=element.getBoundingClientRect(),art=getComputedStyle(element,'::before');
+          const safeTop=document.getElementById('boothHeader').getBoundingClientRect().bottom;
+          return {fillsBelowLogos:rect.x===0&&rect.y>=safeTop-1&&rect.width===innerWidth&&Math.abs(rect.bottom-innerHeight)<1,
+            approvedArtwork:art.backgroundImage.includes('Theme-ptb-final'),size:art.backgroundSize};
+        });
+        expect(coverage).toEqual({fillsBelowLogos:true,approvedArtwork:true,size:'100% auto'});
+        await expect(shutter).toHaveCSS('visibility','visible');
+        const closedAt=await shutter.evaluate(async element=>{
+          await Promise.allSettled(element.getAnimations({subtree:true}).map(animation=>animation.finished));
+          return performance.now();
+        });
+        const previousFrame=await page.evaluate(()=>app.hostFrameSequence);
+        shot.release();
+        await expect.poll(()=>page.evaluate(()=>app.hostFrameSequence)).toBeGreaterThan(previousFrame);
+        await expect(shutter).toHaveClass('is-closed');
+        await page.waitForFunction(()=>!document.getElementById('captureShutter').classList.contains('is-closed'));
+        expect(await page.evaluate(closedAt=>performance.now()-closedAt,closedAt)).toBeGreaterThanOrEqual(3950);
+      }
+    }finally{shot.release();}
     await expect(page.locator('#capturedCountBadge')).toHaveText(`${index+1} / ${count} complete`);
+    await expect(shutter).toBeHidden();
     await expect(page.locator('#manualInstantSnapBtn')).toBeEnabled();
   }
   await expect(page.locator('#completeCaptureBtn')).toBeVisible();
@@ -38,6 +98,46 @@ for(const count of [4,6])test(`paused manual ${count} photos: Complete opens exi
   expect(captures).toBe(count);expect(confirmations).toBe(0);
   expect(await page.evaluate(()=>!app.countdownTimerId&&!app.sequenceTimerId&&!app.countdownState)).toBe(true);
 });
+
+test('a JPEG timeout opens the shutter overlay and leaves the failed slot empty',async({page,context})=>{
+  await context.addCookies(cookies);
+  await page.goto('/');await page.waitForFunction(()=>window.app?.hostPreviewHealthy);
+  await page.locator('#setupStartCaptureBtn').click();
+  await page.locator('#mainCaptureBtn').click();
+  const transitions=await holdCaptureUntilValidation(page);
+  await page.locator('#manualInstantSnapBtn').click();
+  await expect.poll(()=>transitions.current?.checks||0).toBeGreaterThan(0);
+  const shot=transitions.current,shutter=page.locator('#captureShutter');
+  try{
+    shot.ack=true;
+    await expect(shutter).toHaveClass('is-closed');
+    shot.fail=true;
+  }finally{shot.release();}
+  await expect(shutter).toBeHidden();
+  await expect(page.locator('#retrySessionSaveBtn')).toBeVisible();
+  await expect(page.locator('#capturedCountBadge')).toHaveText('0 / 6 complete');
+  await expect(page.locator('#screenCapture')).toBeVisible();
+});
+
+test('slow validation keeps the curtain closed past the minimum hold',async({page,context})=>{
+  await context.addCookies(cookies);
+  await page.goto('/');await page.waitForFunction(()=>window.app?.hostPreviewHealthy);
+  await page.locator('#setupStartCaptureBtn').click();
+  await page.locator('#mainCaptureBtn').click();
+  const transitions=await holdCaptureUntilValidation(page);
+  await page.locator('#manualInstantSnapBtn').click();
+  await expect.poll(()=>transitions.current?.checks||0).toBeGreaterThan(0);
+  const shot=transitions.current,shutter=page.locator('#captureShutter');
+  try{
+    shot.ack=true;
+    await expect(shutter).toHaveClass('is-closed');
+    await page.waitForTimeout(4550);
+    await expect(shutter).toHaveClass('is-closed');
+    await expect(page.locator('#capturedCountBadge')).toHaveText('0 / 6 complete');
+  }finally{shot.release();}
+  await expect(shutter).toBeHidden();
+  await expect(page.locator('#capturedCountBadge')).toHaveText('1 / 6 complete');
+});
 for(const count of [4,6])test(`compact pause control: ${count} photos and automatic review`,async({page,context})=>{
   await context.addCookies(cookies);await page.setViewportSize({width:1024,height:768});
   let finalizations=0;page.on('request',r=>{if(r.method()==='POST'&&/\/(complete|finalize)$/.test(r.url()))finalizations++;});
@@ -45,7 +145,7 @@ for(const count of [4,6])test(`compact pause control: ${count} photos and automa
   if(count===4){await page.locator('#frameCardLandscape4').click();await expect.poll(()=>page.evaluate(()=>app.persistenceBusy)).toBe(false);}
   await page.locator('#timerBtn3').click();await page.locator('#setupStartCaptureBtn').click();
   await expect(page.locator('#countdownNumber')).toHaveText('2');
-  await page.locator('#mainCaptureBtn').click();await expect(page.locator('#mainCaptureBtnText')).toHaveText('Tiếp tục chụp');
+  await page.locator('#mainCaptureBtn').click();await expect(page.locator('#mainCaptureBtnText')).toHaveText('Resume Capture');
   await expect(page.locator('body')).not.toHaveClass(/host-capture-fullscreen/);
   await expect(page.locator('#mainCaptureBtn')).toHaveAttribute('aria-pressed','true');
   await expect(page.locator('#hostCaptureExit')).toHaveCount(0);
@@ -54,8 +154,8 @@ for(const count of [4,6])test(`compact pause control: ${count} photos and automa
   await expect(page.locator('#countdownOverlay')).toBeHidden();
   const remaining=await page.locator('#countdownNumber').textContent();await page.waitForTimeout(1300);
   await expect(page.locator('#countdownNumber')).toHaveText(remaining);expect(await page.evaluate(()=>app.photos.filter(Boolean).length)).toBe(0);
-  await page.locator('#mainCaptureBtn').click();await expect(page.locator('#mainCaptureBtnText')).toHaveText('Tạm dừng');
-  await expect(page.locator('body')).toHaveAttribute('data-workflow','review',{timeout:45000});
+  await page.locator('#mainCaptureBtn').click();await expect(page.locator('#mainCaptureBtnText')).toHaveText('Pause');
+  await expect(page.locator('body')).toHaveAttribute('data-workflow','review',{timeout:70000});
   expect(await page.evaluate(()=>app.photos.filter(Boolean).length)).toBe(count);
   expect(await page.evaluate(()=>app.serverSession.finalized)).toBe(false);expect(finalizations).toBe(0);
   await expect(page.locator('#guestReviewShots button')).toHaveCount(count);

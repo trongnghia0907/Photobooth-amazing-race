@@ -78,6 +78,37 @@ def test_built_routes_station_isolation_csrf_and_logout(settings):
         assert client.get(f'/api/sessions/{sid}',headers=a).status_code==200
 
 
+def test_direct_lan_booth_keeps_station_csrf_and_host_authentication(settings):
+    settings=replace(settings,booth_direct_access=True,booth_lan_cidr='192.168.50.0/24',booth_pairing_key='')
+    origin='http://192.168.50.1:8000'
+    direct={'Origin':origin,'X-OSA-Direct':'1'}
+    with TestClient(create_app(settings),base_url=origin,client=('192.168.50.2',123)) as client:
+        assert client.get('/booth').status_code==200
+        assert client.get('/api/booth/me').status_code==401
+        assert client.post('/api/booth/access',headers={**direct,'Origin':'https://other.example'}).status_code==403
+        assert client.post('/api/booth/access',headers={**direct,'X-Forwarded-For':'127.0.0.1'}).status_code==403
+        assert client.post('/api/booth/access',headers={**direct,'Host':'other.example:8000'}).status_code==403
+        station=client.post('/api/booth/access',headers=direct)
+        assert station.status_code==200
+        assert 'HttpOnly' in station.headers['set-cookie']
+        assert client.post('/api/sessions',json={}).status_code==403
+        auth={'Authorization':'Bearer '+secrets.token_hex(32),'X-Booth-CSRF':station.json()['csrf_token']}
+        sid=create(client,auth)
+        assert client.get(f'/api/sessions/{sid}',headers=auth).status_code==200
+        client.cookies.clear()
+        assert client.post('/api/booth/access',headers=direct).status_code==200
+        assert client.get(f'/api/sessions/{sid}',headers=auth).status_code==404
+        assert client.get('/admin').status_code==403
+        assert client.get('/api/admin/sessions',headers={'X-Forwarded-For':'127.0.0.1'}).status_code==403
+    with TestClient(create_app(settings),base_url=origin,client=('198.51.100.2',123)) as remote:
+        assert remote.get('/booth').status_code==403
+        assert remote.post('/api/booth/access',headers=direct).status_code==403
+        assert remote.get(f'/api/sessions/{sid}/camera/frame').status_code==403
+    with TestClient(create_public_app(settings),base_url='https://photos.test') as public:
+        assert public.post('/api/booth/access',headers=direct).status_code==404
+        assert public.get('/event-display').status_code==404
+
+
 @pytest.mark.parametrize(('server','client_ip','connection'),[
     ('192.168.1.40','192.168.1.40','close'),
     ('192.168.1.40','192.168.1.41',None),

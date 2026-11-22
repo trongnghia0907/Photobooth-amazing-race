@@ -21,7 +21,8 @@ async function scenario(count,action){
   const advance=async ms=>{const until=now+ms;for(;;){const entry=[...timers.entries()].filter(([,t])=>t.at<=until).sort((a,b)=>a[1].at-b[1].at)[0];if(!entry)break;now=entry[1].at;timers.delete(entry[0]);entry[1].fn();await flush();}now=until;await flush();};
   const shots=[];let reviews=0,preparations=0;
   const app={photos:Array(count).fill(null),slotCount:count,countdownSeconds:3,captureEpoch:0,singleRetakeIndex:null,guestWorkflowActive:true,currentScreen:'capture',
-    ensureAudio(){},playBeep(){},hasPendingWork:()=>false,prepareSession:async()=>{preparations++;return true;},transitionSession(){},syncPersistenceUI(){},renderCaptureDots(){},renderSixSlotsGrid(){},showToast(){},
+    ensureAudio(){},playBeep(){},hasPendingWork:()=>false,prepareSession:async()=>{preparations++;return true;},
+    checkHostCaptureReadiness:async()=>{},transitionSession(){},syncPersistenceUI(){},renderCaptureDots(){},renderSixSlotsGrid(){},showToast(){},
     capturePhoto:async index=>{shots.push(index);app.photos[index]={};return {accepted:true};},
     reportSaveError:error=>{throw error;},finishCaptureAndGoToResult(){assert.ok(app.photos.every(Boolean));reviews++;app.currentScreen='result';clearTimers(app);},
   };
@@ -34,11 +35,11 @@ async function scenario(count,action){
 
 for(const count of [4,6])test(`${count} shots: fractional countdown pause, gap pause, rapid resume and automatic Review`,()=>scenario(count,async({app,nodes,shots,advance,start,reviews,timers})=>{
   await start();await advance(1500);await start();
-  assert.equal(nodes.mainCaptureBtnText.textContent,'Tiếp tục chụp');assert.equal(app.countdownState.remainingMs,1500);
+  assert.equal(nodes.mainCaptureBtnText.textContent,'Resume Capture');assert.equal(app.countdownState.remainingMs,1500);
   assert.equal(document.body.classList.contains('host-capture-fullscreen'),false);
   assert.equal(nodes.countdownOverlay.classList.contains('hidden'),true);
   const number=nodes.countdownNumber.textContent;await advance(10000);assert.equal(nodes.countdownNumber.textContent,number);assert.equal(shots.length,0);
-  await start();assert.equal(nodes.mainCaptureBtnText.textContent,'Tạm dừng');await advance(1499);assert.equal(shots.length,0);await advance(1);assert.deepEqual(shots,[0]);
+  await start();assert.equal(nodes.mainCaptureBtnText.textContent,'Pause');await advance(1499);assert.equal(shots.length,0);await advance(1);assert.deepEqual(shots,[0]);
   await advance(250);await start();assert.equal(app.countdownState.remainingMs,700);await advance(5000);assert.equal(shots.length,1);
   for(let i=0;i<21;i++)await start();assert.equal(app.sequencePaused,false);
   await advance(699);assert.equal(shots.length,1);await advance(1);assert.equal(nodes.countdownNumber.textContent,3);
@@ -150,11 +151,23 @@ for(const count of [4,6])test(`${count} slots: Resume after a paused manual shot
   assert.equal(app.photos[0],first);assert.equal(reviews(),1);
 }));
 
+async function failHostTransfer(app,slot){
+  const previous=globalThis.fetch;
+  app.sessionContext={id:'test-session',token:'test-owner'};
+  app.ensureSession=async()=>app.sessionContext;
+  app.hostPreviewHealthy=true;app.hostLastFrameAt=performance.now();
+  globalThis.fetch=async()=>({ok:false,json:async()=>({error:{code:'timeout',stage:'transfer',
+    uncertain:true,message:'Test-only transfer failure'}})});
+  try{
+    await assert.rejects(captureHostPhoto(app,slot),/transfer failure/);
+    assert.equal(app.hostCaptureOperation.submitted,true);
+  }finally{globalThis.fetch=previous;}
+}
+
 for(const count of [4,6])for(const paused of [true,false])test(`${count} manual shots, paused=${paused}: failed final transfer retry waits for Complete`,()=>scenario(count,async({app,reviews,nodes})=>{
   app.photos=Array.from({length:count},(_,index)=>index===count-1?null:{slot:index});
   app.cameraSource='host';app.sequencePaused=paused;app.hostPreviewHealthy=false;
-  app.prepareHostCamera=async()=>{throw new Error('Test-only camera connection failure');};
-  await assert.rejects(captureHostPhoto(app,count-1),/connection failure/);
+  await failHostTransfer(app,count-1);
   app.captureHostPhoto=async slot=>{app.photos[slot]={slot,saved:true};app.hostCaptureOperation=null;};
   await retryHostCapture(app);
   assert.equal(app.currentScreen,'capture');assert.equal(reviews(),0);assert.equal(app.sequencePaused,paused);
@@ -166,8 +179,7 @@ for(const count of [4,6])for(const paused of [true,false])test(`${count} manual 
 for(const retake of [false,true])test(`saved capture retry preserves ${retake?'retake':'automatic'} completion intent`,()=>scenario(4,async({app,reviews})=>{
   app.photos=Array.from({length:4},(_,index)=>index===3?null:{slot:index});app.cameraSource='host';
   app.isCapturingSequence=!retake;app.singleRetakeIndex=retake?3:null;
-  app.prepareHostCamera=async()=>{throw new Error('Test-only transfer failure');};
-  await assert.rejects(captureHostPhoto(app,3),/transfer failure/);
+  await failHostTransfer(app,3);
   app.isCapturingSequence=false;
   app.captureHostPhoto=async slot=>{app.photos[slot]={slot,saved:true};app.hostCaptureOperation=null;};
   await retryHostCapture(app);assert.equal(reviews(),1);assert.equal(app.singleRetakeIndex,null);

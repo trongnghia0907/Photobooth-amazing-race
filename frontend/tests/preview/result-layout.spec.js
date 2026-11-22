@@ -55,7 +55,9 @@ for(const count of [4,6])test(`${count}-photo final result: responsive preview, 
   await expect(image).toBeVisible();await expect.poll(()=>image.evaluate(img=>img.naturalWidth)).toBeGreaterThan(0);
   const source=await image.getAttribute('src');
   const imageResponse=await page.request.get(source);expect(imageResponse.ok()).toBe(true);
-  const expectedHash=createHash('sha256').update(await imageResponse.body()).digest('hex');
+  const expectedHash=await page.evaluate(()=>app.serverSession.composite.sha256);
+  expect(createHash('sha256').update(await imageResponse.body()).digest('hex')).toBe(
+    await page.evaluate(()=>app.activeShare.print_ready.sha256));
   for(const close of await page.locator('#toastContainer button').all())await close.click();
   for(const viewport of viewports){
     await page.setViewportSize(viewport);await page.evaluate(()=>document.querySelector('main').scrollTo(0,0));
@@ -95,7 +97,7 @@ for(const count of [4,6])test(`${count}-photo final result: responsive preview, 
   const downloaded=await pending;
   expect(createHash('sha256').update(readFileSync(await downloaded.path())).digest('hex')).toBe(expectedHash);
   await page.locator('#printCopies').selectOption('2');await page.locator('#printPhotoBtn').click();
-  await expect(page.locator('#printStatus')).toContainText('Mock printer received');
+  await expect(page.locator('#printStatus')).toHaveText('Test print request received.');
   await expect(page.locator('#qrExpiryMessage')).toHaveText('Your QR code expires in 24 hours.');
   const savedPhoto=await page.evaluate(()=>app.activeShare.share_url);
   await page.locator('#newSessionButton').click();

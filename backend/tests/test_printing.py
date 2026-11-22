@@ -57,8 +57,8 @@ def test_print_ready_original_intact_qr_decodes_no_overlap(settings,layout,count
         share=state['share'];assert share['qr_embedded']
         original=client.get(f'/api/sessions/{sid}/composites/{cid}/image',headers=headers()).content
         assert hashlib.sha256(original).hexdigest()==state['composite']['sha256']
-        printed=client.get(share['image_url']).content
-        assert printed==client.get(share['download_url']).content
+        printed=client.get(share['image_url'],params={'print_ready':1}).content
+        assert printed==client.get(share['download_url'],params={'print_ready':1}).content
         assert hashlib.sha256(printed).hexdigest()==share['print_ready']['sha256']
         meta=share['print_ready'];img=Image.open(BytesIO(printed))
         assert img.crop((0,0,*size)).tobytes()==Image.open(BytesIO(original)).convert('RGB').tobytes()
@@ -79,7 +79,7 @@ def test_mock_copies_duplicate_keys_exact_guest_file_restart(settings,copies):
         assert enqueue(client,sid,state,copies,operation).json()['id']==job['id']
         assert enqueue(client,sid,state,2 if copies==1 else 1,operation).status_code==409
         mock=settings.storage_root/'mock_prints'/f"{job['id'].replace('-','')}.png"
-        assert mock.read_bytes()==client.get(state['share']['download_url']).content
+        assert mock.read_bytes()==client.get(state['share']['download_url'],params={'print_ready':1}).content
         assert len(list(mock.parent.glob('*.png')))==1
     with TestClient(create_app(settings)) as restarted:
         assert restarted.get(f"/api/sessions/{sid}/print-jobs/{job['id']}",headers=headers()).json()==job

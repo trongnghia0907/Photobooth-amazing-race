@@ -39,7 +39,7 @@ async function setup(page, url=localUrl(5173), expectMock=true) {
   await page.goto(url);
   // Legacy const app is intentionally lexical, modular facade is window.app.
   if(expectMock) await page.waitForFunction(()=>typeof app!=='undefined' && app.isUsingSimulatedCamera);
-  else await page.waitForSelector('#demoModeBadge');
+  else await page.waitForSelector('#setupStartCaptureBtn');
   if(new URL(url).port===String(5174+portOffset)) {
     await page.addStyleTag({content:compiledCSS});
     await page.evaluate(()=>{app.autoPrintPopup=false;app.fullAutoMode=false;app.generateQRCodeForCurrentPhoto=async()=>{};app.triggerHardwareCameraShutter=async()=>{};});
@@ -148,12 +148,13 @@ test('all filters/categories, stickers mouse/touch, text, download and print bou
     await page.locator('#filterGridContainer button').nth(i).click();
     expect(await page.evaluate(()=>app.selectedFilter)).toBe(await page.evaluate(i=>app.filters[i].id,i));
   }
-  await page.locator('#tabBtn_stickers').click();
-  for(let i=0;i<4;i++) {
-    await page.locator('#stickerCategoryBar button').nth(i).click();
-    await page.locator('#stickerItemsGrid button').first().click();
-  }
-  await page.locator('#tabPanel_stickers input[type=file]').setInputFiles(photo);
+  await expect(page.locator('#tabPanel_stickers,#stickerCategoryBar,#stickerItemsGrid')).toHaveCount(0);
+  await page.evaluate(encoded=>{
+    for(const category of Object.values(app.stickerLibrary))app.addEmojiSticker(category[0]);
+    const bytes=Uint8Array.from(atob(encoded),character=>character.charCodeAt(0));
+    app.handleCustomStickerUpload({target:{files:[new File([bytes],'fixture.png',{type:'image/png'})]}});
+    app.setupCanvasStickerInteractions();
+  },photo.buffer.toString('base64'));
   await page.waitForFunction(()=>app.placedStickers.length===5);
   await page.evaluate(()=>{app.placedStickers.forEach((s,i)=>{s.x=.1+i*.18;s.y=.5;});app.renderCompositeCanvas();});
   const box=await page.locator('#compositeCanvas').boundingBox();
@@ -228,8 +229,8 @@ test('built artifact loads on iPad portrait/landscape with functional dynamic ha
   const log=await setup(page,localUrl(4173));
   for(const viewport of [{width:820,height:1180},{width:1180,height:820}]) {
     await page.setViewportSize(viewport);
-    await page.evaluate(()=>{app.goToScreen('result');app.selectFilter('vivid');app.switchCustomTab('stickers');});
-    await page.locator('#stickerItemsGrid button').first().click();
+    await page.evaluate(()=>{app.goToScreen('result');app.selectFilter('vivid');});
+    await expect(page.locator('#stickerItemsGrid')).toHaveCount(0);
     await page.screenshot({path:evidence+`modular-ipad-${viewport.width}.png`});
     expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
   }
@@ -238,7 +239,7 @@ test('built artifact loads on iPad portrait/landscape with functional dynamic ha
 
 test('production artifact refuses simulated and video-frame capture',async({page})=>{
   const log=await setup(page,localUrl(4273),false);
-  await expect(page.locator('#demoModeBadge')).toContainText('Chưa hỗ trợ production');
+  await expect(page.locator('#demoModeBadge')).toHaveCount(0);
   const result=await page.evaluate(()=>{
     const messages=[];
     for(const run of [()=>app.startSimulatedCamera(),()=>app.captureFrameIntoSlot(0),()=>app.handleManualPhotoFilesUpload({target:{files:[]}})]) {
@@ -642,7 +643,7 @@ test('guest A/B pages display and download only their own confirmed photo',async
     await guest.locator('#guestDownload').click();
     const download=await event;
     const {createHash}=await import('node:crypto');
-    expect(createHash('sha256').update(readFileSync(await download.path())).digest('hex')).toBe(state.share.print_ready.sha256);
+    expect(createHash('sha256').update(readFileSync(await download.path())).digest('hex')).toBe(state.session.composite.sha256);
   }
   await guest.screenshot({path:evidence+'phase3-guest-mobile.png'});
   await guest.goto('https://photos.amazingrace.test/p/'+('z'.repeat(43)));

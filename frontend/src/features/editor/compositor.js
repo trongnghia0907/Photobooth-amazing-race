@@ -78,8 +78,13 @@ export function renderCompositeCanvas(app) {
   slots.forEach((slot, idx) => {
     const photoCanvas = app.photos[idx];
     ctx.save();
-    const radius = app.customFrameImg ? Math.min(cw, ch) * 0.008 : Math.min(cw, ch) * 0.018;
-    app.roundRectPath(ctx, slot.x, slot.y, slot.w, slot.h, radius);
+    if (app.customFrameImg) {
+      // Fill behind the PNG's own alpha edge, including asymmetric corners.
+      ctx.beginPath();
+      ctx.rect(slot.x, slot.y, slot.w, slot.h);
+    } else {
+      app.roundRectPath(ctx, slot.x, slot.y, slot.w, slot.h, Math.min(cw, ch) * 0.018);
+    }
     ctx.clip();
 
     if (photoCanvas) {
@@ -93,7 +98,7 @@ export function renderCompositeCanvas(app) {
       ctx.font = `bold ${Math.round(cw * 0.025)}px "Plus Jakarta Sans", sans-serif`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(`Ảnh #${idx + 1}`, slot.x + slot.w / 2, slot.y + slot.h / 2);
+      ctx.fillText(`Photo #${idx + 1}`, slot.x + slot.w / 2, slot.y + slot.h / 2);
     }
     ctx.restore();
   });

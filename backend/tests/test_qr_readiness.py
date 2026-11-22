@@ -1,5 +1,6 @@
 """Focused QR/gateway proofs; synthetic images and isolated SQLite only."""
 from io import BytesIO
+import hashlib
 import json
 import threading
 import time
@@ -101,7 +102,8 @@ def test_async_qr_is_independent_of_print_and_offline_drive(setup,monkeypatch,co
         assert public.get('/p/'+token).status_code==200
         image=public.get('/p/'+token+'/image')
         assert image.content==public.get('/p/'+token+'/download').content
-        assert zxingcpp.read_barcode(Image.open(BytesIO(image.content))).text==ready['share_url']
+        assert hashlib.sha256(image.content).hexdigest()==fingerprint
+        assert zxingcpp.read_barcode(Image.open(BytesIO(image.content))) is None
         assert public.get('/p/'+token+'/status').json()['fingerprint']==fingerprint
         with repo.db.connect() as db:
             source=db.execute('SELECT path FROM composites WHERE id=?',(cid,)).fetchone()[0]

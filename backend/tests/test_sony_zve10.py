@@ -82,7 +82,7 @@ def capture(client,base,slot,operation=None):
 
 def test_selectable_real_transport_fails_closed_without_a_camera(settings):
     app=create_app(settings)
-    def absent(deadline):raise CameraError('disconnected','No Sony WIA camera.',stage='connect')
+    def absent(deadline):raise CameraError('disconnected','No Sony WIA camera.')
     with TestClient(app) as client:
         app.state.camera.adapter.driver.transport.open=absent
         sid=create(client);base=f'/api/sessions/{sid}/camera'
@@ -92,13 +92,16 @@ def test_selectable_real_transport_fails_closed_without_a_camera(settings):
         assert not state['capabilities']['demo'] and not state['capabilities']['hardware_verified']
         result=client.post(base+'/connect',headers=headers())
         assert result.status_code==503 and result.json()['error']['code']=='disconnected'
+        assert result.json()['error']['stage']=='connect'
         assert 'No Sony WIA camera' in result.json()['error']['message']
         assert client.get('/api/admin/camera').status_code==401
         csrf=login(client,settings)
         camera=client.get('/api/admin/camera').json()
         sony=next(row for row in camera['adapters'] if row['id']=='sony_zve10')
         shell=client.get('/admin').text
-        assert sony['label'] in shell and 'PTP driver not implemented' not in shell
+        assert sony['label'].startswith('Sony ZV-E10 — Windows WIA/PTP')
+        assert 'value="sony_zve10">Sony ZV-E10 — Windows WIA/PTP, chưa xác minh phần cứng' in shell
+        assert 'PTP driver not implemented' not in shell
         assert client.put('/api/admin/camera/config',headers=csrf,json={'adapter':'mock'}).status_code==200
         assert client.put('/api/admin/camera/config',headers=csrf,json={'adapter':'sony_zve10'}).status_code==200
         selected=client.get('/api/admin/camera').json()['capabilities']

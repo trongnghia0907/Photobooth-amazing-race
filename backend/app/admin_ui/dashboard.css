@@ -2,3 +2,26 @@
 @media(max-width:1000px){.dashboard-shell{grid-template-columns:180px minmax(0,1fr)}.main-content{padding:20px}.two-column{grid-template-columns:1fr}.recent-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.kpi-grid{gap:8px}.kpi-grid article{padding:12px}}
 @media(max-width:650px){.dashboard-shell{display:block}.sidebar{position:sticky;height:auto;padding:12px;gap:10px;z-index:20}.brand strong{font-size:16px}.brand small,.sidebar-note{display:none}.sidebar nav{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:3px}.sidebar nav button{font-size:11px;padding:6px;text-align:center}.main-content{padding:16px}.kpi-grid{grid-template-columns:1fr 1fr}.page-header h1{font-size:22px}.photo-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.photo-card img{height:150px}#login{margin:5vh 16px}.status-list{grid-template-columns:100px minmax(0,1fr)}}
 .detail-composites article{display:flex;flex-wrap:wrap;gap:12px}.detail-composites article>p,.detail-composites article>.actions{width:100%}.image-preview{margin:0;flex:1 1 180px;min-width:0}.image-preview img{width:100%;height:240px;object-fit:contain}
+
+/* Operator workspace uses the event palette on consistently readable surfaces. */
+:root{color:#102e47;background:#eef6fa;--brand:#08667e;--line:#c9dfe8}
+.sidebar{background:#102e47;color:#d0e6f1;border-right:1px solid #204258}
+.sidebar nav button{color:#d0e6f1;min-height:44px;overflow-wrap:anywhere}
+.sidebar nav button:hover{background:#194760}
+.sidebar nav button[aria-current=page]{background:#096980;color:#fff}
+.page-header{padding-bottom:14px;margin-bottom:18px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+h1,.kpi-grid strong{color:#102e47}
+.card,.kpi-grid article{border-radius:16px;box-shadow:0 3px 12px #102e470b}
+.badge{background:#d8f0f5;color:#084f66}
+.badge.error{background:#fef0ed;color:#a72f20}
+button.secondary{color:#124f68;border-color:#b8d5e1}
+.status-list{gap:0 14px}
+.status-list dt,.status-list dd{padding-block:8px;border-bottom:1px solid #e3eff3;line-height:1.45}
+.diag-PASS,.diag-FAIL,.diag-UNSUPPORTED,.diag-NOT_TESTED{font-weight:750}
+input:focus-visible,select:focus-visible,button:focus-visible,a:focus-visible,summary:focus-visible{
+  outline:3px solid #9355a8;outline-offset:2px;
+}
+@media(max-width:650px){
+  .sidebar nav button{min-height:44px}
+  .form-row label{min-width:min(100%,180px)}
+}

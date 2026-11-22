@@ -12,7 +12,7 @@ function busy(app, value) {
 }
 
 function failed(app, error) {
-  app.persistenceError = error.message;
+  app.persistenceError = error.clear_pending===true ? '' : error.message;
   app.saveState = 'error';
   app.transitionSession('FAIL');
   app.syncPersistenceUI();
@@ -28,12 +28,15 @@ export function syncPersistenceUI(app) {
   app.syncPrintUI();
   const message = document.getElementById('sessionSaveStatus');
   if (!message) return;
-  message.textContent = app.persistenceError || (app.persistenceBusy ? 'Waiting for the backend to save your photo…'
-    : app.saveState === 'saved' ? 'Your composite has been saved and the session is complete on the laptop.'
-    : app.sessionContext?.id ? `Saved ${app.serverSession?.photos.length || 0}/${app.slotCount} captured photos. The composite is saved only after confirmation.`
-    : 'A new session will be created when you start capturing.');
+  message.textContent = app.persistenceError
+    ? (app.hostCaptureOperation
+      ? (app.hostCaptureOperation.savedOnHost
+        ? 'Photo saved on Host. Select Retry Save to load it on this screen.'
+        : app.persistenceError)
+      : 'Could not save your photo. Try again or ask event staff.')
+    : app.persistenceBusy ? 'Saving photo…'
+    : app.saveState === 'saved' ? 'Your photo was saved.' : app.hostCaptureBlocker || '';
   message.dataset.state = app.saveState;
-  if(app.eventConfig?.event_mode)message.textContent=app.persistenceError?'Your photo could not be saved. Please ask an event staff member for help.':app.persistenceBusy?'Saving your photo…':app.saveState==='saved'?'Your photo has been saved.':app.sessionContext?.id?`${app.photos.filter(Boolean).length}/${app.slotCount} photos captured. Review and confirm your photo.`:'Choose a layout and start capturing when you are ready.';
   const retry = document.getElementById('retrySessionSaveBtn');
   retry.classList.toggle('hidden', !app.persistenceError);
   retry.disabled = app.persistenceBusy;
@@ -41,14 +44,14 @@ export function syncPersistenceUI(app) {
   confirm.classList.toggle('hidden', app.currentScreen !== 'result'||(app.guestWorkflowActive&&!!app.serverSession?.finalized));
   confirm.disabled = app.persistenceBusy || app.captureBusy || (!app.serverSession?.finalized && !app.photos.every(Boolean)) || !!pending(app);
   const locked=!!(app.serverSession?.finalized||app.finalOperation?.confirmationStarted);
-  confirm.textContent = app.serverSession?.finalized ? 'Photo Confirmed — Check QR' : 'Confirm & Save Photo on Laptop';
+  confirm.textContent = app.serverSession?.finalized ? 'Check QR Code' : 'Confirm & Display';
   for(const node of document.querySelectorAll('[id^="tabPanel_"], [id^="tabBtn_"]')){node.inert=locked;if('disabled' in node)node.disabled=locked;}
   const canvas=document.getElementById('compositeCanvas');if(canvas)canvas.inert=locked;
   const notice=document.getElementById('finalPhotoNotice');if(notice)notice.hidden=!locked;
   const qrConfirm=document.getElementById('confirmQRCodeBtn');
   if(qrConfirm) {
     qrConfirm.disabled=app.persistenceBusy || app.captureBusy || app.shareBusy;
-    qrConfirm.textContent=app.persistenceBusy ? 'Saving photo & creating QR…' : app.saveState==='saved' ? 'Create / Retry QR' : '✓ Confirm & Create QR';
+    qrConfirm.textContent=app.persistenceBusy ? 'Saving photo…' : app.saveState==='saved' ? 'Retry' : 'Confirm Photo';
   }
 }
 
@@ -175,7 +178,7 @@ async function saveDeletion(app, operation) {
 
 export async function removeStoredPhotos(app, slot = null) {
   if (app.persistenceBusy || app.captureBusy || pending(app)) {
-    app.showToast('Retry saving the pending photo before deleting or resetting it.', 'info');
+    app.showToast('Retry saving the photo before removing it.', 'info');
     return false;
   }
   app.pendingDeletion = { slot, key: key() };
@@ -267,7 +270,7 @@ export async function confirmAndSaveSession(app,publishToEvent=false) {
     app.transitionSession('SAVED');
     app.persistenceError = '';
     await app.generateQRCodeForCurrentPhoto(true);
-    app.showToast('The composite has been saved and the session is complete on the laptop.', 'success');
+    app.showToast('Your photo was saved.', 'success');
   } catch (error) {
     // A known failed confirmation is still an editable working session. If
     // the response was merely lost (or status cannot be read), keep the chosen
@@ -293,7 +296,7 @@ export function forgetSession(app) {
   const retiringCamera=!!app.hostCaptureOperation&&!app.pendingPhotos.some(Boolean)&&!app.pendingDeletion
     &&!app.finalOperation?.confirmationStarted&&!app.resumeRecoveryPending;
   if (app.persistenceBusy || app.captureBusy || app.hostCaptureRequestActive || app.shareBusy || (pending(app)||app.persistenceError)&&!retiringCamera) {
-    app.showToast('This session still has unsaved data. Retry saving before starting a new guest session.', 'info');
+    app.showToast('Retry saving your photo before starting a new session.', 'info');
     return false;
   }
   app.stopPrintPolling();

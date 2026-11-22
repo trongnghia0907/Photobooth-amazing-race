@@ -32,7 +32,7 @@ def test_no_public_loopback_or_link_local_address_is_advertised(address):
     with pytest.raises(ValueError):run_host.lan_ipv4(address)
 
 
-def test_hotspot_listener_localhost_lan_pairing_auth_and_single_instance(tmp_path):
+def test_hotspot_listener_localhost_lan_direct_access_and_single_instance(tmp_path):
     try:lan=run_host.detect_lan_ipv4()
     except (OSError,ValueError):pytest.skip('No private default-route interface connected')
     # Use 8000 when free. Never stop or disturb an operator's existing server.
@@ -43,6 +43,9 @@ def test_hotspot_listener_localhost_lan_pairing_auth_and_single_instance(tmp_pat
     env=launch_environment(tmp_path/'runtime')
     for name in ('HOST_BIND','HOST_LAN_IP','PUBLIC_BASE_URL','HOST_BEHIND_PROXY','PUBLIC_GATEWAY'):
         env.pop(name,None)
+    subnet=run_host.windows_lan_cidr(lan)
+    if not subnet:pytest.skip('Could not discover the private interface prefix')
+    env.update(BOOTH_LAN_CIDR=subnet,BOOTH_PAIRING_KEY='')
     command=[sys.executable,str(ROOT/'scripts/run_host.py'),'--profile','lan','--no-prompt',
              '--port',str(port),'--storage-root',str(tmp_path/'runtime')]
     flags={'creationflags':subprocess.CREATE_NO_WINDOW} if os.name=='nt' else {}
@@ -66,9 +69,9 @@ def test_hotspot_listener_localhost_lan_pairing_auth_and_single_instance(tmp_pat
                 login=local.post(f'http://127.0.0.1:{port}/api/admin/login',headers={'X-OSA-Login':'1'},json={
                     'username':env['ADMIN_USERNAME'],'password':env['ADMIN_PASSWORD']})
                 assert login.status_code==200
-                pair=remote.post('/api/booth/pair',headers={'X-OSA-Pair':'1'},json={'key':env['BOOTH_PAIRING_KEY']})
-                assert pair.status_code==200
-                auth={'X-Booth-CSRF':pair.json()['csrf_token'],'Authorization':'Bearer '+secrets.token_urlsafe(32)}
+                access=remote.post('/api/booth/access',headers={'Origin':f'http://{lan}:{port}','X-OSA-Direct':'1'})
+                assert access.status_code==200,access.text
+                auth={'X-Booth-CSRF':access.json()['csrf_token'],'Authorization':'Bearer '+secrets.token_urlsafe(32)}
                 created=remote.post('/api/sessions',headers={**auth,'Idempotency-Key':secrets.token_urlsafe(24)},json={'layout':'landscape_4','slot_count':4})
                 assert created.status_code==200,created.text
                 base='/api/sessions/'+created.json()['session_id']+'/camera'

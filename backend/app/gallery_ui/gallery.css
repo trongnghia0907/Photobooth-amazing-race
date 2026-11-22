@@ -1,12 +1,14 @@
 :root {
   font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  color: #16365b;
+  color: #102e47;
   background: #62bff2;
   font-synthesis: none;
 }
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
 .gallery-page {
+  --theme-top: clamp(6px, 1dvh, 12px);
+  --brand-safe-top: calc(var(--theme-top) + max(38px, 4.5vw) + 8px);
   margin: 0;
   min-height: 100vh;
   min-height: 100dvh;
@@ -14,6 +16,7 @@
   flex-direction: column;
   position: relative;
   isolation: isolate;
+  background: linear-gradient(#7bc8ee, #55bce4) top / 100% 100vh no-repeat #55bce4;
 }
 .gallery-page::before {
   content: "";
@@ -21,7 +24,8 @@
   inset: 0;
   z-index: -1;
   pointer-events: none;
-  background: url('/p/assets/theme.png') center top / 100% auto no-repeat;
+  background: url('/gallery/assets/theme-gallery.png') center var(--theme-top) / 100% auto no-repeat;
+  mask-image: linear-gradient(#000 calc(var(--theme-top) + 56.25vw - 20px), transparent calc(var(--theme-top) + 56.25vw));
 }
 /* Keep the page heading accessible without duplicating the background poster. */
 .event-header {
@@ -35,27 +39,14 @@
 main {
   width: 100%;
   flex: 1;
-  /* Logos end near y=115 in the 1630px-wide artwork; reserve that scaled area. */
-  padding: calc(7.1vw + 20px) clamp(12px, 1.5vw, 30px) 0;
+  /* The embedded title and logos reach about 4.5% of the artwork's width. */
+  padding: var(--brand-safe-top) clamp(10px, 1vw, 20px) 0;
   min-width: 0;
 }
-#galleryStatus {
-  width: fit-content;
-  max-width: 100%;
-  margin: 0 0 8px;
-  padding: 4px 10px;
-  border-radius: 10px;
-  background: #e9f9ffe0;
-  color: #16365b;
-  text-align: center;
-  font-size: 12px;
-  line-height: 1.4;
-}
-#galleryStatus:empty { display: none; }
 .photo-grid {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: clamp(10px, 1vw, 18px);
+  gap: clamp(8px, .8vw, 14px);
   min-width: 0;
   align-items: stretch;
 }
@@ -65,19 +56,16 @@ main {
   justify-content: center;
   min-width: 0;
   margin: 0;
-  padding: 0;
-  border: 0;
-  background: transparent;
+  aspect-ratio: 0.9;
   text-decoration: none;
-  border-radius: 8px;
 }
 .photo-card img {
   display: block;
   width: 100%;
-  height: auto;
-  max-height: 24vw;
+  height: 100%;
+  min-height: 0;
   object-fit: contain;
-  filter: drop-shadow(0 3px 6px #123c8340);
+  filter: drop-shadow(0 2px 5px #123c8340);
 }
 .pagination {
   display: flex;
@@ -85,7 +73,7 @@ main {
   align-items: center;
   flex-wrap: wrap;
   gap: 6px;
-  margin: 10px 0 8px;
+  margin: 18px 0 12px;
 }
 .pagination:empty { display: none; }
 .pagination a, .pagination span {
@@ -144,14 +132,14 @@ footer {
 }
 button, a { -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
 a:focus-visible, button:focus-visible { outline: 3px solid #9355a8; outline-offset: 4px; }
+@media (max-width: 1599px) {
+  .photo-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
 @media (max-width: 1199px) {
-  .photo-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
-  .photo-card img { max-height: none; }
+  .photo-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 @media (max-width: 699px) {
-  main { padding: clamp(112px, 13vh, 240px) 12px 0; }
-  .photo-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-  .gallery-page::before { background-size: cover; background-position: 55% top; }
+  .photo-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .pagination { gap: 5px; }
   .pagination a, .pagination span { padding: 7px 10px; }
 }

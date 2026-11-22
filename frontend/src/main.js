@@ -12,26 +12,16 @@ import { loadEventConfiguration } from './services/event-config.js';
 const app = createApp();
 bindEvents(app);
 app.initializeKioskUI();
-const badge = document.createElement('div');
-badge.id = 'demoModeBadge';
-badge.className = 'bg-amber-100 text-amber-800 text-center text-xs font-bold p-2';
-badge.textContent = defaults.hostCameraEnabled
-  ? 'Host camera • Checking backend configuration and camera connection…'
-  : defaults.demoEnabled
-  ? 'DEMO • Photos are saved, private QR codes and print queue use the backend • No physical camera shutter'
-  : 'Host camera build is required for camera control. Ask event staff to run build:host.';
-document.body.insertBefore(badge, document.querySelector('header'));
 if (defaults.demoEnabled || defaults.hostCameraEnabled) {
-  await initializeBoothAccess();
-  if(await loadEventConfiguration(app)){
-  await app.restoreSavedSession();
-  await app.refreshRecentGallery();
-  app.loadSharingConfig();
-  app.startPublicQRMonitor();
-  app.loadPrintConfig();
-  app.init().catch(error => {
-    console.error(error);
-    app.showToast(error.message, 'error');
-  });
+  if ((await initializeBoothAccess()) !== false && await loadEventConfiguration(app)) {
+    await app.restoreSavedSession();
+    await app.refreshRecentGallery();
+    app.loadSharingConfig();
+    app.startPublicQRMonitor();
+    app.loadPrintConfig();
+    app.init().catch(error => {
+      console.error(error);
+      app.showToast(error.message, 'error');
+    });
   }
 }

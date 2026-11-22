@@ -34,9 +34,10 @@ class CapturedPhoto:
 
 
 class CameraError(Exception):
-    def __init__(self, code, message, *, stage='capture', uncertain=False):
+    def __init__(self, code, message, *, stage='capture', uncertain=False, shutter_dispatched=None):
         super().__init__(message)
         self.code, self.stage, self.uncertain = code, stage, uncertain
+        self.shutter_dispatched = shutter_dispatched
 
 
 class CameraAdapter(Protocol):

@@ -10,6 +10,9 @@ from fastapi.testclient import TestClient
 from app.main import create_app
 from app.services.camera.base import CameraError
 from test_sony_ptp import FakeWia, jpeg
+from test_sony_mpo import mpo
+from test_sony_cancel import load_cli
+from app.services.camera.sony_ptp import SonyPtpDriver
 from test_sony_zve10 import settings, connect, capture
 from test_sessions import create, headers, key
 
@@ -76,6 +79,64 @@ def test_empty_retired_capture_and_late_old_jpeg_never_enter_new_slots(settings)
             rows=db.execute('SELECT native_sha256 FROM camera_captures WHERE session_id=?',(b,)).fetchall()
         assert all(row[0]!=hashlib.sha256(late).hexdigest() for row in rows)
         assert wire.shots==2
+
+
+@pytest.mark.parametrize('payload',['filename_only','mpo','corrupt','interrupted'])
+def test_operator_preserves_buffer_without_relabeling_or_retrying(settings,monkeypatch,payload):
+    wire=FakeWia()
+    with TestClient(create_app(settings)) as client:
+        driver=client.app.state.camera.adapter.driver;driver.transport=wire
+        a,_,_,cid=pending(client,wire)
+        previous=wire.photos.pop()[0]
+        b,base=new_session(client,a)
+        assert capture(client,base,0).status_code==200
+        journal,_=driver._paths(cid)
+        record=json.loads(journal.read_bytes())
+        record.pop('transfer_attempted')  # Legacy audited empty receipt remains retired after later observations.
+        journal.write_text(json.dumps(record))
+        data=previous if payload=='filename_only' else mpo()
+        wire.photos.append((data,999))
+        blocked=capture(client,base,1).json()['error']
+        assert blocked['code']=='recovery_required' and blocked['shutter_dispatched'] is False
+        assert wire.photos[0][0]==data and wire.shots==2
+    original_receipt=journal.read_bytes()
+    cli=load_cli()
+    monkeypatch.setattr(cli,'SonyPtpDriver',lambda storage,timeout:SonyPtpDriver(storage,timeout,transport=wire))
+    monkeypatch.setattr(cli,'probe_windows',lambda timeout:{'status':'QUERIED','devices':[{'original_zv_e10_name_match':True,'pnp_status':'OK'}]})
+    def recover():
+        return cli.cancel(settings.storage_root,cid,confirm_discard=False,preserve_buffer=True)
+    offset=len(wire.commands)
+    if payload in ('corrupt','interrupted'):
+        wire.fault='bad_jpeg' if payload=='corrupt' else 'transfer_timeout'
+        with pytest.raises(CameraError):recover()
+        commands=len(wire.commands)
+        with pytest.raises(CameraError):recover()
+        assert all(op!=0x1009 for op,_,_ in wire.commands[commands:])
+        assert bool(list((journal.parent/'unassigned').glob('*.bin')))==(payload=='corrupt')
+        # An empty buffer after an incomplete operator transfer is insufficient.
+        wire.photos.clear()
+        with TestClient(create_app(settings)) as client:
+            client.app.state.camera.adapter.driver.transport=wire
+            base=connect(client,create(client))
+            assert capture(client,base,0).json()['error']['code']=='camera_recovery_pending'
+        assert wire.shots==2
+    else:
+        preserved=recover()
+        assert preserved['file_info_before']==0x8001 and preserved['file_info_after']==0
+        assert preserved['attribution']=='unassigned' and preserved['matched_capture_ids']==[]
+        original=settings.storage_root/preserved['original_path']
+        assert original.read_bytes()==data and preserved['sha256']==hashlib.sha256(data).hexdigest()
+        assert recover()==preserved and journal.read_bytes()==original_receipt
+        assert sum(op==0x1009 for op,_,_ in wire.commands[offset:])==1
+        assert all(op!=0x9207 for op,_,_ in wire.commands[offset:])
+        with TestClient(create_app(settings)) as client:
+            camera=client.app.state.camera;camera.adapter.driver.transport=wire
+            sid=create(client);base=connect(client,sid)
+            for slot in range(2):assert capture(client,base,slot).status_code==200
+            with camera.repo.db.connect() as db:
+                hashes=[row[0] for row in db.execute('SELECT native_sha256 FROM camera_captures WHERE session_id=?',(sid,))]
+            assert preserved['sha256'] not in hashes or payload=='filename_only'  # FakeWia repeats its color fixtures.
+        assert wire.shots==4 and original.read_bytes()==data
 
 
 def test_current_session_retry_keeps_same_shutter_and_original(settings):
@@ -259,6 +320,9 @@ def test_empty_buffer_does_not_prove_uncertain_shutter_finished(settings,restart
         base=connect(client,b);operation=key()
         result=capture(client,base,0,operation)
         assert result.json()['error']['code']=='camera_recovery_pending',result.text
+        assert result.json()['error']['shutter_dispatched'] is False
+        progress=client.get(base+'/status',headers=headers(operation)).json()['capture_progress']
+        assert progress['stage']=='blocked_before_shutter' and not progress['shutter_acknowledged']
         assert wire.shots==1
         journal,_=camera.adapter.driver._paths(cid)
         assert json.loads(journal.read_text())['status']!='superseded'

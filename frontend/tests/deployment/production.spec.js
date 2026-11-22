@@ -67,14 +67,13 @@ test('built same-origin kiosk: six shots + retake + finalize + QR + two copies +
     }
     await expect(page.locator('#screenResult')).toBeVisible();
     await page.locator('#filterGridContainer button').nth(3).click();
-    await page.locator('#tabBtn_stickers').click();
-    await page.locator('#stickerItemsGrid button').first().click();
+    await expect(page.locator('#stickerItemsGrid')).toHaveCount(0);
     await expect(page.locator('#guestFrameAdjust')).toHaveCount(0);
     await expect(page.locator('#settingsModal')).toHaveCount(0);
     await page.locator('#confirmSessionBtn').click();
     await expect(page.locator('#qrStatusBadge')).toContainText('QR sẵn sàng',{timeout:20000});
     await expect(page.locator('body')).toHaveAttribute('data-workflow','delivery');
-    await expect(page.locator('#guestReviewEditor')).toBeHidden();
+    await expect(page.locator('#guestReviewEditor')).toHaveCount(0);
     await expect(page.locator('#guestDeliveryActions')).toBeVisible();
     expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
     if(count===6)await page.screenshot({path:path.join(root,'docs/screenshots/guest-automatic-delivery.png'),fullPage:true});
@@ -98,7 +97,7 @@ test('built same-origin kiosk: six shots + retake + finalize + QR + two copies +
     await page.evaluate(()=>app.toggleMirror());
     await expect(page.locator('#hostCameraPreview')).not.toHaveClass(/mirror-video/);
     await page.evaluate(()=>app.toggleMirror());
-    await expect(page.locator('#eventCaptureHeading')).toHaveText('AMAZING RACE 2026');
+    await expect(page.locator('#boothHeader .font-display-title,#eventCaptureHeading')).toHaveCount(0);
     await expect(page.locator('[id^="stepNav"]')).toHaveCount(0);
     const geometry=await page.evaluate(()=>{const a=document.getElementById('setupWorkspace').getBoundingClientRect(),b=document.getElementById('setupRecentSidebar').getBoundingClientRect();return {ratio:a.width/(a.width+b.width),left:a.left,right:b.left};});
     expect(geometry.ratio).toBeCloseTo(.75,1);expect(geometry.left).toBeLessThan(geometry.right);

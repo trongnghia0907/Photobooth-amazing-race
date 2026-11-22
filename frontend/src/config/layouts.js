@@ -5,6 +5,8 @@ export const layouts = Object.freeze({
   landscape_4: { id: 'landscape_4', slotCount: 4, canvasWidth: 1800, canvasHeight: 1200, aspectRatio: 3 / 2, columns: 2, rows: 2, enabled: true },
 });
 
+export const defaultSlotMetrics = Object.freeze({ padX: 6, padTop: 7, padBottom: 15, gap: 3 });
+
 export function createEmptyPhotos(layoutId) {
   const layout = layouts[layoutId];
   if (!layout) throw new Error(`Unknown layout: ${layoutId}`);

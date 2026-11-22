@@ -44,8 +44,8 @@ for(const count of [4,6])test(`QR recovers after HTTPS outage, ${count} saved ph
   expect(await page.evaluate(()=>app.serverSession.status)).toBe('completed');
   outage=true;
   await page.evaluate(async()=>{app.qrRetryFailures=11;await app.refreshPublicQR();});
-  await expect(page.getByRole('button',{name:'Retry sharing',exact:true})).toBeEnabled();
-  outage=false;await page.getByRole('button',{name:'Retry sharing',exact:true}).click();
+  await expect(page.getByRole('button',{name:'Retry Sharing',exact:true})).toBeEnabled();
+  outage=false;await page.getByRole('button',{name:'Retry Sharing',exact:true}).click();
   await expect(page.locator('#qrCodeContainer')).toHaveAttribute('data-phase','ready');
   expect(await page.evaluate(()=>app.activeShare.share_url.split('/p/')[1])).toBe(token);
   console.log(`Confirm → displayed QR (${count} photos, simulated HTTPS recovery): ${elapsed} ms`);

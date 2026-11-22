@@ -1,5 +1,6 @@
-import { layouts } from '../../config/layouts.js';
+import { defaultSlotMetrics, layouts } from '../../config/layouts.js';
 /** Extracted from legacy; explicit app context supplied by bootstrap. */
+const inferredSlotsByFrame = new WeakMap();
 
 export function handleCustomFrameUpload(app, event) {
   const file = event.target.files && event.target.files[0];
@@ -23,10 +24,10 @@ export function handleCustomFrameUpload(app, event) {
       const detected = app.detectSixTransparentRegions(img);
       if (detected && detected.length === app.slotCount) {
         app.detectedSlots = detected;
-        app.showToast(`Đã tải Frame "${file.name}" và tự động khớp chính xác ${app.slotCount} ô trống!`, 'success');
+        app.showToast(`Frame "${file.name}" loaded with ${app.slotCount} matched slots.`, 'success');
       } else {
         app.detectedSlots = null;
-        app.showToast(`Đã tải Frame "${file.name}" thành công!`, 'success');
+        app.showToast(`Frame "${file.name}" loaded.`, 'success');
       }
 
       app.updateFrameSelectionUI();
@@ -50,7 +51,26 @@ export function clearCustomFrame(app) {
     app.renderCompositeCanvas();
     app.scheduleQRCodeUpdate();
   }
-  app.showToast('Đã quay về khung xanh AMAZING RACE 2026 mặc định.', 'info');
+  app.showToast('Default frame restored.', 'info');
+}
+
+export function applyConfiguredHostFrame(app) {
+  const hostFrame = app.hostFrames?.[app.presetLayout];
+  const frame = hostFrame?.slot_count === app.slotCount ? hostFrame : null;
+  app.customFrameImg = frame?.image ?? null;
+  app.customFrameName = frame?.name ?? '';
+  app.detectedSlots = frame?.slots?.length === app.slotCount
+    ? frame.slots.map(([x, y, w, h]) => ({ x, y, w, h }))
+    : null;
+  if (frame?.image && !app.detectedSlots) {
+    if (!inferredSlotsByFrame.has(frame.image)) {
+      inferredSlotsByFrame.set(frame.image, app.detectSixTransparentRegions(frame.image));
+    }
+    app.detectedSlots = inferredSlotsByFrame.get(frame.image);
+  }
+  app.slotMetrics = frame
+    ? { padX: frame.pad_x, padTop: frame.pad_top, padBottom: frame.pad_bottom, gap: frame.gap }
+    : { ...defaultSlotMetrics };
 }
 
 export function selectPresetLayout(app, layout) {
@@ -74,10 +94,8 @@ export function selectPresetLayout(app, layout) {
     app.pendingPhotos = Array(app.slotCount).fill(null);
     app.updateCaptureScreenUI();
   }
-  app.customFrameImg = null;
-  app.customFrameName = '';
-  app.detectedSlots = null;
   app.presetLayout = layout;
+  app.applyConfiguredHostFrame();
   app.updateFrameSelectionUI();
   if(app.currentScreen==='home')app.saveSetupLayout();
   if (app.currentScreen === 'result') {
@@ -99,6 +117,16 @@ export function updateFrameSelectionUI(app) {
   const homeFrameDesc = document.getElementById('homeFrameDesc');
   const homeFrameThumb = document.getElementById('homeFrameThumb');
 
+  for (const [layout, card] of [['grid2x3', card2x3], ['landscape_4', card4]]) {
+    const preview = card?.querySelector('.host-frame-preview');
+    if (!preview) continue;
+    const frame = app.hostFrames[layout];
+    preview.parentElement.classList.toggle('has-host-frame', Boolean(frame));
+    if (frame && preview.getAttribute('src') !== frame.image.getAttribute('src')) {
+      preview.src = frame.image.src;
+    }
+  }
+
   const baseClass = 'layout-choice-card p-4 rounded-2xl border-2 transition-all cursor-pointer bg-white border-brand-100';
   const selectedClass = 'layout-choice-card p-4 rounded-2xl border-2 transition-all cursor-pointer bg-brand-50/90 border-brand-600 shadow-sm';
   [cardCustom, card2x3, card3x2, card4].forEach(el => {
@@ -111,14 +139,14 @@ export function updateFrameSelectionUI(app) {
     if (cardCustom) cardCustom.className = selectedClass;
     if (badge) badge.classList.remove('hidden');
     if (calibrateBtn) calibrateBtn.classList.add('hidden');
-    if (subtext) subtext.textContent = `Frame tùy chỉnh: ${app.customFrameName} (${app.customFrameImg.width}×${app.customFrameImg.height}px)`;
+    if (subtext) subtext.textContent = `Custom frame: ${app.customFrameName} (${app.customFrameImg.width}×${app.customFrameImg.height}px)`;
     if (homeFrameName) homeFrameName.textContent = `Frame ${app.customFrameName}`;
     if (homeFrameDesc) homeFrameDesc.textContent = app.detectedSlots ? `Automatically aligned ${app.slotCount} transparent slots` : `Custom ${app.slotCount}-photo layout`;
     if (homeFrameThumb) homeFrameThumb.innerHTML = `<img src="${app.customFrameImg.src}" class="w-full h-full object-contain" />`;
   } else {
     if (badge) badge.classList.add('hidden');
     if (calibrateBtn) calibrateBtn.classList.add('hidden');
-    if (subtext) subtext.textContent = 'Nhấn để tải file Frame PNG cá nhân của bạn (Tự động khớp 6 ô trống)';
+    if (subtext) subtext.textContent = 'Upload a PNG frame (automatically detects photo slots)';
     if (homeFrameThumb) homeFrameThumb.innerHTML = `<span class="text-xs font-bold text-brand-600">AR</span>`;
 
     if (app.presetLayout === 'grid2x3') {

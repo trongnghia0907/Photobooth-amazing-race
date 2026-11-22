@@ -39,6 +39,18 @@ def detect_lan_ipv4():
         return lan_ipv4(route.getsockname()[0])
 
 
+def windows_lan_cidr(address):
+    powershell=shutil.which('powershell.exe') if os.name=='nt' else None
+    if not powershell:return ''
+    try:
+        result=subprocess.run([powershell,'-NoProfile','-NonInteractive','-Command',
+            f'Get-NetIPAddress -AddressFamily IPv4 -IPAddress {address} -ErrorAction Stop | Select-Object -First 1 -ExpandProperty PrefixLength'],
+            capture_output=True,text=True,timeout=8,check=True)
+        return str(ipaddress.IPv4Interface(f'{address}/{int(result.stdout.strip())}').network)
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return ''
+
+
 def main():
     parser=argparse.ArgumentParser(description='Run built AMAZING RACE 2026 kiosk + API without Vite')
     parser.add_argument('--env-file',type=Path)
@@ -121,7 +133,7 @@ def main():
         env[name]=value
     credential('ADMIN_USERNAME','Host username: ',1)
     credential('ADMIN_PASSWORD','Host password (12+ characters, hidden): ',12)
-    credential('BOOTH_PAIRING_KEY','Kiosk pairing code (16+ characters, hidden): ',16)
+    env.setdefault('BOOTH_LAN_CIDR','')
     if args.profile=='lan':
         auto_lan=not args.lan_ip or args.lan_ip=='auto'
         try:args.lan_ip=detect_lan_ipv4() if auto_lan else lan_ipv4(args.lan_ip)
@@ -129,6 +141,14 @@ def main():
         bind=args.bind or '0.0.0.0'
         if bind!='0.0.0.0':parser.error('LAN profile requires --bind 0.0.0.0 to serve both localhost and hotspot devices; use --profile local for loopback only.')
         env.update(APP_ENV='development',ALLOW_LAN_HTTP='true',PUBLIC_BASE_URL=args.public_url or env.get('PUBLIC_BASE_URL') or f'http://{args.lan_ip}:{args.port}')
+        env['BOOTH_LAN_CIDR']=env['BOOTH_LAN_CIDR'] or windows_lan_cidr(args.lan_ip)
+        if env['BOOTH_LAN_CIDR']:
+            try:
+                if ipaddress.IPv4Address(args.lan_ip) not in ipaddress.IPv4Network(env['BOOTH_LAN_CIDR']):
+                    raise ValueError('BOOTH_LAN_CIDR does not contain the selected LAN IP')
+            except ValueError as error:parser.error(str(error))
+        else:
+            print('LAN subnet could not be determined. Booth uses the pairing code; set BOOTH_LAN_CIDR to the private event subnet for direct access.',flush=True)
     elif args.profile=='https':
         origin=args.public_url or env.get('PUBLIC_BASE_URL','')
         if not origin.startswith('https://'):parser.error('--public-url HTTPS origin required')
@@ -142,6 +162,9 @@ def main():
         bind=args.bind or '127.0.0.1'
         if bind!='127.0.0.1':parser.error('Local profile uses 127.0.0.1; use --profile lan explicitly for LAN exposure')
         env.update(APP_ENV='development',ALLOW_LAN_HTTP='false',PUBLIC_BASE_URL=args.public_url or env.get('PUBLIC_BASE_URL') or f'http://localhost:{args.port}')
+    direct_booth=not args.behind_proxy and (args.profile=='local' or bool(env['BOOTH_LAN_CIDR']))
+    env['BOOTH_DIRECT_ACCESS']=str(direct_booth).lower()
+    if not direct_booth:credential('BOOTH_PAIRING_KEY','Kiosk pairing code (16+ characters, hidden): ',16)
     # Validate config without printing sensitive values.
     validated=subprocess.run([str(python),'-c','from app.config import Settings; from app.services.sharing import public_origin; s=Settings.from_environment(); public_origin(s.public_base_url,allow_local=s.app_env=="development",allow_lan=s.allow_lan_http)'],cwd=ROOT/'backend',env=env)
     if validated.returncode:return validated.returncode
@@ -230,7 +253,7 @@ def main():
         else:
             private_host=args.lan_ip if args.profile=='lan' else args.tls_host if tls else 'localhost'
             print(f'Host Dashboard (laptop only): {scheme}://localhost:{args.port}/admin',flush=True)
-            print(f'Event display (separate Host-issued code): {scheme}://{private_host}:{args.port}/event-display',flush=True)
+            print(f'Event display: {scheme}://{private_host}:{args.port}/event-display',flush=True)
             gallery_url=f'{scheme}://{private_host}:{args.port}/gallery'
         gallery_status='enabled' if env_flag('PUBLIC_GALLERY_ENABLED') else 'disabled; set PUBLIC_GALLERY_ENABLED=true and restart'
         print(f'Photo Gallery: {gallery_url} ({gallery_status})',flush=True)
@@ -248,7 +271,9 @@ def main():
                 except (OSError,ValueError):continue
                 if current_ip!=args.lan_ip:
                     args.lan_ip=current_ip
-                    print(f'LAN address changed. Open http://{current_ip}:{args.port}/booth on iPad. The listener remains active; no second server was started. Existing public QR configuration is unchanged.',flush=True)
+                    if direct_booth and ipaddress.IPv4Address(current_ip) not in ipaddress.IPv4Network(env['BOOTH_LAN_CIDR']):
+                        print('LAN subnet changed. Restart Host on the new event network to enable direct Booth access.',flush=True)
+                    else:print(f'LAN address changed. Open http://{current_ip}:{args.port}/booth on iPad. The listener remains active; no second server was started. Existing public QR configuration is unchanged.',flush=True)
         if not any(stop.exists() for _,stop,_ in children):
             raise RuntimeError('A service stopped unexpectedly; all owned services are stopping. Inspect logs before restarting.')
     except KeyboardInterrupt:pass

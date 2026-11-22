@@ -58,18 +58,22 @@ export async function refreshPublicQR(app) {
   try{
     const configuration=await app.loadSharingConfig(true);
     if(app.currentScreen!=='result'||!currentShare(app))return;
+    // Starting the tunnel is an expected wait, not a failed photo verification.
+    // It can take longer than the normal retry budget on a new connection.
+    if(configuration.tunnel_status==='connecting'){
+      app.activeShare.public_ready=false;
+      showQRUnavailable(app,'','tunnel_connecting');
+      app.syncPrintUI?.();
+      return;
+    }
     if(!configuration.configured||configuration.local_only||configuration.lan_only){
-      app.qrRetryFailures=(app.qrRetryFailures||0)+1;
+      if(!configuration.configured)app.qrRetryFailures=(app.qrRetryFailures||0)+1;
       app.activeShare.public_ready=false;
       showQRUnavailable(app,'','configuration_error');return;
     }
-    if(['connecting','disconnected'].includes(configuration.tunnel_status)){
+    if(configuration.tunnel_status==='disconnected'){
       app.activeShare.public_ready=false;app.syncPrintUI?.();
-      app.qrRetryFailures=(app.qrRetryFailures||0)+1;
-      showQRUnavailable(app,configuration.tunnel_status==='connecting'
-        ? 'Connecting to Cloudflare. Your photo is saved; the phone QR will update when HTTPS is ready.'
-        : 'The tunnel is disconnected. Your photo is still saved; restart the mobile QR script to get a new HTTPS address.',
-      'tunnel_'+configuration.tunnel_status);
+      showQRUnavailable(app,'','tunnel_disconnected');
       return;
     }
     const context=app.sessionContext,operation=app.finalOperation;
@@ -108,13 +112,13 @@ export function scheduleQRCodeUpdate(app) {
 
 export function setQRProvider(app) {
   // Preserve the old handler name; external providers cannot be re-enabled.
-  app.showToast('The QR code was created by the backend, and your photo is saved on the laptop.', 'info');
+  app.showToast('The QR code will appear when your photo is ready to share.', 'info');
 }
 
 export async function confirmPhotoAndGenerateQR(app) {
   if (app.persistenceBusy || app.captureBusy || app.shareBusy) return;
   if ((!app.serverSession?.finalized && !app.photos.every(Boolean)) || app.hasPendingWork()) {
-    app.showToast('Capture all required photos first. If an error occurs, select Retry Save.', 'info');
+    app.showToast('Finish taking the photos. Select Retry Save if needed.', 'info');
     return;
   }
   if (!confirmedSnapshot(app)) return app.confirmAndSaveSession();
@@ -140,6 +144,11 @@ export async function generateQRCodeForCurrentPhoto(app, forceNotify=false, auto
   document.getElementById('qrLoadingOverlay')?.classList.remove('hidden');
   try {
     const configuration=await app.loadSharingConfig(true);
+    if(configuration.tunnel_status==='connecting'){
+      if(app.activeShare)app.activeShare.public_ready=false;
+      showQRUnavailable(app,'','tunnel_connecting');
+      return;
+    }
     if(!configuration.configured) throw new Error(configuration.message);
     const result=await request(`/sessions/${app.sessionContext.id}/finalize`,{
       method:'POST',token:app.sessionContext.token,key:operation.finalizeKey,preferAsync:true,
@@ -155,10 +164,8 @@ export async function generateQRCodeForCurrentPhoto(app, forceNotify=false, auto
     if(!share || share.composite_id!==operation.compositeId || !allowed
         || !share.qr_image_url?.startsWith('/p/')) throw new Error('The backend did not confirm a valid share URL.');
     app.activeShare=share;
-    if(share.local_only||share.lan_only||['connecting','disconnected'].includes(configuration.tunnel_status)){
-      app.qrRetryFailures=(app.qrRetryFailures||0)+1;
-      showQRUnavailable(app,'',configuration.tunnel_status==='connecting'?'tunnel_connecting':
-        configuration.tunnel_status==='disconnected'?'tunnel_disconnected':'configuration_error');
+    if(share.local_only||share.lan_only||configuration.tunnel_status==='disconnected'){
+      showQRUnavailable(app,'',configuration.tunnel_status==='disconnected'?'tunnel_disconnected':'configuration_error');
       return;
     }
     if(!share.local_only&&!share.lan_only){

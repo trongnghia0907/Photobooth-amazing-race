@@ -17,7 +17,7 @@ export function setCapturePaused(app,paused) {
   app.updateCaptureScreenUI();
 }
 
-export async function startOrContinueSequence(app) {
+export async function startOrContinueSequence(app,{preflightChecked=false}={}) {
   app.ensureAudio();
   if(app.persistenceBusy||app.captureBusy||app.sequenceStarting)return;
   if (app.isCapturingSequence) {
@@ -35,9 +35,13 @@ export async function startOrContinueSequence(app) {
   app.sequenceStarting=true;app.updateCaptureScreenUI();
   try{
   if (!await app.prepareSession() || epoch !== app.captureEpoch) return;
-  if (app.cameraSource === 'host' && !app.hostPreviewHealthy) {
-    try { await app.prepareHostCamera(); }
-    catch(error) { app.reportSaveError(error);return; }
+  if (app.cameraSource === 'host') {
+    try {
+      if(!app.hostPreviewHealthy)await app.prepareHostCamera();
+      if(epoch!==app.captureEpoch)return;
+      if(!preflightChecked)await app.checkHostCaptureReadiness();
+    }
+    catch(error) { if(epoch===app.captureEpoch)app.reportSaveError(error);return; }
     if (epoch !== app.captureEpoch) return;
   }
 

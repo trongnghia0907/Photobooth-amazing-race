@@ -88,7 +88,7 @@ test('pending capture shows stage progress without competing preview or duplicat
     await page.locator('#manualInstantSnapBtn').click();
     await expect.poll(()=>polls).toBeGreaterThanOrEqual(1);const before=frames,checked=polls;
     await expect.poll(()=>polls).toBeGreaterThan(checked);
-    await expect(page.locator('#hostCameraStatus')).toContainText('Waiting for the original JPEG');
+    await expect(page.locator('#hostCameraStatus')).toHaveText('Waiting for the original JPEG from the camera…');
     expect(frames).toBe(before);expect(captures).toBe(1);expect(connects).toBe(0);
     release();await page.waitForFunction(()=>app.photos.filter(Boolean).length===1&&!app.captureBusy);
     expect(captures).toBe(1);
@@ -99,10 +99,130 @@ test('actual camera-disconnect recovery stops after three retries',async({page})
   let connects=0;
   page.on('request',r=>{if(r.method()==='POST'&&r.url().endsWith('/camera/connect'))connects++;});
   await page.route('**/camera/frame',r=>r.fulfill({status:503,contentType:'application/json',body:JSON.stringify({error:{code:'disconnected',message:'TEST camera is unavailable',stage:'preview'}})}));
-  await expect(page.locator('#hostCameraStatus')).toContainText('Đã dừng kết nối lại',{timeout:25000});
-  expect(connects).toBe(3);
+  await expect(page.locator('#hostCameraStatus')).toContainText('Camera disconnected',{timeout:25000});
+  await expect.poll(()=>connects,{timeout:25000}).toBe(3);
+  await expect.poll(()=>page.evaluate(()=>app.hostCameraState)).toBe('disconnected');
   expect(await page.evaluate(()=>app.hostPreviewTimer)).toBe(null);
   expect(await page.evaluate(()=>app.photos.filter(Boolean).length)).toBe(0);
+});
+
+test('a hard WIA error reopens preview once without taking a photo',async({page})=>{
+  let connects=0,captures=0,injected=false;
+  page.on('request',request=>{
+    if(request.url().endsWith('/camera/connect'))connects++;
+    if(request.url().endsWith('/camera/captures'))captures++;
+  });
+  await page.route('**/camera/frame',route=>{
+    if(injected)return route.fallback();
+    injected=true;
+    return route.fulfill({status:503,json:{error:{code:'transport_failed',message:'WIA root failed',stage:'preview'}}});
+  });
+  await expect.poll(()=>connects).toBe(1);
+  await page.waitForFunction(()=>app.hostPreviewHealthy);
+  expect(connects).toBe(1);
+  expect(captures).toBe(0);
+});
+
+test('an unresolved receipt reports that no new shutter was sent and keeps the key',async({page})=>{
+  const keys=[];
+  await page.route('**/camera/captures',route=>{
+    keys.push(route.request().headers()['idempotency-key']);
+    return route.fulfill({status:503,json:{error:{code:'camera_recovery_pending',stage:'transfer',shutter_dispatched:false,
+      message:'The previous Sony capture is unresolved.'}}});
+  });
+  await page.evaluate(()=>app.goToScreen('capture'));
+  await page.locator('#manualInstantSnapBtn').click();
+  await expect.poll(()=>page.evaluate(()=>app.persistenceError)).toBe(
+    'The previous Sony capture is unresolved. No new shutter command was sent.');
+  await expect(page.locator('#capturedCountBadge')).toHaveText('0 / 6 complete');
+  await page.locator('#retrySessionSaveBtn').click();
+  await expect.poll(()=>keys.length).toBe(2);
+  expect(keys[0]).toBeTruthy();
+  expect(keys[1]).toBe(keys[0]);
+});
+
+test('proven preflight failure clears retry state without changing saved photos',async({page})=>{
+  let captures=0;
+  await page.route('**/camera/captures',route=>{
+    captures++;
+    return route.fulfill({status:503,json:{error:{code:'camera_mode',stage:'capture',
+      shutter_dispatched:false,clear_pending:true,message:'Use Single Shooting.'}}});
+  });
+  await page.evaluate(()=>app.goToScreen('capture'));
+  await page.locator('#manualInstantSnapBtn').click();
+  await expect.poll(()=>page.evaluate(()=>!app.hostCaptureOperation&&!app.captureBusy)).toBe(true);
+  expect(await page.evaluate(()=>app.persistenceError)).toBe('');
+  await expect(page.locator('#capturedCountBadge')).toHaveText('0 / 6 complete');
+  expect(captures).toBe(1);
+});
+
+test('missing WIA device explains USB checks and stops automatic reconnects',async({page})=>{
+  let connects=0;
+  await page.route('**/camera/connect',route=>{
+    connects++;
+    return route.fulfill({status:503,json:{error:{code:'wia_device_unavailable',stage:'connect',
+      message:'Check Device Manager and your USB data cable.'}}});
+  });
+  await page.route('**/camera/frame',route=>route.fulfill({status:503,json:{error:{code:'disconnected',stage:'preview'}}}));
+  await expect(page.locator('#hostCameraStatus')).toHaveText('Check Device Manager and your USB data cable.');
+  expect(await page.evaluate(()=>app.hostPreviewTimer)).toBe(null);
+  expect(connects).toBe(1);
+});
+
+test('Booth Camera uses the Host and blocks an abandoned receipt before countdown',async({page})=>{
+  let captures=0;
+  page.on('request',request=>{if(request.url().endsWith('/camera/captures'))captures++;});
+  await page.route(url=>url.pathname.endsWith('/camera/status')&&url.searchParams.get('check_capture')==='true',
+    route=>route.fulfill({status:503,json:{error:{code:'camera_recovery_pending',stage:'capture',
+      message:'Camera capture is blocked by an earlier shot.',shutter_dispatched:false}}}));
+  expect(await page.evaluate(()=>app.cameraSource)).toBe('host');
+  await page.locator('#setupStartCaptureBtn').click();
+  await expect(page.locator('#setupCameraStatus')).toHaveText('Camera capture is blocked by an earlier shot.');
+  expect(await page.evaluate(()=>app.currentScreen)).toBe('home');
+  expect(await page.evaluate(()=>app.countdownState)).toBe(null);
+  await expect(page.locator('#retrySessionSaveBtn')).toBeHidden();
+  expect(captures).toBe(0);
+});
+
+test('Retry Save loads the same saved slot without submitting another shot',async({page})=>{
+  const posts=[];let failImage=true;
+  page.on('request',request=>{
+    if(request.url().endsWith('/camera/captures'))posts.push({
+      key:request.headers()['idempotency-key'],data:request.postDataJSON()});
+  });
+  await page.route('**/photos/*/image',route=>{
+    if(!failImage)return route.fallback();
+    failImage=false;
+    return route.fulfill({status:503});
+  });
+  await page.evaluate(()=>app.goToScreen('capture'));
+  await page.locator('#manualInstantSnapBtn').click();
+  await expect(page.locator('#sessionSaveStatus')).toContainText('Photo saved on Host.');
+  await expect(page.locator('#capturedCountBadge')).toHaveText('0 / 6 complete');
+  await page.locator('#retrySessionSaveBtn').click();
+  await expect(page.locator('#capturedCountBadge')).toHaveText('1 / 6 complete');
+  expect(posts).toEqual([{key:posts[0].key,data:{slot_index:0}},
+    {key:posts[0].key,data:{slot_index:0,recovery_only:true}}]);
+  expect(await page.evaluate(()=>app.serverSession.photos.map(photo=>photo.slot_index))).toEqual([0]);
+});
+
+test('a busy connection stops visibly and can be retried in the same session',async({page})=>{
+  let busy=true,connects=0,captures=0;
+  page.on('request',r=>{if(r.method()==='POST'&&r.url().endsWith('/camera/captures'))captures++;});
+  await page.route('**/camera/connect',route=>{
+    connects++;
+    return busy?route.fulfill({status:409,json:{error:{code:'busy',message:'WIA busy',stage:'connect'}}}):route.fallback();
+  });
+  await page.evaluate(async()=>{app.releaseHostCamera();await app.hostReleaseRequest;await app.prepareHostCamera().catch(()=>{});});
+  const id=await page.evaluate(()=>app.sessionContext.id);
+  await expect(page.locator('#hostCameraStatus')).toHaveText('Camera is busy. Select Start Capturing to retry.',{timeout:25000});
+  expect(connects).toBe(4);
+  expect(await page.evaluate(()=>app.hostPreviewTimer)).toBe(null);
+  busy=false;
+  await page.evaluate(()=>app.prepareHostCamera());
+  await expect(page.locator('#hostCameraPreview')).toBeVisible();
+  expect(await page.evaluate(()=>app.sessionContext.id)).toBe(id);
+  expect(captures).toBe(0);
 });
 
 test('persistent preview busy stops polling and manual reconnect reuses the lease',async({page})=>{
@@ -112,8 +232,9 @@ test('persistent preview busy stops polling and manual reconnect reuses the leas
     frames++;
     return busy?route.fulfill({status:409,json:{error:{code:'busy',message:'WIA busy'}}}):route.fallback();
   });
-  await expect(page.locator('#hostCameraStatus')).toContainText('Camera vẫn bận',{timeout:18000});
-  expect(frames).toBe(6);
+  await expect(page.locator('#hostCameraStatus')).toContainText('Camera unavailable',{timeout:18000});
+  expect(await page.evaluate(()=>app.hostPreviewDiagnostics.busyFrames)).toBe(6);
+  expect(frames).toBeGreaterThanOrEqual(6);
   expect(await page.evaluate(()=>app.hostPreviewTimer)).toBe(null);
   busy=false;
   await page.evaluate(()=>app.prepareHostCamera());

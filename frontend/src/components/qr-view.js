@@ -4,8 +4,8 @@ export function copyQRLink(app) {
   const input=document.getElementById('qrExternalUrlInput');
   if(!input || !app.lastUploadedUrl) return;
   input.select();
-  try { document.execCommand('copy'); app.showToast('Private photo link copied.', 'success'); }
-  catch { app.showToast('Could not copy automatically.', 'info'); }
+  try { document.execCommand('copy'); app.showToast('Photo link copied.', 'success'); }
+  catch { app.showToast('Could not copy the link.', 'info'); }
 }
 
 export function renderQRCodeVisual(app,targetUrl) {
@@ -42,10 +42,10 @@ export function renderQRCodeVisual(app,targetUrl) {
   container.dataset.phase='loading';
   app.qrPhase='loading';
   document.getElementById('qrExpiryMessage').hidden=true;
-  const description=document.getElementById('qrDescriptionText');description.hidden=false;description.textContent='Preparing your QR code…';
+  const description=document.getElementById('qrDescriptionText');description.hidden=true;
   document.getElementById('qrLoadingOverlay')?.classList.remove('hidden');
   const image=document.createElement('img');
-  image.alt='QR code for your confirmed photobooth photo';
+  image.alt='QR code to download your photo';
   image.className='guest-qr-image';
   image.onload=()=>markReady(image);
   image.onerror=()=>{

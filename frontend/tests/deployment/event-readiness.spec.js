@@ -32,7 +32,7 @@ test('rehearsal recovers shots and final after reload, resets only confirmed idl
     await page.evaluate(()=>app.showToast('<img src=x onerror="window.toastInjection=true">','info'));
     await expect(page.locator('#toastContainer img')).toHaveCount(0);
     expect(await page.evaluate(()=>window.toastInjection)).toBeUndefined();
-    await expect(page.locator('#demoModeBadge')).toContainText('DEMO');
+    await expect(page.locator('#demoModeBadge')).toHaveCount(0);
     await page.evaluate(()=>{app.selectPresetLayout('landscape_4');app.countdownSeconds=1;});
     await page.locator('#setupStartCaptureBtn').click();
     await expect(page.locator('body')).toHaveAttribute('data-workflow','review',{timeout:45000});
@@ -59,8 +59,8 @@ test('rehearsal recovers shots and final after reload, resets only confirmed idl
     await page.route('**/api/booth/config',route=>route.fulfill({contentType:'application/json',body:JSON.stringify({
       operation_mode:'event',event_mode:true,mock_hardware_allowed:false,guest_idle_seconds:0,gallery_poll_seconds:5})}));
     await page.reload();await expect(page.locator('body')).toHaveAttribute('data-event-mode','true');
-    await expect(page.locator('#demoModeBadge')).toBeHidden();
-    await expect(page.locator('#setupCameraStatus')).toContainText('Camera chưa sẵn sàng');
+    await expect(page.locator('#demoModeBadge')).toHaveCount(0);
+    await expect(page.locator('#hostCameraStatus')).toHaveText('Camera gặp sự cố');
     await expect(page.locator('#hostCameraTools')).toBeHidden();await expect(page.locator('#setupDeviceOptions')).toBeHidden();
     await page.locator('#setupStartCaptureBtn').click();
     await expect(page.locator('#sessionSaveStatus')).toContainText('nhân viên hỗ trợ');

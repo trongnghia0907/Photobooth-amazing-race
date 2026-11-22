@@ -21,7 +21,8 @@ from test_printing import login
 @pytest.fixture
 def settings(tmp_path):
     return Settings(tmp_path/'runtime',app_env='development',public_base_url='http://localhost:8000',
-                    admin_username='gallery-host',admin_password=secrets.token_urlsafe(24))
+                    admin_username='gallery-host',admin_password=secrets.token_urlsafe(24),
+                    event_display_pin_required=True)
 
 
 def saved(client,count=4,color='green'):
@@ -46,6 +47,23 @@ def enable(client,csrf):
     result=client.post('/event-display/unlock',headers={'X-OSA-Display':'1'},json={'code':code})
     assert result.status_code==200,result.text
     return code
+
+
+def test_open_display_has_no_pin_but_still_only_serves_approved_composites(settings):
+    settings=replace(settings,event_display_pin_required=False)
+    with TestClient(create_app(settings)) as host:
+        display = host
+        assert '<html lang="en">' in host.get('/event-display').text
+        sid,_=saved(host)
+        assert host.get('/event-display/api/photos').json()=={'items':[]}
+        assert host.post('/api/admin/event-display/access').status_code==401
+        csrf=login(host,settings)
+        assert approve(host,sid,csrf).status_code==200
+        item,=host.get('/event-display/api/photos').json()['items']
+        assert host.get(item['image_url']).headers['content-type']=='image/png'
+        assert host.put('/api/admin/event-display/photos/'+sid,headers=csrf,json={'approved':False}).status_code==200
+        assert host.get(item['image_url']).status_code==404
+        assert host.get('/event-display/api/photos').json()=={'items':[]}
 
 
 def test_default_private_consent_required_and_only_official_final(settings):

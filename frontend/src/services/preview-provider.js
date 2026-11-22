@@ -23,8 +23,8 @@ export async function startCameraStream(app, deviceId = '', notifyOnSuccess = fa
     } catch (permissionOrHardwareErr) {
       app.startSimulatedCamera(
         notifyOnSuccess
-          ? 'Camera access is blocked. Allow camera access in the address bar or use simulation mode.'
-          : 'Webcam access was not granted — simulation mode has started automatically so you can try all features.'
+          ? 'Allow camera access in your browser.'
+          : 'Camera access unavailable. Showing demo preview.'
       );
     }
   }
@@ -51,7 +51,7 @@ export async function attachRealStreamToVideo(app, notifyOnSuccess) {
   }
 
   if (notifyOnSuccess) {
-    app.showToast('Video preview connected (DEMO; original camera capture is not integrated).', 'success');
+    app.showToast('', 'success');
   }
 }
 

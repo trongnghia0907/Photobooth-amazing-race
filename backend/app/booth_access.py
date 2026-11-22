@@ -4,6 +4,8 @@ import hmac
 import secrets
 import threading
 import time
+from ipaddress import ip_address, ip_network
+from urllib.parse import urlsplit
 from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
@@ -24,7 +26,9 @@ class RateLimit:
 
 
 class BoothAccess:
-    def __init__(self,repo):self.repo=repo;self.settings=repo.settings;self.limiter=RateLimit()
+    def __init__(self,repo):
+        self.repo=repo;self.settings=repo.settings;self.limiter=RateLimit()
+        self.lan=ip_network(self.settings.booth_lan_cidr) if self.settings.booth_lan_cidr else None
     @property
     def enabled(self):return bool(self.settings.frontend_dist)
     @staticmethod
@@ -33,6 +37,28 @@ class BoothAccess:
         self.limiter.check(('pair',ip),5)
         if not self.enabled:raise HTTPException(404,'Kiosk pairing chưa được bật')
         if not hmac.compare_digest(key.encode(),self.settings.booth_pairing_key.encode()):raise HTTPException(401,'Mã ghép kiosk không đúng')
+        return self.issue(existing)
+
+    def require_direct_network(self, request):
+        peer=request.client
+        server=request.scope.get('server')
+        forwarded=any(name=='forwarded' or name.startswith('x-forwarded-') for name in request.headers)
+        if peer and server and not forwarded:
+            try:
+                remote=ip_address(peer.host)
+                local=ip_address(server[0])
+                authority=urlsplit('//'+request.headers['host'])
+                port=authority.port or (443 if request.url.scheme=='https' else 80)
+                if port==server[1] and not (authority.username or authority.path or authority.query or authority.fragment):
+                    if remote.is_loopback and local.is_loopback and authority.hostname in ('localhost',str(local)):
+                        return
+                    if self.lan and remote in self.lan and local in self.lan and authority.hostname==str(local):
+                        return
+            except (KeyError, ValueError):
+                pass
+        raise HTTPException(403,'This Booth is available on the event network.')
+
+    def issue(self, existing=''):
         tag=hashlib.sha256(self.settings.booth_pairing_key.encode()).hexdigest();stamp=time.time()
         with self.repo.db.connect() as db:
             previous=db.execute('SELECT 1 FROM booth_stations WHERE token_hash=? AND auth_tag=?',(hashlib.sha256(existing.encode()).hexdigest(),tag)).fetchone() if existing else None
@@ -41,6 +67,7 @@ class BoothAccess:
         return token
 
     def require(self,request,mutation=False):
+        if self.settings.booth_direct_access:self.require_direct_network(request)
         token=request.cookies.get(COOKIE,'')
         with self.repo.db.connect() as db:
             row=db.execute('SELECT * FROM booth_stations WHERE token_hash=? AND auth_tag=? AND expires_at>?',
@@ -74,6 +101,12 @@ class BoothAccess:
 class Pairing(BaseModel):key:str=Field(min_length=1,max_length=1000)
 
 
+def station_response(response,service,token):
+    response.set_cookie(COOKIE,token,path='/api',httponly=True,samesite='strict',secure=service.settings.app_env!='development',max_age=12*3600)
+    response.headers['Cache-Control']='no-store'
+    return {'required':True,'csrf_token':service.csrf(token)}
+
+
 @router.get('/config')
 def configuration(request:Request):
     access=request.app.state.booth_access
@@ -87,10 +120,24 @@ def configuration(request:Request):
 @router.post('/pair')
 def pair(request:Request,payload:Pairing,response:Response):
     if request.headers.get('X-OSA-Pair')!='1':raise HTTPException(403,'Thiếu pairing header')
-    service=request.app.state.booth_access;token=service.pair(payload.key,request.client.host,request.cookies.get(COOKIE,''))
-    response.set_cookie(COOKIE,token,path='/api',httponly=True,samesite='strict',secure=service.settings.app_env!='development',max_age=12*3600)
-    response.headers['Cache-Control']='no-store'
-    return {'required':True,'csrf_token':service.csrf(token)}
+    service=request.app.state.booth_access
+    if service.settings.booth_direct_access:service.require_direct_network(request)
+    token=service.pair(payload.key,request.client.host,request.cookies.get(COOKIE,''))
+    return station_response(response,service,token)
+
+
+@router.post('/access')
+def direct_access(request:Request,response:Response):
+    service=request.app.state.booth_access
+    if not service.enabled or not service.settings.booth_direct_access:
+        raise HTTPException(404,'Direct Booth access is unavailable.')
+    service.require_direct_network(request)
+    expected=f"{request.url.scheme}://{request.headers['host']}"
+    if request.headers.get('Origin')!=expected or request.headers.get('X-OSA-Direct')!='1':
+        raise HTTPException(403,'Open this Booth directly from the event network.')
+    service.limiter.check(('direct',request.client.host),12)
+    token=service.issue(request.cookies.get(COOKIE,''))
+    return station_response(response,service,token)
 
 
 @router.get('/me')

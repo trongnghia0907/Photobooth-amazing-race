@@ -2,6 +2,7 @@ const $=id=>document.getElementById(id);
 let csrf='',timer,offset=0,total=0,jobsOffset=0,refreshing=false,maxCopies=3,detailEpoch=0;
 const retryOperations=new Map();
 let frameDetectedSlots=[],noticeTimer,selectedPage='overview',authEpoch=0;
+let frameItems=[];
 let latestCamera=null,diagnosticSignature=null,galleryKey='',jobsKey='',recentKey='';
 const titles={overview:'Tổng quan',photos:'Ảnh đã chụp',prints:'Hàng đợi in',camera:'Camera',frames:'Khung ảnh',event:'Màn hình sự kiện',network:'Mạng & QR',system:'Hệ thống'};
 const message=text=>{clearTimeout(noticeTimer);$('message').textContent=text;$('message').hidden=!text;if(text)noticeTimer=setTimeout(()=>{$('message').hidden=true;},7000);};
@@ -39,15 +40,39 @@ function exclusive(id,action){$(id).addEventListener('click',async()=>{const nod
 function imageLink(card,url,label){const preview=el('figure');preview.className='image-preview';const img=el('img');img.src=url;img.alt=label;preview.append(img);const link=el('a','Tải '+label);link.href=url+'?download=true';preview.append(link);card.append(preview);}
 function renderFrames(data){
   const list=$('frameList');if(!list)return;list.replaceChildren();
-  for(const frame of data.items||[]){const card=el('article');card.append(el('strong',frame.name||frame.id));card.append(el('p',`${frame.layout||'preset'} • ${frame.slot_count||'?'} ảnh • ${frame.configured?'Đã cấu hình':'Chưa cấu hình'}${frame.layout==='grid3x2'?' • LEGACY — Guest không dùng':''}`));if(frame.image_url){const img=el('img');img.src=frame.image_url+'?t='+Date.now();img.alt=frame.name||'Frame';card.append(img);}list.append(card);}
+  for(const frame of data.items||[]){const card=el('article');card.append(el('strong',frame.name||frame.id));card.append(el('p',`${frame.layout||'preset'} • ${frame.slot_count||'?'} ảnh • ${frame.configured?'Đã cấu hình':'Chưa cấu hình'}${frame.layout==='grid3x2'?' • LEGACY — Guest không dùng':''}`));if(frame.image_url){const img=el('img');img.src=framePreviewUrl(frame.image_url);img.alt=frame.name||'Frame';card.append(img);}list.append(card);}
+}
+function framePreviewUrl(path){
+  const url=new URL(path,location.origin);
+  url.searchParams.set('t',Date.now());
+  return url.href;
+}
+function showFrameConfig(){
+  const layout=$('frameLayout').value;
+  const frame=frameItems.find(item=>item.id==='custom-'+layout);
+  $('frameName').value=frame?.name||'';
+  $('framePadX').value=frame?.pad_x??6;
+  $('framePadTop').value=frame?.pad_top??7;
+  $('framePadBottom').value=frame?.pad_bottom??15;
+  $('frameGap').value=frame?.gap??3;
+  $('frameEnabled').checked=frame?.enabled!==false;
+  frameDetectedSlots=frame?.slots||[];
+  const preview=$('framePreview');
+  preview.hidden=!frame?.image_url;
+  if(frame?.image_url)preview.src=framePreviewUrl(frame.image_url);
+  else preview.removeAttribute('src');
+  $('frameDetectStatus').textContent='';
+}
+function setFrameControlsBusy(busy){
+  for(const id of ['frameLayout','frameUpload','saveFrameConfig','detectFrameSlots'])$(id).disabled=busy;
 }
 async function refreshFrames(){
-  try{const data=await api('/frames');renderFrames(data);const custom=data.items.find(frame=>frame.id==='custom');if(custom){$('frameName').value=custom.name||'';$('frameLayout').value=custom.layout||'grid2x3';$('framePadX').value=custom.pad_x??6;$('framePadTop').value=custom.pad_top??7;$('framePadBottom').value=custom.pad_bottom??15;$('frameGap').value=custom.gap??3;$('frameEnabled').checked=custom.enabled!==false;frameDetectedSlots=custom.slots||[];$('framePreview').hidden=!custom.image_url;if(custom.image_url)$('framePreview').src=custom.image_url+'?t='+Date.now();}}
+  try{const data=await api('/frames');frameItems=data.items;renderFrames(data);showFrameConfig();}
   catch(error){$('frameManagementStatus').textContent=error.message;}
 }
-async function uploadFrame(file){
+async function uploadFrame(file,layout){
   const form=new FormData();form.append('file',file);
-  const response=await fetch('/api/admin/frames/custom/upload',{method:'POST',headers:{'X-CSRF-Token':csrf},body:form,signal:AbortSignal.timeout(30000)});const data=await response.json();if(!response.ok)throw new Error(data.error?.message||`API ${response.status}`);return data;
+  const response=await fetch('/api/admin/frames/custom/upload?layout='+encodeURIComponent(layout),{method:'POST',headers:{'X-CSRF-Token':csrf},body:form,signal:AbortSignal.timeout(30000)});const data=await response.json();if(!response.ok)throw new Error(data.error?.message||`API ${response.status}`);return data;
 }
 function detectTransparentSlots(image){
   const width=300,height=Math.max(1,Math.round(image.naturalHeight/image.naturalWidth*width)),canvas=document.createElement('canvas');canvas.width=width;canvas.height=height;const ctx=canvas.getContext('2d');ctx.drawImage(image,0,0,width,height);const alpha=ctx.getImageData(0,0,width,height).data,seen=new Uint8Array(width*height),boxes=[];
@@ -148,12 +173,20 @@ function ensureCameraDiagnosticPanel(){
 function cameraSignature(data){return JSON.stringify([data.capabilities||data.adapter,data.connected??data.connection?.connected,data.previewing??data.connection?.previewing,data.state,data.last_error,data.preview_healthy??latestCamera?.preview_healthy??false]);}
 function updateCameraCurrent(camera){
   latestCamera=camera;const cap=camera.capabilities;
-  const label=cap.demo?'DEMO • '+(camera.connected?'Đã kết nối':'Ngắt kết nối'):camera.connected?'Đã kết nối • chưa xác minh hardware':'Ngắt kết nối';
-  $('cameraDiagnostics').textContent=cap.name+' • '+label;
+  const label=cap.demo?'DEMO • '+(camera.connected?'Đã kết nối':'Ngắt kết nối'):camera.connected?'Đã kết nối PTP • chưa xác minh shutter':'Ngắt kết nối';
+  const preview=camera.preview_healthy?' • Live View có khung hình mới':'';
+  const capture=camera.capture_readiness==='reconciliation_required'?' • Chụp đang chờ đối chiếu biên nhận cũ':
+    camera.capture_readiness==='preflight_required'?' • Chụp cần kiểm tra trước khi phát lệnh':'';
+  $('cameraDiagnostics').textContent=cap.name+' • '+label+preview+capture;
   $('overviewCamera').textContent=label;
   if(diagnosticSignature&&cameraSignature(camera)!==diagnosticSignature)$('cameraDiagnosticStale').hidden=false;
 }
 function diagnosticTime(value){return value?new Date(value).toLocaleString():'—';}
+const diagnosticCheckLabels={connection:'Kết nối',live_preview:'Xem trực tiếp',physical_shutter:'Màn trập vật lý',original_file:'Ảnh gốc'};
+const diagnosticResultLabels={PASS:'Đạt',FAIL:'Lỗi',UNSUPPORTED:'Không hỗ trợ',NOT_TESTED:'Chưa kiểm tra'};
+const diagnosticStateLabels={idle:'Đang chờ',disconnected:'Ngắt kết nối',connecting:'Đang kết nối',ready:'Sẵn sàng',
+  previewing:'Đang xem trực tiếp',waiting:'Đang chờ khung hình',capturing:'Đang chụp',transferring:'Đang nhận ảnh',
+  captured:'Đã chụp',error:'Có lỗi'};
 function renderDiagnostic(data, mode='diagnostic'){
   ensureCameraDiagnosticPanel();
   $('cameraAdvanced').open=true;
@@ -161,29 +194,30 @@ function renderDiagnostic(data, mode='diagnostic'){
   if(!latestCamera||cameraSignature(latestCamera)===diagnosticSignature)$('cameraDiagnosticStale').hidden=true;
   const cap=data.adapter||data.capabilities||{};const connection=data.connection||{connected:data.connected,previewing:data.previewing};
   $('cameraDiagnosticAdapter').textContent=cap.name||cap.adapter||'—';
-  $('cameraDiagnosticConnection').textContent=`${connection.connected?'Connected':'Not connected'}${data.state?` • ${data.state}`:''}`;
+  const state=diagnosticStateLabels[data.state]||data.state;
+  $('cameraDiagnosticConnection').textContent=[connection.connected?'Đã kết nối':'Chưa kết nối',state].filter(Boolean).join(' • ');
   $('cameraDiagnosticCheckedAt').textContent=diagnosticTime(data.last_checked_at)||new Date().toLocaleString();
   const checks=data.checks||[];$('cameraDiagnosticChecks').replaceChildren();
-  for(const check of checks){const item=el('tr');item.append(el('td',check.name));const status=el('td',check.status.replaceAll('_',' '));status.className=`diag-${check.status}`;item.append(status,el('td',[check.detail,check.suggestion].filter(Boolean).join(' ')));$('cameraDiagnosticChecks').append(item);}
-  const failed=checks.some(check=>check.status==='FAIL');$('cameraDiagnosticSummary').textContent=mode==='refresh'?'Refresh completed.':failed?'Diagnostic completed with failures.':'Diagnostic completed; see each check below.';
+  for(const check of checks){const item=el('tr');item.append(el('td',diagnosticCheckLabels[check.name]||check.name));const status=el('td',diagnosticResultLabels[check.status]||check.status);status.className=`diag-${check.status}`;item.append(status,el('td',[check.detail,check.suggestion].filter(Boolean).join(' ')));$('cameraDiagnosticChecks').append(item);}
+  const failed=checks.some(check=>check.status==='FAIL');$('cameraDiagnosticSummary').textContent=mode==='refresh'?'Đã làm mới trạng thái.':failed?'Chẩn đoán hoàn tất và phát hiện lỗi.':'Đã hoàn tất chẩn đoán.';
 }
 async function refreshCameraDiagnostics(){
   if(cameraDiagnosticRunning)return;cameraDiagnosticRunning=true;ensureCameraDiagnosticPanel();
   const button=$('refreshCameraDiagnostics'),label=button.textContent;button.disabled=true;$('runCameraDiagnostic').disabled=true;button.textContent='Đang kiểm tra…';$('cameraAdvanced').open=true;$('cameraDiagnosticSummary').textContent='Đang đọc trạng thái camera…';
   try{const data=await api('/camera');updateCameraCurrent(data);renderDiagnostic({...data,last_checked_at:new Date().toISOString(),checks:[
-    {name:'Connection',status:data.connected?'PASS':'FAIL',detail:data.connected?'Đã kết nối':'Chưa kết nối'},
-    {name:'Live Preview',status:!data.capabilities.live_view?'UNSUPPORTED':data.preview_healthy?'PASS':'NOT_TESTED',detail:data.preview_healthy?'Có frame mới':'Chưa xác minh frame mới'},
-    {name:'Physical shutter',status:data.capabilities.physical_shutter?'NOT_TESTED':'UNSUPPORTED',detail:'Không phát shutter'},
-    {name:'Original file',status:data.capabilities.original_file?'NOT_TESTED':'UNSUPPORTED',detail:'Chưa nhận file trong lần kiểm tra này'}
+    {name:'connection',status:data.connected?'PASS':'FAIL',detail:data.connected?'Đã kết nối':'Chưa kết nối'},
+    {name:'live_preview',status:!data.capabilities.live_view?'UNSUPPORTED':data.preview_healthy?'PASS':'NOT_TESTED',detail:data.preview_healthy?'Có khung hình mới':'Chưa xác minh khung hình mới'},
+    {name:'physical_shutter',status:data.capabilities.physical_shutter?'NOT_TESTED':'UNSUPPORTED',detail:'Chưa kích hoạt màn trập'},
+    {name:'original_file',status:data.capabilities.original_file?'NOT_TESTED':'UNSUPPORTED',detail:'Chưa nhận ảnh gốc trong lần kiểm tra này'}
   ]},'refresh');message('Đã làm mới trạng thái camera.');}
-  catch(error){$('cameraDiagnosticSummary').textContent=`Refresh failed: ${error.message}`;message(error.message);}
+  catch(error){$('cameraDiagnosticSummary').textContent=`Không làm mới được trạng thái. ${error.message}`;message(error.message);}
   finally{button.disabled=false;$('runCameraDiagnostic').disabled=false;button.textContent=label;cameraDiagnosticRunning=false;}
 }
 async function runCameraDiagnostics(){
   if(cameraDiagnosticRunning)return;cameraDiagnosticRunning=true;ensureCameraDiagnosticPanel();
-  const refreshButton=$('refreshCameraDiagnostics'),runButton=$('runCameraDiagnostic'),label=runButton.textContent;refreshButton.disabled=true;runButton.disabled=true;runButton.textContent='Running…';$('cameraDiagnosticSummary').textContent='Running safe diagnostics…';
+  const refreshButton=$('refreshCameraDiagnostics'),runButton=$('runCameraDiagnostic'),label=runButton.textContent;refreshButton.disabled=true;runButton.disabled=true;runButton.textContent='Đang chẩn đoán…';$('cameraDiagnosticSummary').textContent='Đang kiểm tra camera…';
   try{const data=await api('/camera/diagnostic',{method:'POST',body:{confirm_physical_shutter:false}});renderDiagnostic(data);const current=await api('/camera');updateCameraCurrent(current);message('Đã hoàn tất chẩn đoán an toàn. Không phát lệnh shutter.');}
-  catch(error){$('cameraDiagnosticSummary').textContent=`Diagnostic failed: ${error.message}`;message(error.message);}
+  catch(error){$('cameraDiagnosticSummary').textContent=`Không chạy được chẩn đoán. ${error.message}`;message(error.message);}
   finally{refreshButton.disabled=false;runButton.disabled=false;runButton.textContent=label;cameraDiagnosticRunning=false;}
 }
 async function refreshNetwork(){
@@ -237,7 +271,13 @@ async function refresh(){
     const errors=[...(readiness?.blockers||[])];if(status.failed)errors.push(status.failed+' job in lỗi. Kiểm tra hàng đợi in.');
     try{const camera=await api('/camera');updateCameraCurrent(camera);if(camera.last_error)errors.push(camera.last_error);}
     catch{$('overviewCamera').textContent='Không đọc được trạng thái';$('cameraDiagnostics').textContent='Không đọc được trạng thái camera.';if(diagnosticSignature)$('cameraDiagnosticStale').hidden=false;errors.push('Không đọc được trạng thái camera.');}
-    try{const display=await api('/event-display/status');$('eventDisplayStatus').textContent=(display.enabled?'Đã bật mã màn hình':'Màn hình chưa được bật')+' • '+display.approved_count+' ảnh được duyệt';$('overviewEvent').textContent=(display.enabled?'Enabled':'Disabled')+' • '+display.approved_count+' ảnh';}
+    try{
+      const display=await api('/event-display/status');
+      $('createDisplayCode').hidden=$('revokeDisplayCode').hidden=!display.pin_required;
+      const access=display.pin_required?(display.enabled?'Đã bật mã màn hình':'Màn hình chưa được bật'):'Mở trực tiếp trên mạng sự kiện';
+      $('eventDisplayStatus').textContent=access+' • '+display.approved_count+' ảnh được duyệt';
+      $('overviewEvent').textContent=(display.enabled?'Đang bật':'Đang tắt')+' • '+display.approved_count+' ảnh';
+    }
     catch{$('overviewEvent').textContent='Không đọc được trạng thái';$('eventDisplayStatus').textContent='Không đọc được cấu hình màn hình sự kiện.';errors.push('Không đọc được trạng thái Event Gallery.');}
     $('activeErrors').replaceChildren();for(const error of errors.length?errors:['Không có lỗi vận hành được báo cáo.'])$('activeErrors').append(el('li',error));
     await refreshNetwork();
@@ -283,9 +323,24 @@ exclusive('saveCamera',async()=>{await api('/camera/config',{method:'PUT',body:{
 exclusive('disconnectCamera',async()=>{await api('/camera/disconnect',{method:'POST'});message('Đã ngắt camera host.');await refresh();});
  $('refreshCameraDiagnostics').addEventListener('click',refreshCameraDiagnostics);
  $('runCameraDiagnostic').addEventListener('click',runCameraDiagnostics);
-$('frameUpload').addEventListener('change',async event=>{const file=event.target.files?.[0];if(!file)return;try{const result=await uploadFrame(file);$('framePreview').hidden=false;$('framePreview').src=result.image_url+'?t='+Date.now();$('frameManagementStatus').textContent=`Đã lưu ${file.name} (${result.width}×${result.height}px).`;await refreshFrames();}catch(error){$('frameManagementStatus').textContent=error.message;}finally{event.target.value='';}});
+$('frameLayout').addEventListener('change',()=>{showFrameConfig();$('frameManagementStatus').textContent='';});
+$('frameUpload').addEventListener('change',async event=>{
+  const file=event.target.files?.[0];if(!file)return;
+  const layout=$('frameLayout').value;
+  setFrameControlsBusy(true);
+  try{
+    const result=await uploadFrame(file,layout);
+    $('frameManagementStatus').textContent=`Đã lưu ${file.name} (${result.width}×${result.height}px) cho ${$('frameLayout').selectedOptions[0].text}.`;
+    await refreshFrames();
+  }catch(error){$('frameManagementStatus').textContent=error.message;}
+  finally{event.target.value='';setFrameControlsBusy(false);}
+});
 $('detectFrameSlots').addEventListener('click',()=>{const image=$('framePreview');if(image.hidden||!image.complete){$('frameDetectStatus').textContent='Hãy tải và lưu PNG trước.';return;}const boxes=detectTransparentSlots(image);frameDetectedSlots=boxes.map(slot=>[slot.x,slot.y,slot.w,slot.h]);$('frameDetectStatus').textContent=boxes.length===($('frameLayout').value==='landscape_4'?4:6)?`Đã dò ${boxes.length} ô trong suốt.`:`Đã dò ${boxes.length} vùng; kiểm tra lại alpha trước khi lưu.`;});
-exclusive('saveFrameConfig',async()=>{try{const layout=$('frameLayout').value;const payload={name:$('frameName').value.trim()||'Host custom frame',layout,slot_count:layout==='landscape_4'?4:6,pad_x:Number($('framePadX').value),pad_top:Number($('framePadTop').value),pad_bottom:Number($('framePadBottom').value),gap:Number($('frameGap').value),enabled:$('frameEnabled').checked,slots:frameDetectedSlots};await api('/frames/custom',{method:'PUT',body:payload});$('frameManagementStatus').textContent='Đã lưu cấu hình frame cho Guest.';await refreshFrames();}catch(error){$('frameManagementStatus').textContent=error.message;}});
+exclusive('saveFrameConfig',async()=>{
+  setFrameControlsBusy(true);
+  try{const layout=$('frameLayout').value;const payload={name:$('frameName').value.trim()||'Host custom frame',layout,slot_count:layout==='landscape_4'?4:6,pad_x:Number($('framePadX').value),pad_top:Number($('framePadTop').value),pad_bottom:Number($('framePadBottom').value),gap:Number($('frameGap').value),enabled:$('frameEnabled').checked,slots:frameDetectedSlots};await api('/frames/custom',{method:'PUT',body:payload});$('frameManagementStatus').textContent='Đã lưu cấu hình frame cho bố cục đã chọn.';await refreshFrames();}catch(error){$('frameManagementStatus').textContent=error.message;}
+  finally{setFrameControlsBusy(false);}
+});
 $('previous').addEventListener('click',()=>{offset=Math.max(0,offset-20);refresh();});$('next').addEventListener('click',()=>{offset+=20;refresh();});
 $('olderJobs').addEventListener('click',()=>{jobsOffset+=50;refreshJobs().catch(error=>message(error.message));});$('latestJobs').addEventListener('click',()=>{jobsOffset=Math.max(0,jobsOffset-50);refreshJobs().catch(error=>message(error.message));});
 $('refreshGallery').addEventListener('click',()=>{galleryKey='';refreshGallery().catch(error=>{$('galleryStatus').textContent=error.message;});});

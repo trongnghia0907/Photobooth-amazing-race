@@ -68,7 +68,7 @@ test('Host operations: navigation, unsaved forms, diagnostics, frames, photos, r
   await expect(page.locator('#cameraDiagnosticChecks tr')).toHaveCount(4);
   await expect(page.locator('#cameraDiagnosticCheckedAt')).not.toHaveText('—');
   await page.locator('#runCameraDiagnostic').click();
-  await expect(page.locator('#cameraDiagnosticSummary')).toContainText('completed');
+  await expect(page.locator('#cameraDiagnosticSummary')).toContainText('hoàn tất');
   await page.locator('#cameraAdapter').selectOption('vendor');await page.locator('#saveCamera').click();
   await expect(page.locator('#cameraDiagnosticStale')).toBeVisible();
   await page.locator('#cameraAdapter').selectOption('mock');await page.locator('#saveCamera').click();
@@ -114,7 +114,7 @@ test('diagnostic loading, repeated clicks, backend errors and unauthorized sessi
   await page.locator('#runCameraDiagnostic').dispatchEvent('click');expect(calls).toBe(1);
   release();await expect(page.locator('#cameraDiagnosticSummary')).toContainText('Diagnostic timeout');
   await page.route('**/api/admin/camera',route=>route.abort('connectionrefused'));
-  await page.locator('#refreshCameraDiagnostics').click();await expect(page.locator('#cameraDiagnosticSummary')).toContainText('failed');
+  await page.locator('#refreshCameraDiagnostics').click();await expect(page.locator('#cameraDiagnosticSummary')).toContainText('Không làm mới được trạng thái');
   await page.unroute('**/api/admin/camera');
   await page.route('**/api/admin/camera',route=>route.fulfill({status:401,json:{error:{message:'Host session expired'}}}));
   await page.locator('#refreshCameraDiagnostics').click();await expect(page.locator('#login')).toBeVisible();await expect(page.locator('#dashboard')).toBeHidden();

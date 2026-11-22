@@ -75,8 +75,7 @@ def test_confirm_queue_private_sync_share_download_print_and_safe_cache(setup,co
         assert downloaded.status_code==200
         assert public.get('/p/'+token+'/image').content==downloaded.content
         assert public.get('/p/invalid').status_code==404
-        source=Image.open(BytesIO(original)).convert('RGB')
-        assert Image.open(BytesIO(downloaded.content)).crop((0,0,*source.size)).tobytes()==source.tobytes()
+        assert downloaded.content==original
     job=enqueue(client,sid,state).json();assert wait_job(client,sid,job['id'])['status']=='submitted'
     repo.drive.evict(cid);assert not path.exists()
     assert client.get(f'/api/sessions/{sid}/composites/{cid}/image',headers=headers()).content==original

@@ -1,5 +1,5 @@
 const $=id=>document.getElementById(id);
-let page=1,controller,timer,expiryTimer,renderKey,stopped=false;
+let page=1,controller,timer,renderKey,stopped=false;
 const requestedPage=()=>new URL(location.href).searchParams.get('page')||'1';
 function pageLink(number,label=String(number)){
   const link=document.createElement('a');link.href='/gallery?page='+number;link.textContent=label;
@@ -23,30 +23,30 @@ function pagination(pages){
   }
   if(page<pages)nav.append(pageLink(page+1,'Next'));
 }
+function showFeedback(message=''){
+  const feedback=$('galleryFeedback');
+  feedback.textContent=message;
+  feedback.hidden=!message;
+}
 function render(items){
   const key=JSON.stringify([page,items]);if(key===renderKey)return;renderKey=key;
-  const grid=$('photoGrid');grid.replaceChildren();clearTimeout(expiryTimer);
+  const grid=$('photoGrid');grid.replaceChildren();
   for(const item of items){
     const card=document.createElement('a');card.className='photo-card';card.href=item.photo_url;card.dataset.photoId=item.id;
     card.setAttribute('aria-label','Open event photo '+((page-1)*10+grid.children.length+1));
-    const image=document.createElement('img');image.alt='Published Amazing Race 2026 composite photo';image.src=item.preview_url;
+    const image=document.createElement('img');image.alt='Amazing Race 2026 event photo';image.src=item.preview_url;
     image.loading='lazy';image.decoding='async';image.width=item.width;image.height=item.height;
-    image.onerror=()=>{card.remove();renderKey=null;$('galleryStatus').textContent='A photo is temporarily unavailable. The gallery will check again shortly.';};
+    image.onerror=()=>{card.remove();renderKey=null;showFeedback('Could not load photos. Retrying…');};
     card.append(image);grid.append(card);
   }
   $('galleryEmpty').hidden=items.length>0;
-  const expiry=Math.min(...items.map(item=>Date.parse(item.expires_at)));
-  if(Number.isFinite(expiry))expiryTimer=setTimeout(()=>{
-    // Remove expired content immediately, then reconcile pagination.
-    grid.replaceChildren();renderKey=null;load(requestedPage(),true);
-  },Math.max(0,expiry-Date.now()));
 }
 async function load(number=requestedPage(),quiet=false){
   if(stopped)return;clearTimeout(timer);controller?.abort();
   const current=new AbortController();controller=current;
   const timeout=setTimeout(()=>current.abort(),8000);
   $('photoGrid').setAttribute('aria-busy','true');$('retryGallery').hidden=true;
-  if(!quiet)$('galleryStatus').textContent='Loading event photos…';
+  if(!quiet)showFeedback('Loading photos…');
   try{
     const response=await fetch('/gallery/api/photos?page='+encodeURIComponent(number),{signal:current.signal,cache:'no-store'});
     if(!response.ok)throw new Error('Gallery unavailable');
@@ -54,12 +54,12 @@ async function load(number=requestedPage(),quiet=false){
     page=data.page;
     const url=new URL(location.href);if(url.searchParams.get('page')!==String(page)){url.searchParams.set('page',page);history.replaceState(null,'',url);}
     render(data.items);pagination(data.pages);
-    $('galleryStatus').textContent=data.total?`Page ${page} of ${data.pages} · ${data.total} published photo${data.total===1?'':'s'}`:'';
+    showFeedback();
   }catch(error){
     if(controller!==current||stopped)return;
-    // Fail closed after connection loss: do not retain revoked/expired tiles.
-    clearTimeout(expiryTimer);$('photoGrid').replaceChildren();renderKey=null;$('pagination').replaceChildren();$('galleryEmpty').hidden=true;
-    $('galleryStatus').textContent='Photos are temporarily unavailable. Reconnecting…';$('retryGallery').hidden=false;
+    // Fail closed after connection loss: do not retain potentially revoked tiles.
+    $('photoGrid').replaceChildren();renderKey=null;$('pagination').replaceChildren();$('galleryEmpty').hidden=true;
+    showFeedback('Could not load photos. Retrying…');$('retryGallery').hidden=false;
   }finally{
     clearTimeout(timeout);
     if(controller===current&&!stopped){$('photoGrid').setAttribute('aria-busy','false');timer=setTimeout(()=>load(requestedPage(),true),15000);}
@@ -67,7 +67,7 @@ async function load(number=requestedPage(),quiet=false){
 }
 $('retryGallery').addEventListener('click',()=>load(requestedPage()));
 window.addEventListener('popstate',()=>load(requestedPage()));
-window.addEventListener('pagehide',()=>{stopped=true;controller?.abort();clearTimeout(timer);clearTimeout(expiryTimer);});
+window.addEventListener('pagehide',()=>{stopped=true;controller?.abort();clearTimeout(timer);});
 window.addEventListener('pageshow',event=>{if(event.persisted){stopped=false;load(requestedPage());}});
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)load(requestedPage(),true);});
 load();

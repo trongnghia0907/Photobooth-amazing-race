@@ -160,6 +160,8 @@ def verify(base,fixtures,local=False):
         status,image,_=get(base+route+'/image',local=local)
         status2,download,headers=get(base+route+'/download',local=local)
         if status!=200 or status2!=200 or image!=download:raise RuntimeError('Photo/download mismatch')
+        if hashlib.sha256(download).hexdigest()!=fixture['sha256']:
+            raise RuntimeError('Guest photo differs from the saved finalized composite')
         Image.open(BytesIO(download)).verify()
         if 'attachment' not in headers.get('content-disposition',''):raise RuntimeError('Download is not an attachment')
         status,qr,_=get(base+route+'/qr.png',local=local)
@@ -181,7 +183,7 @@ def existing_photos(settings):
             if os.environ.get('MOBILE_QR_TEST_SESSION_ID') and row['session_id']!=os.environ['MOBILE_QR_TEST_SESSION_ID']:continue
             share=repo.sharing.metadata(db,row['id'])
             if not share:continue
-            try:repo.sharing.lookup(share['share_url'].rsplit('/',1)[1])
+            try:repo.sharing.lookup(share['share_url'].rsplit('/',1)[1],prepare_print=False)
             except HTTPException:continue  # Includes pending Drive uploads.
             result.append({'session_id':row['session_id'],'share':share,'composite_path':row['path'],'sha256':row['sha256']})
             if len(result)==2:break

@@ -23,6 +23,8 @@ def main():
     from app.config import Settings
     from app.event_logging import configure
     settings=Settings.from_environment()
+    if args.role=='private' and args.trusted_proxy and settings.booth_direct_access:
+        parser.error('Direct Booth access requires a private listener without a reverse proxy')
     config=uvicorn.Config('app.main:app' if args.role=='private' else 'app.public_main:app',
         host=args.host,port=args.port,workers=1,proxy_headers=args.trusted_proxy,
         forwarded_allow_ips='127.0.0.1',ssl_certfile=args.ssl_certfile,ssl_keyfile=args.ssl_keyfile,log_level=settings.log_level)

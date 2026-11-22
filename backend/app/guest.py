@@ -42,7 +42,7 @@ body{
 @supports(height:100dvh){body{--brand-top:clamp(24px,13dvh,118px)}}
 body::before{
   content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;
-  background:#78d9f2 url('/p/assets/theme.png') center top/cover no-repeat;
+  background:#78d9f2 url('/p/assets/theme.png') center center/cover no-repeat;
 }
 main{
   width:100%;max-width:680px;margin-inline:auto;
@@ -95,41 +95,42 @@ def photo_status(request:Request,token:str):
 def guest(request: Request, token: str):
     service=request.app.state.repository.sharing
     try:
-        row=service.lookup(token)
+        row=service.lookup(token,prepare_print=False)
         service.file(row)
     except HTTPException as error:
         if error.status_code==503:
-            return page('<h2>Ảnh đang được xử lý</h2><p role="status">Ảnh chưa sẵn sàng từ bộ lưu trữ. Hãy chờ, trang sẽ tự thử lại.</p>',202,
+            return page('<h2>Ảnh đang được chuẩn bị</h2><p role="status">Vui lòng đợi một chút.</p>',202,
                         script='setTimeout(()=>location.reload(),5000);')
-        return page('<h2>Không tìm thấy ảnh</h2><p role="alert">Link không hợp lệ, đã hết hiệu lực hoặc ảnh không còn tồn tại.</p>',404)
+        return page('<h2>Không thể xem ảnh</h2><p role="alert">Liên kết đã hết hạn hoặc ảnh hiện không khả dụng.</p>',404)
     # token was validated as exactly 43 URL-safe characters by lookup; never
     # echo arbitrary input or embed customer-provided strings in the page.
-    content=f'''<h2 class="photo-heading">Ảnh Photobooth của bạn</h2><p id="loading" role="status">Đang tải ảnh…</p>
-<p id="error" role="alert" hidden>Không tải được ảnh. Hãy kiểm tra kết nối và tải lại trang.</p>
-<img id="guestPhoto" alt="Ảnh Photobooth của bạn" hidden>
-<a id="guestDownload" href="/p/{token}/download" hidden>Tải ảnh</a>'''
+    content=f'''<h2 class="photo-heading">Ảnh của bạn</h2><p id="loading" role="status">Đang tải ảnh…</p>
+<p id="error" role="alert" hidden>Chưa thể tải ảnh. Đang thử lại…</p>
+<img id="guestPhoto" alt="Ảnh của bạn" hidden>
+<a id="guestDownload" href="/p/{token}/download" download hidden>Tải ảnh về máy</a>'''
     script=f'''const image=document.getElementById('guestPhoto');
 image.onload=()=>{{image.hidden=false;document.getElementById('loading').hidden=true;document.getElementById('error').hidden=true;document.getElementById('guestDownload').hidden=false;}};
-image.onerror=()=>{{image.hidden=true;document.getElementById('guestDownload').hidden=true;document.getElementById('loading').hidden=false;document.getElementById('loading').textContent='Ảnh đang được xử lý';document.getElementById('error').hidden=false;setTimeout(()=>{{image.src='/p/{token}/image?retry='+Date.now();}},5000);}};
+image.onerror=()=>{{image.hidden=true;document.getElementById('guestDownload').hidden=true;document.getElementById('loading').hidden=false;document.getElementById('loading').textContent='Ảnh đang được chuẩn bị';document.getElementById('error').hidden=false;setTimeout(()=>{{image.src='/p/{token}/image?retry='+Date.now();}},5000);}};
 image.src='/p/{token}/image';'''
     return page(content,script=script)
 
 
 @router.get('/{token}/image')
-def view_image(request: Request, token: str):
+def view_image(request: Request, token: str, print_ready: bool=False):
     service=request.app.state.repository.sharing
-    row=service.lookup(token)
+    row=service.lookup(token,prepare_print=print_ready)
     if '_drive_bytes' in row:return Response(row['_drive_bytes'],media_type='image/png',headers=PRIVATE_HEADERS)
     return FileResponse(service.file(row),media_type='image/png',headers=PRIVATE_HEADERS)
 
 
 @router.get('/{token}/download')
-def download(request: Request, token: str):
+def download(request: Request, token: str, print_ready: bool=False):
     service=request.app.state.repository.sharing
-    row=service.lookup(token)
+    row=service.lookup(token,prepare_print=print_ready)
+    filename=f"amazing-race-2026-{'print-ready' if print_ready else 'photo'}-{row['id']}.png"
     if '_drive_bytes' in row:
-        return Response(row['_drive_bytes'],media_type='image/png',headers={**PRIVATE_HEADERS,'Content-Disposition':f'attachment; filename="amazing-race-2026-photo-{row["id"]}.png"'})
-    return FileResponse(service.file(row),media_type='image/png',filename=f"amazing-race-2026-photo-{row['id']}.png",headers=PRIVATE_HEADERS)
+        return Response(row['_drive_bytes'],media_type='image/png',headers={**PRIVATE_HEADERS,'Content-Disposition':f'attachment; filename="{filename}"'})
+    return FileResponse(service.file(row),media_type='image/png',filename=filename,headers=PRIVATE_HEADERS)
 
 
 @router.get('/{token}/qr.png')

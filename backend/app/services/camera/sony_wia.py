@@ -77,6 +77,8 @@ def _check(hr, operation='WIA operation'):
     if hr < 0:
         number = hr & 0xffffffff
         kind = {0x80070005:'access', 0x80210006:'busy', 0x80210005:'disconnected',
+                0x8000ffff:'transport_failed', 0x8007001f:'transport_failed',
+                0x8021000e:'transport_failed',
                 0x8021000a:'disconnected', 0x80210015:'disconnected',
                 0x8007048f:'disconnected'}.get(number, 'usb')
         raise CameraError(kind, f'Windows WIA error 0x{number:08X} during {operation}. Check camera/USB state and other camera owners; this error alone does not identify the owner.', stage='connect')
@@ -176,7 +178,7 @@ class _WiaDevice:
                 finally:
                     _release(storage)
             if not candidates:
-                raise CameraError('disconnected', 'No Sony WIA camera. Enable PC Remote/USB, Smartphone Connection Off; use a USB data cable.', stage='connect')
+                raise CameraError('wia_device_unavailable', 'Sony is unavailable in WIA. Check that Device Manager shows Started without Code 10/43, the USB data cable is connected directly, and PC Remote USB is enabled. Then select Reconnect.', stage='connect')
             if len(candidates) != 1:
                 raise CameraError('busy', 'Multiple Sony cameras found. Connect only the original ZV-E10.', stage='connect')
             device_id = self.automation.SysAllocString(candidates[0])
@@ -290,10 +292,7 @@ class WindowsWiaTransport:
         if os.name != 'nt':
             raise CameraError('unsupported', 'Sony USB/PTP transport currently requires Windows WIA.', stage='connect')
         with self.lock:
-            if self.stalled_process is not None:
-                if self.stalled_process.is_alive():
-                    raise CameraError('worker_stalled','Previous Sony WIA worker has not exited. No replacement worker or shutter was started; stop testing and inspect camera ownership.',stage='connect')
-                self.stalled_process.close();self.stalled_process=None
+            self._reap_stalled_worker('connect')
             if self.process:
                 if self.process.is_alive():
                     return
@@ -324,8 +323,17 @@ class WindowsWiaTransport:
                 raise CameraError('disconnected', 'Sony WIA is not connected.')
             return decode_response(self._request(('exchange', encode_command(opcode, params, data), limit), deadline), limit)
 
+    def _reap_stalled_worker(self, stage):
+        if self.stalled_process is None:
+            return
+        if self.stalled_process.is_alive():
+            raise CameraError('worker_stalled','Previous Sony WIA worker has not exited. Camera ownership cannot be transferred yet.',stage=stage,uncertain=stage=='transfer')
+        self.stalled_process.close()
+        self.stalled_process = None
+
     def close(self, force=False):
         with self.lock:
+            self._reap_stalled_worker('transfer')
             started=time.monotonic()
             process, channel = self.process, self.channel
             self.process = self.channel = None

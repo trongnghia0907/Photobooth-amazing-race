@@ -2,8 +2,11 @@
 
 export function detectSixTransparentRegions(app, img) {
   try {
-    const scanW = 300;
-    const scanH = Math.round((img.height / img.width) * scanW);
+    const width = img.naturalWidth || img.width;
+    const height = img.naturalHeight || img.height;
+    const scale = Math.min(1, 900 / Math.max(width, height));
+    const scanW = Math.round(width * scale);
+    const scanH = Math.round(height * scale);
     const tempCanvas = document.createElement('canvas');
     tempCanvas.width = scanW;
     tempCanvas.height = scanH;
@@ -53,7 +56,8 @@ export function detectSixTransparentRegions(app, img) {
 
           const bw = maxX - minX + 1;
           const bh = maxY - minY + 1;
-          if (count > (scanW * scanH * 0.03) && bw > scanW * 0.15 && bh > scanH * 0.12 && bw < scanW * 0.95) {
+          if (minX > 0 && minY > 0 && maxX < scanW - 1 && maxY < scanH - 1 &&
+              count > (scanW * scanH * 0.03) && bw > scanW * 0.15 && bh > scanH * 0.12 && bw < scanW * 0.95) {
             boxes.push({ x: minX / scanW, y: minY / scanH, w: bw / scanW, h: bh / scanH });
           }
         }
@@ -73,19 +77,19 @@ export function detectSixTransparentRegions(app, img) {
 export function autoDetectTransparentHolesFromFrame(app) {
   const statusEl = document.getElementById('slotDetectStatus');
   if (!app.customFrameImg) {
-    statusEl.textContent = 'Vui lòng tải lên Frame PNG trước!';
+    statusEl.textContent = 'Upload a PNG frame first.';
     statusEl.className = 'text-xs font-semibold text-amber-600';
     return;
   }
   const detected = app.detectSixTransparentRegions(app.customFrameImg);
   if (detected && detected.length === app.slotCount) {
     app.detectedSlots = detected;
-    statusEl.textContent = `✅ Đã dò thấy chính xác ${app.slotCount} ô trong suốt!`;
+    statusEl.textContent = `✅ Detected ${app.slotCount} transparent slots.`;
     statusEl.className = 'text-xs font-semibold text-emerald-600';
     if (app.currentScreen === 'result') app.renderCompositeCanvas();
   } else {
     app.detectedSlots = null;
-    statusEl.textContent = `Không thấy ${app.slotCount} ô tách biệt, đang dùng thông số lề chuẩn.`;
+    statusEl.textContent = `Using default margins. Could not detect ${app.slotCount} separate slots.`;
     statusEl.className = 'text-xs font-semibold text-brand-600';
   }
 }

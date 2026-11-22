@@ -1,8 +1,10 @@
 from dataclasses import dataclass, field
+from ipaddress import IPv4Network
 from pathlib import Path
 import os
 
 APPROVED_GOOGLE_DRIVE_FOLDER_ID = '1QO_i__d-JzrQOCL7muz9lkgjOe1JxNGH'
+PRIVATE_LAN_RANGES = tuple(map(IPv4Network, ('10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16')))
 
 
 @dataclass(frozen=True)
@@ -43,6 +45,9 @@ class Settings:
     google_oauth_client_file: Path | None = None
     event_gallery_auto_publish: bool = True
     public_gallery_enabled: bool = False
+    booth_direct_access: bool = False
+    booth_lan_cidr: str = ''
+    event_display_pin_required: bool = False
 
     @property
     def demo_hardware_allowed(self):
@@ -75,8 +80,12 @@ class Settings:
             raise ValueError('Invalid camera timeouts')
         if self.camera_device_index < 0:
             raise ValueError('CAMERA_DEVICE_INDEX must be >=0')
-        if self.frontend_dist and len(self.booth_pairing_key)<16:
+        if self.frontend_dist and (not self.booth_direct_access or self.booth_pairing_key) and len(self.booth_pairing_key)<16:
             raise ValueError('BOOTH_PAIRING_KEY must have at least 16 characters when serving the kiosk')
+        if self.booth_lan_cidr:
+            network = IPv4Network(self.booth_lan_cidr)
+            if not any(network.subnet_of(private) for private in PRIVATE_LAN_RANGES):
+                raise ValueError('BOOTH_LAN_CIDR must be a private IPv4 subnet')
         if self.allow_lan_http and self.app_env!='development':
             raise ValueError('ALLOW_LAN_HTTP is development-only')
 
@@ -125,6 +134,9 @@ class Settings:
             google_drive_enabled=flag('GOOGLE_DRIVE_ENABLED'),
             event_gallery_auto_publish=flag('EVENT_GALLERY_AUTO_PUBLISH','true'),
             public_gallery_enabled=flag('PUBLIC_GALLERY_ENABLED'),
+            booth_direct_access=flag('BOOTH_DIRECT_ACCESS'),
+            booth_lan_cidr=os.environ.get('BOOTH_LAN_CIDR', '').strip(),
+            event_display_pin_required=flag('EVENT_DISPLAY_PIN_REQUIRED'),
             google_drive_folder_id=os.environ.get('GOOGLE_DRIVE_FOLDER_ID', APPROVED_GOOGLE_DRIVE_FOLDER_ID),
             google_oauth_client_file=Path(os.environ['GOOGLE_OAUTH_CLIENT_FILE']).expanduser().resolve() if os.environ.get('GOOGLE_OAUTH_CLIENT_FILE') else None,
         )

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {refreshPublicQR} from '../src/services/qr-client.js';
+import {generateQRCodeForCurrentPhoto,refreshPublicQR} from '../src/services/qr-client.js';
 import {renderQRConnectionMode} from '../src/components/qr-status.js';
 
 test('public origin polling refreshes an existing share with GET only and preserves token',async()=>{
@@ -31,15 +31,62 @@ test('QR mode is a truthful status indicator and exposes no network control',()=
   globalThis.document={getElementById:id=>id==='qrConnectionMode'?element:null};
   try{
     renderQRConnectionMode({}, {configured:true,local_only:true,tunnel_status:'not_managed'});
-    assert.equal(element.textContent,'Local QR • this laptop only');
+    assert.equal(element.textContent,'Sharing unavailable');
     renderQRConnectionMode({}, {configured:true,tunnel_status:'connecting'});
-    assert.equal(element.textContent,'Connecting to Cloudflare');
+    assert.equal(element.textContent,'Preparing to share…');
     renderQRConnectionMode({}, {configured:true,temporary:true,tunnel_status:'ready'});
-    assert.equal(element.textContent,'Cloudflare HTTPS • checking');
+    assert.equal(element.textContent,'Checking sharing…');
     renderQRConnectionMode({}, {configured:true,temporary:true,tunnel_status:'ready',public_origin_verified:true});
-    assert.equal(element.textContent,'Cloudflare HTTPS • verified');
+    assert.equal(element.textContent,'Checking sharing…');
     renderQRConnectionMode({}, {configured:false});
-    assert.equal(element.textContent,'QR connection not verified');
+    assert.equal(element.textContent,'Sharing unavailable');
+  }finally{globalThis.document=previous;}
+});
+
+test('a saved LAN share keeps waiting through a slow tunnel startup and verifies the same token',async()=>{
+  const previous={document:globalThis.document,fetch:globalThis.fetch};
+  const container={dataset:{}};
+  globalThis.document={getElementById:id=>id==='compositeCanvas'?{toDataURL:()=> 'saved'}:id==='qrCodeContainer'?container:null};
+  const token='b'.repeat(43);
+  const publicShare={composite_id:'composite',share_url:`https://mobile.test/p/${token}`,public_ready:true};
+  const requests=[];
+  globalThis.fetch=async(url,options)=>{
+    requests.push([url,options.method]);
+    return {ok:true,json:async()=>publicShare};
+  };
+  let configuration,rendered;
+  const app={currentScreen:'result',lastSavedImage:'saved',serverSession:{status:'completed'},
+    activeShare:{composite_id:'composite',share_url:`http://192.168.1.10:8000/p/${token}`,lan_only:true},
+    finalOperation:{compositeId:'composite'},sessionContext:{id:'session',token:'owner'},pendingPhotos:[],
+    loadSharingConfig:async()=>configuration,renderQRCodeVisual:url=>{rendered=url;}};
+  try{
+    for (const status of ['not_managed','disconnected','connecting']) {
+      configuration={configured:true,lan_only:true,tunnel_status:status};
+      for(let n=0;n<13;n++)await refreshPublicQR(app);
+    }
+    assert.equal(container.dataset.phase,'tunnel_connecting');
+    assert.equal(requests.length,0);
+    assert.equal(app.activeShare.public_ready,false);
+    configuration={configured:true,tunnel_status:'ready'};
+    await refreshPublicQR(app);
+    assert.deepEqual(requests,[['/api/sessions/session/public-status','GET']]);
+    assert.equal(rendered,publicShare.share_url);
+    assert.equal(app.qrRetryFailures,0);
+  }finally{globalThis.document=previous.document;globalThis.fetch=previous.fetch;}
+});
+
+test('confirmation can wait for the tunnel before requesting a share',async()=>{
+  const previous=globalThis.document;
+  const container={dataset:{}};
+  globalThis.document={getElementById:id=>id==='compositeCanvas'?{toDataURL:()=> 'saved'}:id==='qrCodeContainer'?container:null};
+  const app={lastSavedImage:'saved',serverSession:{status:'completed'},pendingPhotos:[],
+    finalOperation:{compositeId:'composite',finalizeKey:'fixture'},syncPersistenceUI(){},
+    loadSharingConfig:async()=>({configured:true,lan_only:true,tunnel_status:'connecting'})};
+  try{
+    await generateQRCodeForCurrentPhoto(app,true);
+    assert.equal(container.dataset.phase,'tunnel_connecting');
+    assert.equal(app.qrRetryFailures,0);
+    assert.equal(app.shareBusy,false);
   }finally{globalThis.document=previous;}
 });
 
@@ -49,7 +96,7 @@ test('monitor stops requests outside Review and after twelve consecutive failure
   let checks=0;
   const app={currentScreen:'home',lastSavedImage:'saved',serverSession:{status:'completed'},
     activeShare:{composite_id:'composite'},finalOperation:{compositeId:'composite'},pendingPhotos:[],
-    loadSharingConfig:async()=>{checks++;return {configured:true,local_only:true};}};
+    loadSharingConfig:async()=>{checks++;return {configured:false};}};
   try{
     await refreshPublicQR(app);assert.equal(checks,0);
     app.currentScreen='result';

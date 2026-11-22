@@ -16,8 +16,9 @@
 
 </head>
 <body class="official-event-guest flex flex-col min-h-screen selection:bg-brand-500 selection:text-white">
-<section id="boothPairOverlay" hidden aria-label="Pair kiosk device">
-    <form id="boothPairForm"><h2>Pair Photobooth Device</h2><p>An operator enters the kiosk code on this iPad. Guests do not need to sign in to the Host Dashboard.</p><label for="boothPairKey">Kiosk Pairing Code</label><input id="boothPairKey" type="password" required autocomplete="off" minlength="16"><p id="boothPairError" role="alert"></p><button type="submit">Pair Device</button></form>
+<section id="boothPairOverlay" hidden aria-label="Booth access">
+    <p id="boothAccessUnavailable" role="alert" hidden>Booth access is unavailable. Connect to the event network and reload.</p>
+    <form id="boothPairForm"><h2>Pair This Device</h2><p>Ask event staff for the pairing code.</p><label for="boothPairKey">Pairing Code</label><input id="boothPairKey" type="password" required autocomplete="off" minlength="16"><p id="boothPairError" role="alert"></p><button type="submit">Pair Device</button></form>
   </section>
 
   <!-- ================= PRINT-ONLY CONTAINER ================= -->
@@ -27,41 +28,25 @@
 
   <!-- ================= SCREEN FLASH OVERLAY ================= -->
   <div id="flashOverlay" class="fixed inset-0 bg-white pointer-events-none opacity-0 z-50"></div>
+  <div id="captureShutter" aria-hidden="true"></div>
 
   <!-- ================= TOAST NOTIFICATION ================= -->
   <div id="toastContainer" class="fixed top-5 right-5 z-50 flex flex-col gap-2 max-w-sm w-full pointer-events-none px-4 sm:px-0"></div>
 
   <!-- ================= TOP NAVIGATION BAR ================= -->
-  <h1 id="eventCaptureHeading" class="w-full text-center font-extrabold text-brand-800 py-2">AMAZING RACE 2026</h1>
-  <header class="w-full bg-white/80 backdrop-blur-md border-b border-brand-100 sticky top-0 z-40">
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
-      <!-- Brand Logo -->
-      <div class="flex items-center gap-3">
-        <div class="official-event-brand" role="img" aria-label="AMAZING RACE 2026 official artwork with BK and Monash University logos"></div>
-        <div class="w-10 h-10 rounded-2xl btn-primary-blue flex items-center justify-center shadow-md">
-          <span class="text-xl">📸</span>
-        </div>
-        <div>
-          <span class="font-display-title text-xl font-bold bg-gradient-to-r from-brand-700 via-brand-600 to-brand-400 bg-clip-text text-transparent">
-            AMAZING RACE 2026
-          </span>
-          <span class="hidden sm:inline-block ml-2 text-xs font-semibold px-2.5 py-0.5 rounded-full bg-brand-100 text-brand-700 border border-brand-200">
-            Photobooth
-          </span>
-        </div>
-      </div>
-
+  <header id="boothHeader" class="w-full relative z-40">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 flex items-center justify-end">
       <!-- Quick Controls & Settings -->
       <button type="button" id="newSessionButton" onclick="app.confirmNewGuestSession()" class="px-4 py-3 rounded-xl bg-brand-100 text-brand-800 font-bold">New Session</button>
       <div id="kioskExtraControls" class="hidden" aria-hidden="true">
         <!-- Full Auto Mode Badge Toggle -->
-        <button id="autoModeHeaderBtn" onclick="app.toggleFullAutoMode()" class="flex items-center gap-2 px-3.5 py-2 rounded-full text-xs font-bold border transition-all bg-brand-50 border-brand-300 text-brand-700 hover:bg-brand-100" title="Bật/Tắt tự động chụp và chuyển sang xem kết quả; in sau khi xác nhận">
+        <button id="autoModeHeaderBtn" onclick="app.toggleFullAutoMode()" class="flex items-center gap-2 px-3.5 py-2 rounded-full text-xs font-bold border transition-all bg-brand-50 border-brand-300 text-brand-700 hover:bg-brand-100" title="Toggle automatic capture">
           <span id="autoModeDot" class="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
-          <span>Tự động: <strong id="autoModeStatusText">BẬT</strong></span>
+          <span>Auto Capture: <strong id="autoModeStatusText">ON</strong></span>
         </button>
 
         <!-- Hardware & Kiosk Settings Modal Trigger -->
-        <button onclick="app.openSettingsModal()" class="p-2.5 rounded-full bg-white border border-brand-200 text-brand-700 hover:bg-brand-50 shadow-sm transition-all" title="Cài đặt Camera, Khung mẫu & Máy in">
+        <button onclick="app.openSettingsModal()" class="p-2.5 rounded-full bg-white border border-brand-200 text-brand-700 hover:bg-brand-50 shadow-sm transition-all" title="Camera, Frame and Printer Settings">
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
@@ -74,10 +59,10 @@
   <!-- ================= MAIN CONTENT AREA ================= -->
   <main class="flex-1 flex flex-col items-center justify-center p-4 sm:p-6 max-w-7xl w-full mx-auto">
     <div id="sessionPersistencePanel" class="w-full max-w-6xl mb-4 p-4 rounded-2xl bg-white border border-brand-200 flex flex-wrap items-center justify-between gap-3">
-      <p id="sessionSaveStatus" role="status" aria-live="polite" class="text-xs font-bold text-brand-800">A new session will be created when you start capturing.</p>
+      <p id="sessionSaveStatus" role="status" aria-live="polite" class="text-xs font-bold text-brand-800">Ready to start a new session.</p>
       <div class="flex gap-2">
         <button id="retrySessionSaveBtn" onclick="app.retrySessionSave()" class="hidden px-4 py-2 rounded-xl bg-amber-100 text-amber-800 text-xs font-bold">Retry Save</button>
-        <button id="confirmSessionBtn" onclick="app.confirmAndSaveSession(true)" class="hidden px-4 py-2 rounded-xl btn-primary-blue text-xs font-bold">Confirm, Display Photo &amp; Get QR</button>
+        <button id="confirmSessionBtn" onclick="app.confirmAndSaveSession(true)" class="hidden px-4 py-2 rounded-xl btn-primary-blue text-xs font-bold">Confirm &amp; Display</button>
       </div>
     </div>
 
@@ -129,8 +114,7 @@
 
           <!-- Giant 1-Click Automatic Start Button -->
           <button onclick="app.startAutomaticSession()" class="w-full py-5 px-8 rounded-full btn-primary-blue font-extrabold text-lg sm:text-xl tracking-wide flex items-center justify-center gap-3 shadow-glow-blue mb-6">
-            <span>START CAPTURING</span>
-            <span class="text-2xl">📸</span>
+            <span>Start Capturing</span>
           </button>
 
           <!-- Bottom Feature Pills -->
@@ -145,17 +129,6 @@
       <!-- Right Column: Frame & Timer Setup Card -->
       <div class="lg:col-span-6 flex flex-col">
         <div class="glass-card rounded-[2.2rem] p-6 sm:p-8">
-          <div class="text-center sm:text-left mb-5 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-            <div>
-              <h2 class="font-display-title text-2xl sm:text-3xl font-bold bg-gradient-to-r from-brand-700 to-brand-500 bg-clip-text text-transparent flex items-center justify-center sm:justify-start gap-2">
-                <span>Choose Your Photo Layout</span>
-              </h2>
-              <p class="text-xs sm:text-sm text-slate-500 font-medium mt-0.5">
-                Choose the number and orientation of photos before capturing
-              </p>
-            </div>
-          </div>
-
           <!-- Camera Device Selector -->
           <div id="setupDeviceOptions" class="mb-5 p-4 rounded-2xl bg-brand-50/70 border border-brand-100">
             <div class="flex items-center justify-between mb-2">
@@ -173,22 +146,23 @@
               <select id="homeCameraSelect" onchange="app.selectCameraDevice(this.value)" class="flex-1 bg-white border border-brand-200 rounded-xl px-3.5 py-2.5 text-sm font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-brand-500">
                 <option value="">Searching for cameras...</option>
               </select>
-              <button onclick="app.toggleMirror()" id="homeMirrorBtn" class="px-3.5 py-2.5 rounded-xl bg-white border border-brand-200 text-xs font-bold text-brand-700 hover:bg-brand-100 transition-all shrink-0" title="Mirror image">
+              <button onclick="app.toggleMirror()" id="homeMirrorBtn" class="px-3.5 py-2.5 rounded-xl bg-white border border-brand-200 text-xs font-bold text-brand-700 hover:bg-brand-100 transition-all shrink-0" title="Mirror">
                 🪞 Mirror: ON
               </button>
             </div>
           </div>
 
           <!-- Guest layout choices; advanced custom frames remain Host-only in the dashboard. -->
-          <div class="space-y-3 mb-6" id="setupLayoutChoices" role="radiogroup" aria-label="Choose photo layout">
+          <div class="space-y-3 mb-6" id="setupLayoutChoices" role="radiogroup" aria-label="Choose a Photo Layout">
             <div id="frameCardGrid2x3" role="radio" aria-checked="true" tabindex="0" onclick="app.selectPresetLayout('grid2x3')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();app.selectPresetLayout('grid2x3')}" class="layout-choice-card p-4 rounded-2xl border-2 transition-all cursor-pointer bg-brand-50/80 border-brand-500 shadow-sm">
               <div class="flex items-center gap-3.5">
                 <div>
                   <div class="font-bold text-slate-900 text-base sm:text-lg">2×3 Portrait</div>
-                  <p class="text-sm text-slate-500">6 photos · 2 columns × 3 rows</p>
+                  <p class="text-sm text-slate-500">6 photos</p>
                 </div>
               </div>
               <div class="layout-diagram grid grid-cols-2 gap-1 p-2 bg-white rounded-lg border border-brand-200" aria-hidden="true">
+                <img class="host-frame-preview" alt="">
                 <div class="w-3 h-2.5 rounded-sm bg-brand-500"></div>
                 <div class="w-3 h-2.5 rounded-sm bg-brand-500"></div>
                 <div class="w-3 h-2.5 rounded-sm bg-brand-500"></div>
@@ -201,35 +175,36 @@
               <div class="flex items-center gap-3.5">
                 <div>
                   <div class="font-bold text-slate-900 text-base sm:text-lg">2×2 Landscape</div>
-                  <p class="text-sm text-slate-500">4 photos · 2 columns × 2 rows</p>
+                  <p class="text-sm text-slate-500">4 photos</p>
                 </div>
               </div>
               <div class="layout-diagram grid grid-cols-2 gap-1 p-2 bg-brand-50 rounded-lg border border-brand-200" aria-hidden="true">
+                <img class="host-frame-preview" alt="">
                 <div class="w-4 h-4 rounded-sm bg-brand-400"></div><div class="w-4 h-4 rounded-sm bg-brand-400"></div>
                 <div class="w-4 h-4 rounded-sm bg-brand-400"></div><div class="w-4 h-4 rounded-sm bg-brand-400"></div>
               </div>
             </div>
           </div>
           <!-- Countdown Timer Selector -->
-          <div>
+          <div id="setupCountdown">
             <div class="flex items-center justify-between mb-2.5">
               <span class="text-xs font-extrabold uppercase tracking-wider text-brand-800 flex items-center gap-1.5">
-                <span>⏱️ Countdown before each photo</span>
+                <span>⏱️ Countdown</span>
               </span>
               <span class="text-xs font-semibold text-brand-600" id="timerHintText">5 seconds per photo</span>
             </div>
             <div class="grid grid-cols-4 gap-2.5">
               <button onclick="app.setCountdownSeconds(3)" id="timerBtn3" class="py-3 rounded-2xl font-extrabold text-sm border transition-all bg-brand-50 border-brand-200 text-brand-800 hover:bg-brand-100">
-                3s (Quick)
+                3 seconds
               </button>
               <button onclick="app.setCountdownSeconds(5)" id="timerBtn5" class="py-3 rounded-2xl font-extrabold text-sm border transition-all btn-primary-blue text-white border-transparent">
-                5s (Standard)
+                5 seconds
               </button>
               <button onclick="app.setCountdownSeconds(7)" id="timerBtn7" class="py-3 rounded-2xl font-extrabold text-sm border transition-all bg-brand-50 border-brand-200 text-brand-800 hover:bg-brand-100">
-                7s
+                7 seconds
               </button>
               <button onclick="app.setCountdownSeconds(10)" id="timerBtn10" class="py-3 rounded-2xl font-extrabold text-sm border transition-all bg-brand-50 border-brand-200 text-brand-800 hover:bg-brand-100">
-                10s
+                10 seconds
               </button>
             </div>
           </div>
@@ -244,8 +219,7 @@
          ===================================================================== -->
     <section id="screenCapture" class="hidden w-full max-w-6xl my-auto">
       <div id="hostCameraTools" hidden class="p-3 mb-2 rounded-xl bg-white border border-brand-200 text-brand-800 text-sm">
-        Host camera: Preview and photo files come from the laptop; Mock/UVC adapters are DEMO.
-        <button type="button" onclick="app.prepareHostCamera().catch(e=>app.showToast(e.message,'error'))" class="font-bold underline ml-2">Kết nối lại camera</button>
+        <button type="button" onclick="app.prepareHostCamera().catch(e=>app.showToast(e.message,'error'))" class="font-bold underline ml-2">Reconnect Camera</button>
       </div>
       <div class="flex flex-wrap items-center justify-between gap-3 mb-4 bg-white/90 backdrop-blur-md px-5 py-3.5 rounded-2xl border border-brand-100 shadow-card-blue">
         <button onclick="app.goToScreen('home')" class="flex items-center gap-1.5 text-sm font-bold text-brand-700 hover:text-brand-900 transition-all">
@@ -254,7 +228,7 @@
 
         <div class="flex items-center gap-3">
           <span id="captureProgressTitle" class="font-display-title text-lg sm:text-xl font-bold text-brand-900">
-            Tấm 1 / 6
+            Photo 1 / 6
           </span>
           <div id="captureDotsContainer" class="flex items-center gap-1.5"></div>
         </div>
@@ -268,7 +242,7 @@
       <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
         <div class="lg:col-span-8 flex flex-col">
           <div id="cameraPreviewPanel" class="relative w-full aspect-[4/3] bg-slate-900 rounded-[2rem] overflow-hidden border-4 border-white shadow-soft-blue flex items-center justify-center">
-            <img id="hostCameraPreview" class="mirror-video" hidden alt="Live view from the host laptop camera" />
+            <img id="hostCameraPreview" class="mirror-video" hidden alt="Camera preview" />
             <p id="hostCameraStatus" role="status" hidden></p>
             <output id="hostPreviewStats" aria-live="off" hidden></output>
             <span id="hostShotProgress"></span>
@@ -278,20 +252,18 @@
             <div id="cameraFallbackBar" class="hidden absolute top-4 left-4 right-4 z-20 flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 rounded-2xl bg-slate-900/75 backdrop-blur-md border border-brand-300/40 text-white text-xs">
               <div class="flex items-center gap-2">
                 <span class="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse"></span>
-                <span class="font-semibold">Using the simulated camera (webcam permission not granted)</span>
+                <span class="font-semibold">Camera access is required</span>
               </div>
               <div class="flex items-center gap-2">
-                <button type="button" onclick="app.requestRealCameraPermission()" class="px-3 py-1 rounded-xl bg-brand-500 hover:bg-brand-400 text-white font-bold transition-all">📷 Cấp quyền Camera</button>
+                <button type="button" onclick="app.requestRealCameraPermission()" class="px-3 py-1 rounded-xl bg-brand-500 hover:bg-brand-400 text-white font-bold transition-all">📷 Allow Camera Access</button>
                 <label class="cursor-pointer px-3 py-1 rounded-xl bg-white/20 hover:bg-white/30 text-white font-bold transition-all">
-                  📁 Select 6 photos from this device
+                  📁 Choose photos from this device
                   <input type="file" accept="image/*" multiple class="hidden" onchange="app.handleManualPhotoFilesUpload(event)" />
                 </label>
               </div>
             </div>
 
-            <div class="absolute inset-4 border-2 border-dashed border-white/40 rounded-2xl pointer-events-none flex items-end justify-center pb-3">
-              <span class="px-3 py-1 rounded-full bg-slate-900/50 backdrop-blur-sm text-white/90 text-xs font-semibold">Look at the camera and strike a pose! ✨</span>
-            </div>
+            <div aria-hidden="true" class="absolute inset-4 border-2 border-dashed border-white/40 rounded-2xl pointer-events-none"></div>
 
             <div id="retakeBanner" class="hidden absolute top-4 left-1/2 -translate-x-1/2 px-5 py-2 rounded-full bg-amber-500 text-white font-extrabold text-xs sm:text-sm shadow-lg z-20 flex items-center gap-2">
               <span>🔄 Retaking photo <span id="retakeSlotNumber">1</span></span>
@@ -300,16 +272,16 @@
 
             <div id="countdownOverlay" class="hidden absolute inset-0 bg-brand-900/25 backdrop-blur-[2px] flex flex-col items-center justify-center z-20 pointer-events-none">
               <div id="countdownNumber" class="font-display-title text-[7rem] sm:text-[9rem] font-bold text-white drop-shadow-[0_10px_25px_rgba(37,99,235,0.85)] leading-none">5</div>
-              <div id="countdownLabel" class="mt-2 px-5 py-2 rounded-full bg-white/90 text-brand-800 font-extrabold text-sm sm:text-base shadow-lg">Get ready for photo #1...</div>
+              <div id="countdownLabel" class="mt-2 px-5 py-2 rounded-full bg-white/90 text-brand-800 font-extrabold text-sm sm:text-base shadow-lg">Get ready for photo #1…</div>
             </div>
 
             <div id="autoGraceOverlay" class="hidden absolute inset-x-6 bottom-6 p-5 rounded-3xl bg-white/95 backdrop-blur-md border-2 border-brand-400 shadow-2xl z-30 flex flex-col sm:flex-row items-center justify-between gap-4">
               <div class="text-center sm:text-left">
                 <div class="font-extrabold text-brand-900 text-base flex items-center justify-center sm:justify-start gap-2">
                   <span class="w-3 h-3 rounded-full bg-emerald-500 animate-ping"></span>
-                  <span>All 6 photos captured! Opening your results in <span id="graceSecondsText" class="text-brand-600 text-lg">5</span>s...</span>
+                  <span>Photos complete. Continuing in <span id="graceSecondsText" class="text-brand-600 text-lg">5</span> seconds…</span>
                 </div>
-                <p class="text-xs text-slate-600 font-medium mt-0.5">Tap any photo on the right to <strong>retake</strong> that slot.</p>
+                <p class="text-xs text-slate-600 font-medium mt-0.5">Tap a photo to retake it.</p>
               </div>
               <div class="flex items-center gap-2 shrink-0">
                 <button onclick="app.pauseAutoGraceForReview()" class="px-4 py-2.5 rounded-xl bg-brand-100 hover:bg-brand-200 text-brand-800 font-bold text-xs transition-all">✋ Review Now</button>
@@ -324,7 +296,7 @@
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/>
                 <circle cx="12" cy="13" r="3" stroke-width="2.2"/>
               </svg>
-              <span id="mainCaptureBtnText">Start Automatic Capture (6 Photos)</span>
+              <span id="mainCaptureBtnText">Start Capturing</span>
             </button>
             <button id="manualInstantSnapBtn" onclick="app.captureCurrentFrameImmediately()" class="px-5 py-4 rounded-full bg-white hover:bg-brand-50 text-brand-700 border border-brand-200 font-bold text-sm shadow-sm transition-all">⚡ Capture Now</button>
             <button id="completeCaptureBtn" type="button" onclick="app.completePausedCapture()" class="hidden px-6 py-4 rounded-full btn-primary-blue font-bold text-sm" disabled>Complete</button>
@@ -339,13 +311,13 @@
                 <h3 data-shot-template="{count}-Photo Layout" class="font-display-title text-lg font-bold text-brand-900">6-Photo Layout</h3>
                 <span class="text-xs font-bold px-2.5 py-1 rounded-full bg-brand-100 text-brand-700" id="capturedCountBadge">0 / 6 complete</span>
               </div>
-              <p class="text-xs text-slate-500 mb-4">Tap any <strong>photo slot</strong> below to delete or retake that photo.</p>
+              <p class="text-xs text-slate-500 mb-4">Tap a slot to retake or delete the photo.</p>
               <div id="sixSlotsGrid" class="grid grid-cols-2 gap-3"></div>
             </div>
 
             <div class="mt-5 pt-4 border-t border-brand-100">
               <button id="goToResultBtn" onclick="app.finishCaptureAndGoToResult(false)" disabled class="w-full py-4 rounded-2xl font-extrabold text-sm sm:text-base transition-all flex items-center justify-center gap-2 bg-slate-200 text-slate-400 cursor-not-allowed">
-                <span>Finish &amp; Create Print ✨</span>
+                <span>Review Photos</span>
                 <span>→</span>
               </button>
             </div>
@@ -372,23 +344,22 @@
         <div class="lg:col-span-5 flex flex-col items-center">
           <div class="glass-card rounded-[2rem] p-5 w-full flex flex-col items-center">
             <div class="flex items-center justify-between w-full mb-3 px-1">
-              <span class="text-xs font-extrabold uppercase tracking-wider text-brand-700">High-Quality Preview</span>
-              <span class="text-[11px] font-semibold text-slate-500">Drag stickers to move them</span>
+              <span class="text-xs font-extrabold uppercase tracking-wider text-brand-700">Preview</span>
             </div>
 
             <div class="relative w-full flex items-center justify-center bg-brand-50/70 rounded-2xl p-3 border border-brand-100 overflow-hidden">
-              <canvas id="compositeCanvas" class="max-w-full max-h-[62vh] w-auto h-auto rounded-xl shadow-soft-blue cursor-grab active:cursor-grabbing bg-white"></canvas>
+              <canvas id="compositeCanvas" class="max-w-full max-h-[62vh] w-auto h-auto rounded-xl shadow-soft-blue bg-white"></canvas>
             </div>
 
-            <p id="finalPhotoNotice" hidden class="text-sm text-brand-700 mt-3">Your final photo is confirmed or waiting to be saved. This session can no longer be edited or retaken. Start a new session to create another photo.</p>
+            <p id="finalPhotoNotice" hidden class="text-sm text-brand-700 mt-3"></p>
             <details id="printReadyBox" hidden class="w-full mt-3">
-              <summary class="font-bold text-brand-700 cursor-pointer">Preview Print Version with QR (also used for downloads)</summary>
-              <img id="printReadyPreview" alt="Print version with a private QR code" class="max-w-full max-h-[62vh] mx-auto mt-2" />
-              <a id="printReadyDownload" class="text-brand-700 underline" download>Download Print Version with QR</a>
+              <summary class="font-bold text-brand-700 cursor-pointer">Print Preview with QR</summary>
+              <img id="printReadyPreview" alt="Print Preview with QR" class="max-w-full max-h-[62vh] mx-auto mt-2" />
+              <a id="printReadyDownload" class="text-brand-700 underline" download>Download Print Version</a>
             </details>
-            <label class="mt-3 w-full font-bold text-brand-700">Print copies <select id="printCopies" class="border rounded-xl p-2"><option value="1">1 copy</option></select></label>
-            <p id="printStatus" role="status" class="w-full mt-2 text-sm text-brand-700">Confirm your photo and create a QR code before printing.</p>
-            <button type="button" onclick="app.loadPrintConfig()" class="text-xs text-brand-700 underline">Check printer status</button>
+            <label class="mt-3 w-full font-bold text-brand-700">Print Copies <select id="printCopies" class="border rounded-xl p-2"><option value="1">1 copy</option></select></label>
+            <p id="printStatus" role="status" class="w-full mt-2 text-sm text-brand-700">Preparing the print version.</p>
+            <button type="button" onclick="app.loadPrintConfig()" class="text-xs text-brand-700 underline">Check Printer</button>
             <div class="grid grid-cols-2 gap-3 w-full mt-5">
               <button id="printPhotoBtn" disabled onclick="app.triggerPrint()" class="py-4 px-5 rounded-2xl btn-primary-blue font-extrabold text-sm sm:text-base flex items-center justify-center gap-2 shadow-glow-blue">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -400,7 +371,7 @@
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
                 </svg>
-                <span>DOWNLOAD PHOTO</span>
+                <span>Download Photo</span>
               </button>
             </div>
           </div>
@@ -409,65 +380,11 @@
         <div class="lg:col-span-7 flex flex-col gap-5">
           <div class="glass-card guest-qr-card rounded-[2rem] p-5 border-2 border-brand-300">
             <div id="qrCodeContainer" role="status" aria-live="polite"></div>
-            <div id="qrLoadingOverlay" class="hidden text-sm text-brand-700" role="status">Preparing your QR code…</div>
+            <div id="qrLoadingOverlay" class="hidden text-sm text-brand-700" role="status">Preparing QR code…</div>
             <p id="qrExpiryMessage" hidden>Your QR code expires in 24 hours.</p>
-            <p id="qrDescriptionText" role="status" class="text-sm text-brand-700">Confirm your photo to get a QR code.</p>
+            <p id="qrDescriptionText" role="status" class="text-sm text-brand-700">Confirm your photo to get the QR code.</p>
           </div>
 
-          <!-- 4 Pill Customization Tabs -->
-          <div class="grid grid-cols-4 gap-2.5">
-            <button onclick="app.switchCustomTab('filters')" id="tabBtn_filters" class="py-3 px-3 rounded-full font-extrabold text-xs sm:text-sm flex items-center justify-center gap-1.5 transition-all btn-primary-blue text-white"><span>🎚️ Bộ lọc</span></button>
-            <button onclick="app.switchCustomTab('stickers')" id="tabBtn_stickers" class="py-3 px-3 rounded-full font-extrabold text-xs sm:text-sm flex items-center justify-center gap-1.5 transition-all bg-white border border-brand-200 text-brand-800 hover:bg-brand-50"><span>😊 Sticker</span></button>
-            <button onclick="app.switchCustomTab('color')" id="tabBtn_color" class="py-3 px-3 rounded-full font-extrabold text-xs sm:text-sm flex items-center justify-center gap-1.5 transition-all bg-white border border-brand-200 text-brand-800 hover:bg-brand-50"><span>🎨 Frame Color</span></button>
-            <button onclick="app.switchCustomTab('text')" id="tabBtn_text" class="py-3 px-3 rounded-full font-extrabold text-xs sm:text-sm flex items-center justify-center gap-1.5 transition-all bg-white border border-brand-200 text-brand-800 hover:bg-brand-50"><span>🇹 Text &amp; Logo</span></button>
-          </div>
-
-          <!-- Tab Content Panel -->
-          <div class="glass-card rounded-[2rem] p-6">
-            <div id="tabPanel_filters" class="space-y-3">
-              <div class="text-xs font-bold text-slate-500 uppercase tracking-wider">Choose a photo filter</div>
-              <div id="filterGridContainer" class="grid grid-cols-3 gap-3"></div>
-            </div>
-
-            <div id="tabPanel_stickers" class="hidden space-y-4">
-              <div class="flex items-center gap-2 overflow-x-auto pb-1.5" id="stickerCategoryBar"></div>
-              <div id="stickerItemsGrid" class="grid grid-cols-6 gap-2.5 py-2"></div>
-              <div class="pt-3 border-t border-brand-100 flex flex-wrap items-center justify-between gap-2">
-                <label class="cursor-pointer flex-1 py-2.5 px-4 rounded-xl border-2 border-dashed border-brand-300 hover:bg-brand-50 text-brand-700 font-bold text-xs flex items-center justify-center gap-2 transition-all">
-                  <span>↑ Upload a Custom PNG Sticker</span>
-                  <input type="file" accept="image/png,image/webp,image/gif" class="hidden" onchange="app.handleCustomStickerUpload(event)" />
-                </label>
-                <button onclick="app.clearAllStickers()" class="py-2.5 px-4 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 font-bold text-xs transition-all">Remove All Stickers</button>
-              </div>
-            </div>
-
-            <div id="tabPanel_color" class="hidden space-y-4">
-              <div class="flex items-center justify-between">
-                <span class="text-xs font-bold text-slate-500 uppercase tracking-wider">Background &amp; Frame Color</span>
-              </div>
-              <div id="colorSwatchesGrid" class="grid grid-cols-6 gap-3"></div>
-              <div class="pt-3 border-t border-brand-100 flex items-center gap-4">
-                <span class="text-xs font-bold text-slate-700">Custom color:</span>
-                <input type="color" id="customColorPicker" value="#1E40AF" oninput="app.setFrameBackgroundColor(this.value)" class="w-11 h-11 rounded-xl cursor-pointer border border-brand-200 p-0.5 bg-white" />
-                <span id="customColorHexLabel" class="text-xs font-mono font-bold text-slate-600">#1E40AF</span>
-              </div>
-            </div>
-
-            <div id="tabPanel_text" class="hidden space-y-4">
-              <div>
-                <label class="block text-xs font-bold text-slate-600 mb-1.5">Top text</label>
-                <input type="text" id="inputTopText" value="AMAZING RACE 2026" oninput="app.updateCustomTexts()" class="w-full px-4 py-2.5 rounded-xl bg-brand-50/70 border border-brand-200 text-sm font-bold text-brand-900 focus:outline-none focus:ring-2 focus:ring-brand-500" />
-              </div>
-              <div>
-                <label class="block text-xs font-bold text-slate-600 mb-1.5">Main title below the photo</label>
-                <input type="text" id="inputCardTitle" value="AMAZING RACE 2026 ✨" oninput="app.updateCustomTexts()" class="w-full px-4 py-2.5 rounded-xl bg-brand-50/70 border border-brand-200 text-sm font-bold text-brand-900 focus:outline-none focus:ring-2 focus:ring-brand-500" />
-              </div>
-              <div>
-                <label class="block text-xs font-bold text-slate-600 mb-1.5">Footer text</label>
-                <input type="text" id="inputBrandingText" value="AMAZING RACE 2026" oninput="app.updateCustomTexts()" class="w-full px-4 py-2.5 rounded-xl bg-brand-50/70 border border-brand-200 text-sm font-bold text-brand-900 focus:outline-none focus:ring-2 focus:ring-brand-500" />
-              </div>
-            </div>
-          </div>
         </div>
       </div>
     </section>
@@ -479,50 +396,50 @@
   <div id="settingsModal" class="hidden fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
     <div class="bg-white rounded-[2rem] max-w-2xl w-full p-6 sm:p-8 shadow-2xl border border-brand-100 max-h-[90vh] overflow-y-auto">
       <div class="flex items-center justify-between pb-4 border-b border-brand-100 mb-5">
-        <h3 class="font-display-title text-2xl font-bold text-brand-900">⚙️ Cài Đặt & Kết Nối Máy Ảnh Phần Cứng</h3>
+        <h3 class="font-display-title text-2xl font-bold text-brand-900">⚙️ Camera Settings</h3>
         <button onclick="app.closeSettingsModal()" class="w-9 h-9 rounded-full bg-brand-50 hover:bg-brand-100 text-brand-800 font-bold flex items-center justify-center">✕</button>
       </div>
 
       <div class="space-y-6">
         <div class="p-4 rounded-2xl bg-brand-50 border border-brand-200 space-y-3">
-          <div class="font-bold text-brand-900">Căn chỉnh 6 ô frame custom (%)</div>
+          <div class="font-bold text-brand-900">Custom Frame Alignment (%)</div>
           <div class="grid grid-cols-2 gap-3">
-<label class="text-xs font-bold">Lề ngang<input id="slotPadX" type="number" min="0" max="30" step="0.5" value="6" oninput="app.updateCustomSlotMetrics()" class="w-full border border-brand-200 rounded-xl px-3 py-2" /></label>
-<label class="text-xs font-bold">Lề trên<input id="slotPadTop" type="number" min="0" max="30" step="0.5" value="7" oninput="app.updateCustomSlotMetrics()" class="w-full border border-brand-200 rounded-xl px-3 py-2" /></label>
-<label class="text-xs font-bold">Lề dưới<input id="slotPadBottom" type="number" min="0" max="30" step="0.5" value="15" oninput="app.updateCustomSlotMetrics()" class="w-full border border-brand-200 rounded-xl px-3 py-2" /></label>
-<label class="text-xs font-bold">Khoảng cách<input id="slotGap" type="number" min="0" max="30" step="0.5" value="3" oninput="app.updateCustomSlotMetrics()" class="w-full border border-brand-200 rounded-xl px-3 py-2" /></label>
-</div><button onclick="app.autoDetectTransparentHolesFromFrame()" class="px-3 py-2 rounded-xl btn-primary-blue text-xs font-bold">Dò ô trong suốt</button>
-          <p id="slotDetectStatus" class="text-xs font-semibold text-brand-600">Dùng thông số lề chuẩn khi chưa dò được 6 ô.</p>
+<label class="text-xs font-bold">Side Margin<input id="slotPadX" type="number" min="0" max="30" step="0.5" value="6" oninput="app.updateCustomSlotMetrics()" class="w-full border border-brand-200 rounded-xl px-3 py-2" /></label>
+<label class="text-xs font-bold">Top Margin<input id="slotPadTop" type="number" min="0" max="30" step="0.5" value="7" oninput="app.updateCustomSlotMetrics()" class="w-full border border-brand-200 rounded-xl px-3 py-2" /></label>
+<label class="text-xs font-bold">Bottom Margin<input id="slotPadBottom" type="number" min="0" max="30" step="0.5" value="15" oninput="app.updateCustomSlotMetrics()" class="w-full border border-brand-200 rounded-xl px-3 py-2" /></label>
+<label class="text-xs font-bold">Gap<input id="slotGap" type="number" min="0" max="30" step="0.5" value="3" oninput="app.updateCustomSlotMetrics()" class="w-full border border-brand-200 rounded-xl px-3 py-2" /></label>
+</div><button onclick="app.autoDetectTransparentHolesFromFrame()" class="px-3 py-2 rounded-xl btn-primary-blue text-xs font-bold">Detect Transparent Slots</button>
+          <p id="slotDetectStatus" class="text-xs font-semibold text-brand-600">Default margins are used until slots are detected.</p>
         </div>
 
         <div class="p-4 rounded-2xl bg-brand-50/80 border border-brand-200 space-y-3">
-          <div class="font-extrabold text-brand-900 text-sm">1. Quy trình Tự động hoá (Kiosk Mode)</div>
+          <div class="font-extrabold text-brand-900 text-sm">Automatic Capture</div>
           <label class="flex items-center justify-between cursor-pointer">
-            <span class="text-xs sm:text-sm font-semibold text-slate-700">Tự động chuyển sang màn hình QR & In sau khi chụp đủ 6 tấm</span>
+            <span class="text-xs sm:text-sm font-semibold text-slate-700">Automatically review the photos after capture</span>
             <input type="checkbox" id="chkFullAuto" checked onchange="app.syncSettingsFromModal()" class="w-5 h-5 accent-brand-600 rounded" />
           </label>
           <label class="flex items-center justify-between cursor-pointer">
-            <span class="text-xs sm:text-sm font-semibold text-slate-700">Nhắc xác nhận ảnh và bấm In ảnh sau khi chụp tự động</span>
+            <span class="text-xs sm:text-sm font-semibold text-slate-700">Show a reminder to confirm and print after capture</span>
             <input type="checkbox" id="chkAutoPrintPopup" onchange="app.syncSettingsFromModal()" class="w-5 h-5 accent-brand-600 rounded" />
           </label>
         </div>
 
         <div class="p-4 rounded-2xl bg-white border border-brand-200 space-y-3">
           <div class="font-extrabold text-brand-900 text-sm flex items-center justify-between">
-            <span>2. Tín Hiệu Đóng Màn Trập Máy Ảnh Phần Cứng</span>
-            <button onclick="app.testHardwareShutterSignal()" class="px-3 py-1.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold shadow-sm">⚡ Test Màn Trập Ngay</button>
+            <span>Shutter Signal Test</span>
+            <button onclick="app.testHardwareShutterSignal()" class="px-3 py-1.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold shadow-sm">⚡ Test Shutter</button>
           </div>
-          <p class="text-xs text-slate-500">DEMO: mặc định chỉ phát hiệu ứng. Video preview chưa phải ảnh máy ảnh chụp thật; adapter legacy chỉ dành cho kiểm tra development.</p>
+          <p class="text-xs text-slate-500">Demo shutter effect. The legacy adapter sends a test signal in development.</p>
         </div>
 
         <div class="p-4 rounded-2xl bg-brand-50/50 border border-brand-100 space-y-2">
-          <div class="font-extrabold text-brand-900 text-sm">3. QR nội bộ từ Backend</div>
-          <input type="text" disabled id="imgbbApiKeyInput" placeholder="Không dùng API key dịch vụ ngoài; cấu hình PUBLIC_BASE_URL ở backend" onchange="app.syncSettingsFromModal()" class="w-full px-3.5 py-2 rounded-xl bg-white border border-brand-200 text-xs font-mono" />
+          <div class="font-extrabold text-brand-900 text-sm">Photo Sharing</div>
+          <input type="text" disabled id="imgbbApiKeyInput" placeholder="Public sharing is configured on the Host" onchange="app.syncSettingsFromModal()" class="w-full px-3.5 py-2 rounded-xl bg-white border border-brand-200 text-xs font-mono" />
         </div>
       </div>
 
       <div class="mt-6 flex justify-end">
-        <button onclick="app.closeSettingsModal()" class="px-6 py-3 rounded-xl btn-primary-blue font-extrabold text-sm">Lưu & Đóng</button>
+        <button onclick="app.closeSettingsModal()" class="px-6 py-3 rounded-xl btn-primary-blue font-extrabold text-sm">Save & Close</button>
       </div>
     </div>
   </div>
@@ -531,14 +448,14 @@
   <div id="mobilePreviewModal" class="hidden fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4">
     <div class="bg-white rounded-[2.5rem] max-w-sm w-full p-5 shadow-2xl border-4 border-brand-200 flex flex-col items-center text-center">
       <div class="w-16 h-1.5 bg-slate-200 rounded-full mb-4"></div>
-      <div class="text-xs font-extrabold uppercase tracking-wider text-brand-600 mb-1">DEMO • Xem trước trên thiết bị này</div>
-      <h4 class="font-display-title text-xl font-bold text-slate-900 mb-3">Tải Ảnh Sự Kiện Của Bạn 💙</h4>
+      <div class="text-xs font-extrabold uppercase tracking-wider text-brand-600 mb-1">DEMO • Preview on This Device</div>
+      <h4 class="font-display-title text-xl font-bold text-slate-900 mb-3">Download Your Photo 💙</h4>
       <div class="w-full bg-brand-50 rounded-2xl p-3 border border-brand-100 mb-4">
         <img id="mobileModalImage" src="" alt="Mobile Preview" class="max-h-72 mx-auto rounded-lg shadow-md" />
       </div>
       <div class="flex gap-2 w-full">
-        <button onclick="app.downloadCompositeImage()" class="flex-1 py-3 rounded-xl btn-primary-blue font-extrabold text-xs">⬇️ Tải Ảnh Gốc (PNG)</button>
-        <button onclick="document.getElementById('mobilePreviewModal').classList.add('hidden')" class="px-4 py-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs">Đóng</button>
+        <button onclick="app.downloadCompositeImage()" class="flex-1 py-3 rounded-xl btn-primary-blue font-extrabold text-xs">⬇️ Download Photo (PNG)</button>
+        <button onclick="document.getElementById('mobilePreviewModal').classList.add('hidden')" class="px-4 py-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs">Close</button>
       </div>
     </div>
   </div>

@@ -2,7 +2,7 @@
 
 export function goToScreen(app, screenName) {
   if(screenName!=='result' && (app.serverSession?.finalized||app.finalOperation?.confirmationStarted)){
-    app.showToast('This session is finalized or waiting to be saved. Retry saving if there is an error; start a New Session to take or edit another photo.','info');return;
+    app.showToast('Start a new session to take another photo.','info');return;
   }
   app.clearTimers();
   app.currentScreen = screenName;

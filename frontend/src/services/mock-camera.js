@@ -80,7 +80,7 @@ export function startSimulatedCamera(app, toastMsg = '') {
 
     ctx.fillStyle = '#1E40AF';
     ctx.font = 'bold 23px "Plus Jakarta Sans", sans-serif';
-    ctx.fillText(`TẤM #${nextIdx + 1}: ${currentPose.title}`, w / 2, h * 0.67 + 29);
+    ctx.fillText(`PHOTO #${nextIdx + 1}: ${currentPose.title}`, w / 2, h * 0.67 + 29);
 
     ctx.fillStyle = 'rgba(224, 242, 254, 0.95)';
     ctx.font = '600 17px "Plus Jakarta Sans", sans-serif';
@@ -124,7 +124,7 @@ export function handleManualPhotoFilesUpload(app, event) {
         canvases.push(snapCanvas);
       }
       if (epoch !== app.captureEpoch || !await app.acceptPhotoBatch(canvases)) return;
-      app.showToast(`The backend saved ${Math.min(app.slotCount, files.length)} captured photos.`, 'success');
+      app.showToast(`Saved ${Math.min(app.slotCount, files.length)} photos.`, 'success');
       if (app.photos.every(Boolean)) app.onAllSixShotsCompleted();
     } catch (error) { app.reportSaveError(error); }
     finally { app.captureBusy = false; app.syncPersistenceUI(); }

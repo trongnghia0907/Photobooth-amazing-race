@@ -9,7 +9,7 @@ import time
 import uuid
 from PIL import Image, UnidentifiedImageError
 from .base import CameraCapabilities, CameraError, CapturedPhoto
-from .sony_ptp import SonyPtpDriver
+from .sony_ptp import SonyPtpDriver, ValidatedSonyOriginal
 from ..images import is_jpeg_image
 
 _DEFAULT_DRIVER = object()
@@ -89,7 +89,11 @@ class SonyZvE10CameraAdapter:
 
     def capture_photo(self, capture_id, deadline):
         uuid.UUID(capture_id)
-        driver=self._ready('capture');self._deadline(deadline,'capture')
+        try:
+            driver=self._ready('capture');self._deadline(deadline,'capture')
+        except CameraError as error:
+            error.shutter_dispatched = False
+            raise
         try:reference=driver.capture_photo(capture_id,deadline)
         except TimeoutError:
             raise CameraError('timeout','Sony shutter outcome is unknown; do not trigger another shutter automatically.',uncertain=True) from None
@@ -126,6 +130,8 @@ class SonyZvE10CameraAdapter:
         if (not isinstance(photo,CapturedPhoto) or not isinstance(photo.data,bytes) or not photo.data
                 or photo.mime!='image/jpeg' or photo.source!='camera_original'):
             raise CameraError('transfer','Sony requires the original camera JPEG, never a preview/webcam image.',stage='transfer')
+        if type(driver) is SonyPtpDriver and type(photo) is ValidatedSonyOriginal:
+            return photo  # The built-in driver already decoded these exact, immutable bytes.
         try:
             with Image.open(BytesIO(photo.data)) as image:
                 if not is_jpeg_image(image):raise ValueError('Not a JPEG-compatible original')

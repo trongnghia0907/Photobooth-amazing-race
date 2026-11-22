@@ -23,5 +23,5 @@ export function testHardwareShutterSignal(app) {
   app.triggerHardwareCameraShutter();
   app.playShutterSound();
   app.triggerFlashEffect();
-  app.showToast(defaults.enableLegacyShutter ? 'Legacy: chỉ gửi tín hiệu; chưa xác nhận ảnh máy ảnh.' : 'DEMO: hiệu ứng màn trập, không gửi lệnh phần cứng.', 'info');
+  app.showToast(defaults.enableLegacyShutter ? 'Legacy shutter signal sent. No photo was confirmed.' : 'Demo shutter effect. No hardware signal was sent.', 'info');
 }

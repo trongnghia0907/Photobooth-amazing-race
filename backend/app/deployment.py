@@ -9,8 +9,10 @@ KIOSK_HEADERS={'Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Re
 
 
 def index(request:Request):
-    root=request.app.state.settings.frontend_dist
+    settings=request.app.state.settings
+    root=settings.frontend_dist
     if not root:raise HTTPException(404,'Frontend chưa được cấu hình')
+    if settings.booth_direct_access:request.app.state.booth_access.require_direct_network(request)
     return FileResponse(root/'index.html',headers=KIOSK_HEADERS)
 
 

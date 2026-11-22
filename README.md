@@ -54,7 +54,7 @@ Install Git, **Python 3.12** and **Node.js 22.12 or newer with npm**. Camera har
    & ./backend/.venv/Scripts/python.exe scripts/run_host.py --help
    ```
 
-No `.env` file is required for the basic setup. The launcher asks for a Host username, a password of at least **12 characters**, and a kiosk pairing code of at least **16 characters**. There are no default credentials. Save and reuse your chosen credentials; do not put secrets in Git or command arguments.
+No `.env` file is required for the basic setup. The launcher asks for a Host username and a password of at least **12 characters**. There are no default credentials. Save and reuse your chosen credentials; do not put secrets in Git or command arguments.
 
 Environment variables apply to the current PowerShell terminal. Configuration files are loaded only when explicitly passed with `--env-file`; existing environment variables override file values. Do not copy the production settings in `backend/.env.example` unchanged into a local/LAN setup. Google Drive and Cloudflare setup is optional and described in section 3.
 
@@ -120,7 +120,7 @@ A diagnostic PASS covers only the requested checks. It does not mark the adapter
 
 ### Select the Sony adapter
 
-After diagnostics finish, start the Sony Host command in section 3A. On the laptop, open `/admin`, sign in and inspect Camera Settings. Open `/booth` and verify Live Preview, then repeat from the paired iPad. Use **development** for initial hardware validation: Event mode requires verified physical hardware, and the current Sony adapter still reports `hardware_verified=false`. Do not bypass that restriction.
+After diagnostics finish, start the Sony Host command in section 3A. On the laptop, open `/admin`, sign in and inspect Camera Settings. Open `/booth` and verify Live Preview, then repeat from the iPad on the same LAN. Use **development** for initial hardware validation: Event mode requires verified physical hardware, and the current Sony adapter still reports `hardware_verified=false`. Do not bypass that restriction.
 
 For software-only testing, replace `--camera sony_zve10` with `--camera mock`. For an optional webcam test, install the following, then use `--camera uvc_demo`:
 
@@ -139,6 +139,36 @@ For software-only testing, replace `--camera sony_zve10` with `--camera mock`. F
 
 Host logs are under `runtime/logs/`. Report the diagnostic JSON, camera model/settings and failing stage, without credentials or private images. Successful mock tests cannot distinguish every hardware problem from a driver compatibility issue; physical testing is required.
 
+**Abandoning a failed Sony shot (Host operator only).** After returning to **New Session**, stop the Host before recording an abandonment. Use the full capture ID from the Host logs:
+
+```powershell
+& ./backend/.venv/Scripts/python.exe scripts/cancel_sony_capture.py --capture-id <capture-uuid> --confirm-discard
+```
+
+The command locks the Host runtime and opens the camera exclusively. It checks for active captures, JPEG evidence, acknowledged releases and an empty buffer. `abandonment_pending` preserves the operator decision and the original receipt while keeping new shutters blocked. A failed request with no shutter intent can clear its pending Booth state without this command.
+
+To finish abandonment while the Host is stopped, close other camera apps and wait until the camera's access lamp is off. Turn off the camera, unplug USB and any external power, remove the battery, and remove the old SD card if one was installed. Keep that card separate during the new session. With the camera still disconnected and unpowered, record the boundary for the same full capture ID:
+
+```powershell
+& ./backend/.venv/Scripts/python.exe scripts/cancel_sony_capture.py --capture-id <capture-uuid> --confirm-discard --record-power-off
+```
+
+Reinstall the battery, leave the old SD card out, and turn on the same camera. Set **PC Remote → Still Img. Save Dest. → PC Only**, reconnect USB, and run the following without taking a photo or starting the Host:
+
+```powershell
+& ./backend/.venv/Scripts/python.exe scripts/cancel_sony_capture.py --capture-id <capture-uuid> --confirm-discard --verify-reconnect
+```
+
+After `abandonment_isolated`, start the Host, select **New Session**, and connect the camera. On that first camera connection, the Host records the cancellation in SQLite and keeps the physical outcome uncertain. If Windows PnP, the fresh Sony PTP connection, or the empty-buffer check fails, leave the receipt and any unclaimed JPEG untouched. A WIA reconnect with an empty buffer by itself leaves the guard in place.
+
+**Preserving an unmatched Sony JPEG.** If the Host reports a buffered JPEG with an unknown capture identity and gives the retired receipt ID, let active work finish and gracefully stop the Host. Run the following only as the Host operator with that full receipt ID:
+
+```powershell
+& ./backend/.venv/Scripts/python.exe scripts/cancel_sony_capture.py --capture-id <capture-uuid> --preserve-buffer
+```
+
+`preserved` confirms the original JPEG, its checksum and the post-transfer `FILE_INFO=0x0000`. The image and its audit record are under `runtime/camera_originals/sony-recovery/unassigned/`. Preserve them separately from Booth slots. Start the Host and select **New Session**. For an interrupted or invalid transfer, keep the audit and any preserved bytes. The guard stays active and re-running the command does not repeat the uncertain read.
+
 ## 3. Running the Complete Photobooth System
 
 ### A. Terminal 1: start the Host
@@ -150,7 +180,7 @@ $env:PUBLIC_GALLERY_ENABLED="true"
 & ./backend/.venv/Scripts/python.exe scripts/run_host.py --profile lan --lan-ip auto --mode development --camera sony_zve10
 ```
 
-Enter your Host credentials and pairing code. **Keep this terminal open.** This starts one Host on port **8000**, listening on `0.0.0.0` for localhost and LAN access. The built frontend and backend run together; a separate Vite server is unnecessary.
+Enter your Host credentials. If the launcher cannot identify the private subnet, it asks for a kiosk pairing code (at least 16 characters). **Keep this terminal open.** This starts one Host on port **8000**, listening on `0.0.0.0` for localhost and LAN access. The built frontend and backend run together; a separate Vite server is unnecessary.
 
 Finish and close standalone diagnostics before starting this Host. For a test without Sony hardware, use `--camera mock`. For laptop-only testing, replace `--profile lan --lan-ip auto` with `--profile local`. Add `--build` when the frontend needs rebuilding.
 
@@ -162,9 +192,9 @@ Open `http://localhost:8000/api/health` on the laptop and check for `"status":"o
 
 | Website | Purpose | URL / route | Requirements |
 | --- | --- | --- | --- |
-| Guest UI | Capture and customize on iPad | `http://LAPTOP_IP:8000/booth`; laptop: `http://localhost:8000/booth` | Same LAN and kiosk pairing code |
+| Guest UI | Capture and customize on iPad | `http://LAPTOP_IP:8000/booth`; laptop: `http://localhost:8000/booth` | Same verified LAN, no code by default |
 | Host Dashboard | Manage equipment and sessions | `http://localhost:8000/admin` | Host login; laptop localhost only |
-| Event Live Display | Four-corner projector presentation | `http://LAPTOP_IP:8000/event-display` | Same LAN and separate Host-issued display code |
+| Event Live Display | Four-corner projector presentation | `http://LAPTOP_IP:8000/event-display` | Same LAN, no code by default |
 | All-Photos Gallery | Browse published final composites | `http://LAPTOP_IP:8000/gallery`; public HTTPS origin + `/gallery` when enabled | Gallery flag; published, non-revoked photo with an unexpired issued QR |
 | QR Guest Photo Page | View/download one confirmed photo | `/p/{token}` on the generated share origin | Valid share token; verified public HTTPS for phones on other networks |
 
@@ -180,7 +210,7 @@ Localhost refers to the device opening the page. Use the laptop's LAN address on
    Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.IPAddress -notmatch '^(127\.|169\.254\.)' } | Select-Object InterfaceAlias,IPAddress
    ```
 
-4. Use the active Wi-Fi address, not a VPN address. Open the printed `/booth` URL in Safari and enter the pairing code.
+4. Use the active Wi-Fi address, not a VPN address. Open the printed `/booth` URL in Safari. Enter the kiosk pairing code only if the launcher requested one.
 
 **Live Preview check.** On the Host laptop, open `http://localhost:8000/booth?previewStats=1`. For a separate test over Wi-Fi, close the laptop Booth tab and open `http://LAPTOP_IP:8000/booth?previewStats=1` on a second phone joined to the same hotspot. Keep the Dashboard on the laptop and only one Booth viewer active. Pair the second phone, keep its Booth page in the foreground for two minutes, and note FPS, request p95, estimated frame age and any freezes. Move an object in view periodically to confirm the picture keeps updating. Repeat in Safari on the iPad before the event. The laptop's LAN address opened on the laptop does not measure Wi-Fi between devices. Omit `previewStats=1` for the regular Booth view.
 5. If automatic detection chooses another interface, stop Host and replace `--lan-ip auto` with `--lan-ip LAPTOP_IP`, using the actual current address. Reopen the URL after DHCP changes; no fixed IP is required.
@@ -195,7 +225,7 @@ Do not disable the firewall. Some hotspots isolate connected devices; if the cor
 
 ### D. Open Event Live Display
 
-On the Host Dashboard, enable display access and create a display code. On a computer **on the same LAN**, open the printed `/event-display` URL and enter that code. Connect its projector/LED by HDMI/USB-C and press F11 for presentation. Newly published final composites appear automatically; Host can hide them.
+On a computer **on the same LAN**, open the printed `/event-display` URL. A display code is only required if the Host starts with `EVENT_DISPLAY_PIN_REQUIRED=true`. Connect its projector/LED by HDMI/USB-C and press F11 for presentation. Newly published final composites appear automatically; Host can hide them.
 
 **A computer on a different auditorium network cannot currently use Event Display through the photo-only Cloudflare gateway.** The public gateway does not serve `/event-display`. Use the same LAN or connect the projector directly to the Host. Cross-network Event Display needs a separately approved private connection or future deployment; it is not currently provided. Never expose Host port 8000 publicly to work around this restriction.
 
@@ -253,7 +283,7 @@ Stop Host and append `--printer windows --enable-physical-printing` to your usua
 1. Complete installation and verify `frontend/dist-host/index.html` exists.
 2. **Sony hardware:** before Host startup, run discovery, connection/Live View and the explicitly confirmed one-shutter diagnostic. Open the transferred original JPEG; record each result separately.
 3. **Sony hardware:** start Host with `--camera sony_zve10`; check `/api/health` reports `ok` and verify laptop Live Preview. Physical compatibility/stability is still **PENDING** until the tester performs these checks.
-4. **iPad/LAN:** pair the iPad and verify Live Preview in Safari.
+4. **iPad/LAN:** open the printed `/booth` URL and verify Live Preview in Safari.
 5. **Sony hardware:** complete a four-photo session and inspect all captured slots.
 6. **Sony hardware:** repeat with a six-photo session.
 7. Test Pause, Resume, Capture Now, Complete, individual Retake and Start Over. In Pause mode, manually fill all slots and use Complete to open Review without finalizing.

@@ -1,7 +1,9 @@
 """JPEG/MPF originals: synthetic MPOs only, never camera hardware or user files."""
 from io import BytesIO
 import hashlib
+import importlib.util
 import json
+from pathlib import Path
 import time
 import uuid
 
@@ -15,14 +17,20 @@ from app.services.images import validate_image
 from app.services.camera.base import CameraError, CapturedPhoto
 from app.services.camera.sony_ptp import check_jpeg, SonyPtpDriver
 from app.services.camera.sony_zve10 import SonyZvE10CameraAdapter
-from test_sony_ptp import FakeWia
+from test_sony_ptp import FakeWia, jpeg
 from test_sony_zve10 import settings, connect, capture
 from test_sessions import create, headers, key
 
 
-def mpo():
+spec = importlib.util.spec_from_file_location('verify_sony_capture',
+    Path(__file__).resolve().parents[2] / 'scripts/verify_sony_capture.py')
+acceptance = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(acceptance)
+
+
+def mpo(color='blue'):
     out=BytesIO()
-    Image.new('RGB',(320,240),'blue').save(out,format='MPO',save_all=True,
+    Image.new('RGB',(320,240),color).save(out,format='MPO',save_all=True,
         append_images=[Image.new('RGB',(80,60),'red')])
     data=out.getvalue()
     with Image.open(BytesIO(data)) as image:assert image.format=='MPO' and image.n_frames==2
@@ -46,6 +54,43 @@ class MpoCamera(FakeWia):
         result=super().command(opcode,params,**kwargs)
         if opcode==0x9207 and params==(0xd2c2,) and kwargs.get('data')==b'\x02\x00':self.photos[-1]=(self.original,self.shots)
         return result
+
+
+@pytest.mark.parametrize('data',[b'not a JPEG', jpeg('blue')[:100], mpo()[:len(mpo())//4]])
+def test_acceptance_rejects_invalid_original_even_with_matching_checksum(data):
+    digest=hashlib.sha256(data).hexdigest()
+    receipt={'object':{'size':len(data)}, 'jpeg_dimensions':[320,240], 'sha256':digest, 'received_sha256':digest}
+    with pytest.raises(CameraError):
+        acceptance.verify_original(data,receipt,digest)
+
+
+def test_acceptance_rejects_valid_mpo_with_incorrect_evidence():
+    data=mpo();digest=hashlib.sha256(data).hexdigest()
+    receipt={'object':{'size':len(data)}, 'jpeg_dimensions':[320,240], 'sha256':digest, 'received_sha256':digest}
+    with pytest.raises(ValueError,match='SHA-256'):
+        acceptance.verify_original(data,receipt,'0'*64)
+    with pytest.raises(ValueError,match='dimensions'):
+        acceptance.verify_original(data,{**receipt,'jpeg_dimensions':[80,60]},digest)
+
+
+def test_acceptance_can_advance_from_mpo_to_second_slot_in_the_same_session(settings):
+    with TestClient(create_app(settings)) as client:
+        wire=MpoCamera();client.app.state.camera.adapter.driver.transport=wire
+        sid=create(client);base=connect(client,sid)
+        first_response=capture(client,base,0)
+        assert first_response.status_code==200
+        first=acceptance.verify_saved_capture(settings.storage_root,sid,first_response.json()['capture']['id'],0)
+        assert first['jpeg_dimensions']==[320,240] and first['file_info']=='0x0000' and wire.shots==1
+        assert (settings.storage_root/first['native_path']).read_bytes()==wire.original
+        with pytest.raises(ValueError,match='session and slot'):
+            acceptance.verify_saved_capture(settings.storage_root,sid,first['capture_id'],1)
+
+        wire.original=mpo('green')
+        second_response=capture(client,base,1)
+        assert second_response.status_code==200
+        second=acceptance.verify_saved_capture(settings.storage_root,sid,second_response.json()['capture']['id'],1)
+        assert (first['slot'],second['slot'])==(1,2) and wire.shots==2
+        assert first['capture_id']!=second['capture_id'] and first['sha256']!=second['sha256']
 
 
 @pytest.mark.parametrize('count',[4,6])

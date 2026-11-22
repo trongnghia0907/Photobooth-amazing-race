@@ -15,7 +15,7 @@ test('16:9 event display: explicit approval, four-corner gallery, hide, reconnec
   mkdirSync(path.join(root,'.tools'),{recursive:true});
   const storage=mkdtempSync(path.join(root,'.tools/event-gallery-')),p=await port(),base='http://127.0.0.1:'+p;
   const password=randomBytes(24).toString('hex'),pairing=randomBytes(24).toString('hex');
-  const env={...process.env,ADMIN_USERNAME:'gallery-host',ADMIN_PASSWORD:password,BOOTH_PAIRING_KEY:pairing,PYTHONUTF8:'1'};
+  const env={...process.env,ADMIN_USERNAME:'gallery-host',ADMIN_PASSWORD:password,BOOTH_PAIRING_KEY:pairing,EVENT_DISPLAY_PIN_REQUIRED:'true',PYTHONUTF8:'1'};
   const log=[],errors=[];let child;
   const step=name=>console.log('[event-display] '+name);
   page.on('pageerror',error=>errors.push(error.message));
@@ -80,10 +80,30 @@ test('16:9 event display: explicit approval, four-corner gallery, hide, reconnec
   try{
     step('start');
     await start();
+    await page.goto(base+'/booth');
+    await expect.poll(async()=>(await page.request.get(base+'/api/booth/me')).status()).toBe(200);
+    await expect(page.locator('#boothPairOverlay')).toBeHidden();
+    await expect(page.locator('html')).toHaveAttribute('lang','en');
     const paired=await request.post(base+'/api/booth/pair',{headers:{'X-OSA-Pair':'1'},data:{key:pairing}});expect(paired.ok()).toBe(true);stationCsrf=(await paired.json()).csrf_token;
     await host.goto(base+'/admin');await host.locator('[name=username]').fill('gallery-host');await host.locator('[name=password]').fill(password);await host.locator('#login button').click();await expect(host.locator('#dashboard')).toBeVisible();
     const firstCode=await code();
     await page.goto(base+'/event-display');await unlock(firstCode);await expect(page.locator('#displayEmpty')).toBeVisible();
+    async function expectTheme() {
+      const asset=await page.request.get(base+'/event-display/assets/theme-display.png');
+      expect(asset.status()).toBe(200);
+      expect(createHash('sha256').update(await asset.body()).digest('hex')).toBe(
+        createHash('sha256').update(readFileSync(path.join(root,'theme/Theme-display.png'))).digest('hex'));
+      await expect(page.locator('body > header')).toHaveCount(0);
+      const artwork=page.locator('.official-event-art');
+      await expect(artwork).toHaveCSS('background-image',/\/event-display\/assets\/theme-display\.png/);
+      await expect(artwork).toHaveCSS('background-size','100% auto');
+      const themeTop=await artwork.evaluate(el=>parseFloat(getComputedStyle(el).backgroundPositionY));
+      expect(themeTop).toBeGreaterThanOrEqual(6);
+      expect((await page.locator('#photoWall').boundingBox()).y).toBeGreaterThan(themeTop+page.viewportSize().width*.045);
+      await expect(artwork).toHaveCSS('background-repeat','no-repeat');
+      expect(await artwork.boundingBox()).toEqual({...page.viewportSize(),x:0,y:0});
+    }
+    await expectTheme();
     expect((await page.request.get(base+'/api/admin/sessions')).status()).toBe(401);
     step('create six-photo composite');const a=await finalPhoto(6,'#2856a3');
     await pause(2800);await expect(page.locator('#photoWall figure[data-photo-id]')).toHaveCount(0);
@@ -96,6 +116,11 @@ test('16:9 event display: explicit approval, four-corner gallery, hide, reconnec
     await expect.poll(()=>page.locator('#photoWall img').nth(1).evaluate(i=>[i.naturalWidth,i.naturalHeight])).toEqual([1200,800]);
     expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
     expect(await page.evaluate(()=>document.documentElement.scrollHeight<=innerHeight)).toBe(true);
+    await page.setViewportSize({width:1366,height:690});
+    await expectTheme();
+    await expect(page.locator('#photoWall img')).toHaveCount(2);
+    expect(await page.evaluate(()=>document.documentElement.scrollHeight<=innerHeight)).toBe(true);
+    await page.setViewportSize({width:1920,height:1080});
     const feed=await page.request.get(base+'/event-display/api/photos');const json=await feed.json();expect(json.items).toHaveLength(2);
     for(const item of json.items)expect(Object.keys(item).sort()).toEqual(['approved_at','height','id','image_url','width']);
     expect(await feed.text()).not.toContain(a.sid);expect(await feed.text()).not.toContain(a.share.share_url);
@@ -114,6 +139,7 @@ test('16:9 event display: explicit approval, four-corner gallery, hide, reconnec
     const secondCode=await code();expect(secondCode).not.toBe(firstCode);await expect(page.locator('#displayLogin')).toBeVisible();await expect(page.locator('#photoWall figure[data-photo-id]')).toHaveCount(0);
     await unlock(secondCode);await expect(page.locator('#photoWall figure[data-photo-id]')).toHaveCount(2);
     step('restart actual backend');await stop();await start();await expect(page.locator('#photoWall figure[data-photo-id]')).toHaveCount(2);
+    await page.reload();await expectTheme();
     const after=await page.request.get(base+'/event-display/api/photos');expect((await after.json()).items.map(i=>i.id).sort()).toEqual(json.items.map(i=>i.id).sort());
     await expect(page.locator('#photoWall')).toBeVisible();
     await host.locator('nav [data-page="event"]').click();await host.locator('#revokeDisplayCode').click();await expect(page.locator('#displayLogin')).toBeVisible();await expect(page.locator('#photoWall figure[data-photo-id]')).toHaveCount(0);

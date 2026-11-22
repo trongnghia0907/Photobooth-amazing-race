@@ -260,8 +260,8 @@ def test_preview_is_framed_decoded_and_not_a_still_capture(tmp_path):
     wire.live=1;assert real.get_preview_frame().data==wire.preview and wire.open_count==1
 
 
-@pytest.mark.parametrize('persistent', [False, True])
-def test_transient_identity_busy_reuses_wia_and_bounds_retries(tmp_path, persistent):
+@pytest.mark.parametrize('busy_attempts,expected_attempts', [(2,3),(4,4)])
+def test_transient_identity_busy_reuses_wia_and_bounds_retries(tmp_path,busy_attempts,expected_attempts):
     wire = FakeWia()
     command = wire.command
     attempts = []
@@ -269,20 +269,20 @@ def test_transient_identity_busy_reuses_wia_and_bounds_retries(tmp_path, persist
     def busy_identity(opcode, *args, **kwargs):
         if opcode == 0x1001:
             attempts.append(opcode)
-            if persistent or len(attempts) == 1:
+            if len(attempts) <= busy_attempts:
                 raise CameraError('busy', 'WIA busy')
         return command(opcode, *args, **kwargs)
 
     wire.command = busy_identity
     camera = SonyPtpDriver(tmp_path, transport=wire)
-    if persistent:
+    if busy_attempts == expected_attempts:
         with pytest.raises(CameraError, match='WIA busy'):
             camera.connect()
         assert not camera.connected and wire.closed == 1
     else:
         camera.connect()
         camera.connect()
-    assert len(attempts) == 2 and wire.open_count == 1 and wire.shots == 0
+    assert len(attempts) == expected_attempts and wire.open_count == 1 and wire.shots == 0
 
 
 def test_preview_property_cache_expires_without_affecting_original_checks(tmp_path):
@@ -318,6 +318,26 @@ def test_original_transfer_and_receipt_survive_driver_restart(tmp_path):
     real.disconnect();again=SonyPtpDriver(tmp_path,transport=wire);again.connect()
     assert again.capture_photo(identifier,end)==reference
     assert again.get_captured_photo(reference,end).data==original and wire.shots==1
+
+
+def test_builtin_sony_handoff_reuses_full_decode_and_exact_bytes(tmp_path, monkeypatch):
+    from app.services.camera import sony_zve10
+
+    native,wire=driver(tmp_path)
+    adapter=sony_zve10.SonyZvE10CameraAdapter(native)
+    adapter.connected=True
+    deadline=time.monotonic()+3
+    reference=adapter.capture_photo(str(uuid.uuid4()),deadline)
+    original=wire.photos[0][0]
+
+    def unexpected_adapter_decode(_data):
+        pytest.fail('The built-in PTP driver already decoded these bytes')
+
+    with monkeypatch.context() as scoped:
+        scoped.setattr(sony_zve10,'BytesIO',unexpected_adapter_decode)
+        assert adapter.get_captured_photo(reference,deadline).data==original
+        assert adapter.get_captured_photo(reference,deadline).data==original
+    assert wire.shots==1
 
 
 @pytest.mark.parametrize('fault',['transfer_timeout','bad_jpeg'])

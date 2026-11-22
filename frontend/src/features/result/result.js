@@ -20,7 +20,7 @@ export async function finishCaptureAndGoToResult(app, isAutoTriggered = false) {
   app.syncSetupLayout();
 
   if (isAutoTriggered && app.fullAutoMode && app.autoPrintPopup) {
-    app.showToast('Confirm your photo and create a QR code, then select Print Photo to send the request to the host.', 'info');
+    app.showToast('Confirm your photo, then select Print Photo.', 'info');
   }
 }
 
@@ -48,8 +48,7 @@ export function openMobilePreviewModal(app) {
 
 export function downloadCompositeImage(app) {
   if(app.serverSession?.finalized&&app.activeShare){
-    if(!app.activeShare.print_ready||!app.activeShare.public_ready){app.showToast(app.activeShare.print_ready_error||'Waiting for a verified HTTPS print image with a QR code.','info');return;}
-    const download=document.createElement('a');download.href=app.activeShare.download_url;download.download='amazing-race-2026-print-ready.png';
+    const download=document.createElement('a');download.href=app.activeShare.download_url;download.download='amazing-race-2026-photo.png';
     document.body.appendChild(download);download.click();download.remove();return;
   }
   app.renderCompositeCanvas();
@@ -61,5 +60,5 @@ export function downloadCompositeImage(app) {
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
-  app.showToast('AMAZING RACE 2026 photo downloaded to your device!', 'success');
+  app.showToast('Download started.', 'success');
 }

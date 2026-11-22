@@ -41,6 +41,7 @@ export async function restoreSavedSession(app){
     await app.ensureSession();
     const state=await client.getSession(app.sessionContext);app.serverSession=state;
     app.slotCount=state.slot_count;app.presetLayout=state.layout;app.photos=Array(app.slotCount).fill(null);app.pendingPhotos=Array(app.slotCount).fill(null);
+    app.applyConfiguredHostFrame();
     app.guestWorkflowActive=state.finalized||state.photos.length>0;
     app.persistenceError='';app.resumeRecoveryPending=false;
     if(state.finalized){
@@ -60,7 +61,7 @@ export async function restoreSavedSession(app){
         app.saveState='error';
         app.persistenceError='A camera request was interrupted. Select Retry Save to recover the same capture; do not take another photo.';
       }
-      if(state.photos.length)app.showToast('Your captured photos have been restored. Review or adjust them before confirming.','info');
+      if(state.photos.length)app.showToast('Photos restored for this session.','info');
     }
     app.updateFrameSelectionUI();return true;
   }catch(error){app.resumeRecoveryPending=true;app.persistenceError=error.message;app.showToast(error.message,'error');return true;}

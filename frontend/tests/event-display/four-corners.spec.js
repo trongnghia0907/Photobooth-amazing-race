@@ -1,7 +1,7 @@
 ﻿import {test,expect} from '@playwright/test';
 import {readFileSync} from 'node:fs';
 const ui=new URL('../../../backend/app/event_ui/',import.meta.url);
-const artwork=new URL('../../public/assets/official-theme.png',import.meta.url);
+const artwork=new URL('../../../theme/Theme-display.png',import.meta.url);
 const photo=(id,stamp)=>({id,approved_at:stamp,image_url:'/event-display/media/'+id,
   width:stamp%2?800:1200,height:stamp%2?1200:800});
 const a=photo('a',1),b=photo('b',2),c=photo('c',3),d=photo('d',4),e=photo('e',5),f=photo('f',6),g=photo('g',7),h=photo('h',8);
@@ -10,7 +10,7 @@ async function fixture(page,initial){
   await page.route('http://gallery.test/**',async route=>{
     const path=new URL(route.request().url()).pathname;
     if(path.endsWith('/api/photos'))return state.offline?route.abort():route.fulfill({json:{items:state.items}});
-    if(path==='/p/assets/theme.png')return route.fulfill({contentType:'image/png',body:readFileSync(artwork)});
+    if(path==='/event-display/assets/theme-display.png')return route.fulfill({contentType:'image/png',body:readFileSync(artwork)});
     if(path.includes('/media/')){
       const id=path.split('/').at(-1);
       state.downloads.push(id);
@@ -28,22 +28,27 @@ async function shown(page,expected){await expect.poll(()=>ids(page)).toEqual(exp
 
 test('four fixed corners, initial latest four, sequential oldest replacement, no timer rotation or duplicate downloads',async({page})=>{
   const state=await fixture(page,[e,d,c,b,a]);await shown(page,['b','c','d','e']);
+  await expect(page.locator('#displayLogin')).toBeHidden();
+  await expect(page.locator('html')).toHaveAttribute('lang','en');
   await expect(page.locator('#photoWall figure')).toHaveCount(4);
   expect(await page.locator('#photoWall img').evaluateAll(images=>images.map(i=>i.naturalWidth/i.naturalHeight))).toEqual([1.5,2/3,1.5,2/3]);
   await expect(page.locator('#displayPresentation button,#displayPresentation select')).toHaveCount(0);
-  for(const viewport of [{width:1366,height:768},{width:1920,height:1080}]){
+  for(const viewport of [{width:1366,height:690},{width:1280,height:800},{width:1920,height:1080}]){
     await page.setViewportSize(viewport);
     const boxes=await page.locator('#photoWall figure').evaluateAll(nodes=>nodes.map(n=>{const r=n.getBoundingClientRect();return {x:r.x,y:r.y,w:r.width,h:r.height};}));
     expect(boxes[0].x).toBe(boxes[2].x);expect(boxes[1].x).toBe(boxes[3].x);expect(boxes[0].y).toBe(boxes[1].y);expect(boxes[2].y).toBe(boxes[3].y);
     for(const box of boxes){
-      expect(box.w).toBeGreaterThan(viewport.width*.45);
+      expect(box.w).toBeGreaterThan(viewport.width*.34);
       expect(box.h).toBeGreaterThan(viewport.height*.40);
     }
     expect(boxes[0].x+boxes[0].w).toBeLessThan(boxes[1].x);
+    expect(boxes[0].x).toBeCloseTo(viewport.width-boxes[1].x-boxes[1].w,0);
     expect(boxes[0].y+boxes[0].h).toBeLessThan(boxes[2].y);
-    const title=await page.locator('h1').boundingBox(),status=await page.locator('#displayStatus').boundingBox();
-    expect(title.y+title.height).toBeLessThan(boxes[0].y);
-    expect(status.y).toBeGreaterThanOrEqual(boxes[2].y+boxes[2].h);
+    const themeTop=await page.locator('.official-event-art').evaluate(el=>parseFloat(getComputedStyle(el).backgroundPositionY));
+    expect(themeTop).toBeGreaterThanOrEqual(6);
+    expect(boxes[0].y).toBeGreaterThan(themeTop+viewport.width*.045);
+    await expect(page.locator('#photoWall figure').first()).toHaveCSS('background-color','rgba(0, 0, 0, 0)');
+    await expect(page.locator('#displayStatus')).toBeHidden();
     expect(await page.evaluate(()=>document.documentElement.scrollHeight<=innerHeight&&document.documentElement.scrollWidth<=innerWidth)).toBe(true);
   }
   expect(await page.locator('#photoWall img').first().evaluate(i=>getComputedStyle(i).objectFit)).toBe('contain');

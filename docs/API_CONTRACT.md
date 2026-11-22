@@ -44,12 +44,12 @@ All session camera endpoints require the existing Authorization Bearer owner cre
 
 | Method | Path | Contract |
 |---|---|---|
-| GET | `/api/sessions/{sid}/camera/status` | Owner; state/connection/capabilities/freshness/errors, no other session ID |
+| GET | `/api/sessions/{sid}/camera/status` | Owner; state/connection/capabilities/freshness/errors, no other session ID. `?check_capture=true` reports a known unresolved abandonment before countdown, without sending camera commands. |
 | POST | `/api/sessions/{sid}/camera/connect` | Owner; claim session lease and explicitly connect host adapter |
 | POST | `/api/sessions/{sid}/camera/disconnect` | Owner; stop Live View/disconnect/release; busy capture → 409 |
 | POST | `/api/sessions/{sid}/camera/live-view/start` or `/stop` | Owner + session lease; enable/disable preview |
 | GET | `/api/sessions/{sid}/camera/frame` | Owner + lease; JPEG, no-store, X-Frame-Sequence/X-Frame-Time; stale/missing → error |
-| POST | `/api/sessions/{sid}/camera/captures` | Owner + Idempotency-Key; JSON slot_index strict integer ONLY; no image/screenshots |
+| POST | `/api/sessions/{sid}/camera/captures` | Owner + Idempotency-Key; JSON strict integer `slot_index` and optional strict boolean `recovery_only`. Retry Save sends `recovery_only:true` with the original key. It cannot create a capture or dispatch a shutter. No image/screenshots. |
 | GET | `/api/sessions/{sid}/camera/captures/{capture_id}` | Owner; capture metadata + saved ACK snapshot when captured |
 | GET | `/api/sessions/{sid}/camera/captures/{capture_id}/original` | Owner; exact native transferred JPEG/PNG/WebP; private, validates path/hash/membership |
 | GET | `/api/admin/camera` | Host cookie; adapters/current state/capabilities/error/guest arming |

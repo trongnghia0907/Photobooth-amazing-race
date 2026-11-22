@@ -13,6 +13,6 @@ export default defineConfig({
   webServer:{command:'node tests/backend-server.js',url:'http://127.0.0.1:8027/api/health',reuseExistingServer:false,
     env:{OSA_TEST_PORT:'8027',ADMIN_USERNAME:'test-host',ADMIN_PASSWORD:process.env.OSA_TEST_ADMIN_PASSWORD,
       // Match the HTTPS requirement of the print-ready fixture. The browser still uses localhost.
-      PUBLIC_BASE_URL:'https://photos.test',MIN_FREE_SPACE_MB:'0',
+      PUBLIC_BASE_URL:'https://photos.test',MIN_FREE_SPACE_MB:'0',EVENT_DISPLAY_PIN_REQUIRED:'true',
       OSA_STORAGE_ROOT:fileURLToPath(new URL('../.tools/dashboard-'+randomUUID()+'/',import.meta.url))}},
 });

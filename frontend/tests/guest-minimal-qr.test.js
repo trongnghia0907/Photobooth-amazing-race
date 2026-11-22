@@ -11,7 +11,7 @@ test('Guest markup removes consent, duplicate new session and QR debug controls'
   assert.doesNotMatch(html,/Khách tiếp theo|QR Riêng Cho Ảnh Của Bạn|qrExternalUrlInput|qrReadyPill|confirmQRCodeBtn/);
   assert.match(html,/id="newSessionButton"/);assert.match(html,/Your QR code expires in 24 hours\./);
   const persistence=readFileSync(new URL('../src/services/photo-repository.js',import.meta.url),'utf8');
-  assert.match(html,/onclick="app.confirmAndSaveSession\(true\)"[^>]*>Confirm, Display Photo &amp; Get QR/);
+  assert.match(html,/onclick="app.confirmAndSaveSession\(true\)"[^>]*>Confirm &amp; Display/);
   assert.match(persistence,/publishToEvent=false/);
   assert.match(persistence,/confirmationStarted\?previousConsent:publishToEvent===true\|\|previousConsent/);
 });

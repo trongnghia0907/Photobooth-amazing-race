@@ -3,7 +3,7 @@ import time
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import FileResponse
-from pydantic import BaseModel, ConfigDict, StrictInt
+from pydantic import BaseModel, ConfigDict, StrictBool, StrictInt
 from .routers import Auth, Key
 from .printing_routes import host
 
@@ -12,8 +12,8 @@ admin = APIRouter(prefix='/api/admin/camera',dependencies=[Depends(host)])
 
 
 @router.get('/status')
-def status(request: Request,sid: UUID,owner: Auth):
-    return request.app.state.camera.status(str(sid),owner)
+def status(request: Request,sid: UUID,owner: Auth,check_capture: bool=False):
+    return request.app.state.camera.status(str(sid),owner,progress_key=request.headers.get('Idempotency-Key'),check_capture=check_capture)
 
 
 @router.post('/connect')
@@ -46,11 +46,12 @@ def frame(request: Request,sid: UUID,owner: Auth):
 class CaptureRequest(BaseModel):
     model_config = ConfigDict(extra='forbid')
     slot_index: StrictInt
+    recovery_only: StrictBool = False
 
 
 @router.post('/captures')
 def capture(request: Request,sid: UUID,owner: Auth,key: Key,payload: CaptureRequest):
-    return request.app.state.camera.capture(str(sid),owner,key,payload.slot_index)
+    return request.app.state.camera.capture(str(sid),owner,key,payload.slot_index,recovery_only=payload.recovery_only)
 
 
 @router.get('/captures/{capture_id}')

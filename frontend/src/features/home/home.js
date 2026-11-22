@@ -6,10 +6,7 @@ export async function init(app) {
   app.renderCaptureDots();
   app.renderSixSlotsGrid();
   app.renderFilterButtons();
-  app.renderStickerCategories();
-  app.renderStickerItems();
   app.renderColorSwatches();
-  app.setupCanvasStickerInteractions();
   app.updateCustomTextsUI();
   if(!app.serverSession?.finalized&&!app.resumeRecoveryPending&&app.currentScreen!=='result')await app.initCameraDevices();
 }
@@ -39,7 +36,7 @@ export function toggleFullAutoMode(app) {
   const chk = document.getElementById('chkFullAuto');
   if (chk) chk.checked = app.fullAutoMode;
   app.updateAutoModeUI();
-  app.showToast(app.fullAutoMode ? `Đã BẬT chụp tự động ${app.slotCount} tấm → Result. Xác nhận ảnh và bấm In ảnh khi sẵn sàng.` : 'Đã chuyển sang Chế độ Thủ công.', 'info');
+  app.showToast(app.fullAutoMode ? `Automatic capture enabled for ${app.slotCount} photos.` : 'Manual capture enabled.', 'info');
 }
 
 export function updateAutoModeUI(app) {
@@ -48,10 +45,10 @@ export function updateAutoModeUI(app) {
   if (dot && text) {
     if (app.fullAutoMode) {
       dot.className = 'w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse';
-      text.textContent = 'BẬT';
+      text.textContent = 'ON';
     } else {
       dot.className = 'w-2.5 h-2.5 rounded-full bg-slate-400';
-      text.textContent = 'TẮT';
+      text.textContent = 'OFF';
     }
   }
 }

@@ -1,4 +1,4 @@
-"""Restricted event projection: explicit Host consent, independent display access.
+"""Event projection on the Host network for explicitly approved photos.
 
 Only the private host app mounts these routes. Never mount on public_main.
 No share tokens, storage paths, source captures or download endpoints in this API.
@@ -111,6 +111,11 @@ def kiosk_auth(request:Request):request.app.state.booth_access.require(request)
 def display_auth(request:Request):service(request).require(request)
 
 
+def display_read_access(request:Request):
+    if service(request).repo.settings.event_display_pin_required:
+        display_auth(request)
+
+
 def display_header(request):
     if request.headers.get('X-OSA-Display')!='1':raise HTTPException(403,'Thiếu display header')
 
@@ -128,7 +133,10 @@ def page():return FileResponse(UI/'index.html',headers=HEADERS)
 
 
 @router.get('/assets/{name}')
-def asset(name:Literal['display.js','display.css']):return FileResponse(UI/name,headers=HEADERS)
+def asset(name:Literal['display.js','display.css','theme-display.png']):
+    if name=='theme-display.png':
+        return FileResponse(UI.parents[2]/'theme'/'Theme-display.png',media_type='image/png',headers=HEADERS)
+    return FileResponse(UI/name,headers=HEADERS)
 
 
 @router.post('/unlock')
@@ -176,13 +184,13 @@ def approved_photo_file(display,display_id):
         return display.file(row)
 
 
-@router.get('/api/photos',dependencies=[Depends(display_auth)])
+@router.get('/api/photos',dependencies=[Depends(display_read_access)])
 def photos(request:Request,response:Response,limit:int=Query(60,ge=1,le=100)):
     response.headers.update(HEADERS)
     return approved_photo_feed(service(request),limit,f'{PREFIX}/media')
 
 
-@router.get('/media/{display_id}',dependencies=[Depends(display_auth)])
+@router.get('/media/{display_id}',dependencies=[Depends(display_read_access)])
 def media(request:Request,display_id:UUID):
     path=approved_photo_file(service(request),display_id)
     return FileResponse(path,media_type='image/png',headers=HEADERS)
@@ -211,10 +219,12 @@ def booth_media(request:Request,display_id:UUID,thumbnail:bool=False):
 
 @admin.get('/status')
 def status(request:Request):
-    with service(request).repo.db.connect() as db:
+    repo=service(request).repo
+    pin_required=repo.settings.event_display_pin_required
+    with repo.db.connect() as db:
         enabled=bool(db.execute('SELECT access_hash FROM event_display_config WHERE id=1').fetchone()[0])
         count=db.execute('SELECT COUNT(*) FROM event_display_photos WHERE approved=1').fetchone()[0]
-    return {'enabled':enabled,'approved_count':count}
+    return {'enabled':enabled if pin_required else True,'approved_count':count,'pin_required':pin_required}
 
 
 @admin.post('/access')

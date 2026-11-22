@@ -43,9 +43,7 @@ async function confirmedPhoto(page,count){
   response=await page.request.post(`/api/sessions/${sid}/complete`,{headers:headers(),data:{composite_id:compositeId}});expect(response.ok()).toBe(true);
   response=await page.request.post(`/api/sessions/${sid}/finalize`,{headers:headers(),data:{composite_id:compositeId}});expect(response.ok()).toBe(true);
   const {share}=await response.json();
-  // The guest routes may serve the full-resolution composite with its QR footer.
-  const original=share.print_ready||composite;
-  return {path:new URL(share.share_url).pathname,original};
+  return {path:new URL(share.share_url).pathname,original:composite};
 }
 
 const viewports=[{width:360,height:800},{width:390,height:844},{width:430,height:932},{width:768,height:1024}];
@@ -58,6 +56,7 @@ for(const count of [4,6])test(`${count}-photo public landing: mobile layout, exa
   for(const size of [...viewports,{width:1440,height:900}]){
     await page.setViewportSize(size);const response=await page.goto(path);expect(response.status()).toBe(200);
     const photo=page.locator('#guestPhoto'),download=page.locator('#guestDownload');await expect(photo).toBeVisible();await expect(download).toBeVisible();
+    await expect(page.locator('img')).toHaveCount(1);
     const box=await photo.boundingBox(),button=await download.boundingBox();
     expect(await photo.evaluate(img=>[img.naturalWidth,img.naturalHeight])).toEqual([original.width,original.height]);
     const ratio=await photo.evaluate(img=>img.naturalWidth/img.naturalHeight);
@@ -68,13 +67,14 @@ for(const count of [4,6])test(`${count}-photo public landing: mobile layout, exa
     expect(button.y+button.height).toBeLessThanOrEqual(size.height);
     const background=await page.evaluate(()=>{
       const css=getComputedStyle(document.body,'::before');return {position:css.position,size:css.backgroundSize,image:css.backgroundImage,
-        width:parseFloat(css.width),height:parseFloat(css.height),minHeight:parseFloat(getComputedStyle(document.body).minHeight),overflow:document.documentElement.scrollWidth>innerWidth};
+        centered:css.backgroundPosition==='50% 50%',width:parseFloat(css.width),height:parseFloat(css.height),minHeight:parseFloat(getComputedStyle(document.body).minHeight),overflow:document.documentElement.scrollWidth>innerWidth};
     });
     expect(background.position).toBe('fixed');expect(background.size).toContain('cover');expect(background.image).toContain('/p/assets/theme.png');
+    expect(background.centered).toBe(true);
     expect(background.width).toBe(size.width);expect(background.height).toBe(size.height);expect(background.minHeight).toBeGreaterThanOrEqual(size.height);expect(background.overflow).toBe(false);
     await expect(page.locator('meta[name=viewport]')).toHaveAttribute('content',/viewport-fit=cover/);
     await expect(page.locator('h1')).toBeVisible();
-    await expect(download).toHaveText('Tải ảnh');
+    await expect(download).toHaveText('Tải ảnh về máy');
     await page.screenshot({path:`test-results/preview/guest-photo-${count}-${size.width}x${size.height}.png`,fullPage:true});
   }
   // Simulate a smaller dynamic viewport and iOS inset padding on the same page.
@@ -93,6 +93,7 @@ for(const count of [4,6])test(`${count}-photo public landing: mobile layout, exa
   expect(insetButton.y+insetButton.height).toBeLessThanOrEqual(706);
   const pending=page.waitForEvent('download');await page.locator('#guestDownload').click();
   const downloaded=await pending;expect(createHash('sha256').update(readFileSync(await downloaded.path())).digest('hex')).toBe(original.sha256);
+  expect(downloaded.suggestedFilename()).toMatch(/^amazing-race-2026-photo-.*\.png$/);
   // Synthetic future HTTPS domain; every request is proxied to the disposable
   // local test server, never to the Internet or an operator's tunnel.
   const remote=await context.newPage();const origin='https://public-photo.example.test';

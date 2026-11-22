@@ -40,14 +40,14 @@ test('QR panel confirms first, retries QR alone afterwards, and reports missing 
   await page.locator('#confirmQRCodeBtn').click();
   await expect(page.locator('#qrExternalUrlInput')).toHaveValue(url);
   expect(uploads).toBe(1);
-  const state=await page.evaluate(()=>({share:app.activeShare}));
+  const state=await page.evaluate(()=>({share:app.activeShare,composite:app.serverSession.composite}));
   const guest=await page.context().newPage();
   await guest.goto(url);
   await expect(guest.locator('#guestPhoto')).toBeVisible();
   const event=guest.waitForEvent('download');
   await guest.locator('#guestDownload').click();
   const downloaded=await event;
-  expect(createHash('sha256').update(readFileSync(await downloaded.path())).digest('hex')).toBe(state.share.print_ready.sha256);
+  expect(createHash('sha256').update(readFileSync(await downloaded.path())).digest('hex')).toBe(state.composite.sha256);
 });
 
 test('saving automatically loads QR without pressing the QR button or refreshing',async({page})=>{

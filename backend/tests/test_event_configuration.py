@@ -10,7 +10,7 @@ from app.main import create_app
 from app.services import cups_printer
 from app.services.printers import PrinterError
 from app.services.camera.base import CameraCapabilities
-from test_sessions import create,upload,headers,key
+from test_sessions import create,upload,headers,key,image
 
 
 def test_environment_fails_closed_and_requires_explicit_rehearsal(monkeypatch,tmp_path):
@@ -125,7 +125,43 @@ def test_host_frame_management_is_authenticated_and_persistent(tmp_path):
         saved=client.put('/api/admin/frames/custom',headers={'X-CSRF-Token':csrf},json={'name':'Host frame','layout':'grid2x3','slot_count':6,'pad_x':6,'pad_top':7,'pad_bottom':15,'gap':3,'slots':[],'enabled':True})
         assert saved.status_code==200
         with client.app.state.repository.db.connect() as db:
-            assert db.execute("SELECT value FROM host_settings WHERE key='frame:custom'").fetchone()
+            assert db.execute("SELECT value FROM host_settings WHERE key='frame:custom:grid2x3'").fetchone()
+
+
+def test_separate_custom_frames_keep_the_legacy_artwork(tmp_path):
+    import json
+    settings=Settings(tmp_path/'frames',app_env='development',public_base_url='http://localhost:8000',
+                      admin_username='frame-host',admin_password='frame-password-123')
+    portrait={'layout':'grid2x3','slot_count':6,'name':'Existing portrait','pad_x':8}
+    landscape={'layout':'landscape_4','slot_count':4,'name':'New landscape','pad_x':12}
+    legacy_image=image('blue',(96,144))
+    with TestClient(create_app(settings)) as client:
+        with client.app.state.repository.db.connect() as db:
+            db.execute('INSERT INTO host_settings VALUES (?,?)',('frame:custom',json.dumps(portrait)))
+        frames=settings.storage_root/'frames'
+        frames.mkdir()
+        (frames/'custom.png').write_bytes(legacy_image)
+        login=client.post('/api/admin/login',headers={'X-OSA-Login':'1'},
+                          json={'username':settings.admin_username,'password':settings.admin_password})
+        csrf={'X-CSRF-Token':login.json()['csrf_token']}
+        uploaded=client.post('/api/admin/frames/custom/upload?layout=landscape_4',headers=csrf,
+                             files={'file':('landscape.png',image('red',(144,96)),'image/png')})
+        assert uploaded.status_code==200
+        assert client.put('/api/admin/frames/custom',headers=csrf,json=landscape).status_code==200
+        assert client.get('/api/booth/frames/custom/image?layout=grid2x3').content==legacy_image
+        landscape_image=client.get('/api/booth/frames/custom/image?layout=landscape_4').content
+        assert landscape_image!=legacy_image
+        assert client.put('/api/admin/frames/custom',headers=csrf,json={**portrait,'enabled':False}).status_code==200
+        assert client.get('/api/booth/frames/custom/image?layout=grid2x3').status_code==404
+        assert client.get('/api/booth/frames/custom/image?layout=landscape_4').content==landscape_image
+        assert client.get('/api/admin/frames/custom/image?layout=grid2x3').content==legacy_image
+        assert client.put('/api/admin/frames/custom',headers=csrf,json=portrait).status_code==200
+    with TestClient(create_app(settings)) as client:
+        result=client.get('/api/booth/frames').json()
+        frames={item['layout']:item for item in result['items'] if item.get('image_url')}
+        assert {layout:frame['pad_x'] for layout,frame in frames.items()}=={'grid2x3':8,'landscape_4':12}
+        assert client.get(frames['grid2x3']['image_url']).content==legacy_image
+        assert client.get(frames['landscape_4']['image_url']).content==landscape_image
 
 
 def test_launcher_loads_config_from_another_cwd_and_check_starts_nothing(tmp_path):

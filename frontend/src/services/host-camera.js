@@ -8,13 +8,17 @@ const FRAME_TIMEOUT_MS=4000, DECODE_TIMEOUT_MS=1000, POLL_MS=200;
 const FRAME_PERIOD_MS=100;
 // One complete HTTP/body + decode + poll budget, rather than expiring before HTTP.
 const PREVIEW_STALE_MS=FRAME_TIMEOUT_MS+DECODE_TIMEOUT_MS+POLL_MS;
-const TERMINAL=['unsupported','disabled','event_hardware_required','dependency_missing','worker_stalled'];
-const REOPEN=['disconnected','disconnect','not_connected','preview_stopped','adapter_changed','camera_read_failed'];
-const CAPTURE_STAGES={waiting_io:'Waiting for the current camera operation…',reconciling:'Checking previous camera transfers…',
-  shutter:'Sending the camera shutter request…',recovering:'Recovering the same capture; no new shutter…',
+const TERMINAL=['unsupported','disabled','event_hardware_required','dependency_missing','worker_stalled','wia_device_unavailable'];
+const REOPEN=['disconnected','disconnect','not_connected','preview_stopped','adapter_changed','camera_read_failed','transport_failed'];
+const CAPTURE_STAGES={preparing:'Capture request received…',waiting_io:'Waiting for the current camera operation…',
+  reconciling:'Checking previous camera captures…',preflight:'Checking camera readiness…',
+  shutter:'Preparing the shutter request…',shutter_press:'Preparing to send the full shutter command…',
+  shutter_dispatch:'Sending the shutter command and waiting for acknowledgment…',
+  shutter_acknowledged:'Camera acknowledged the shutter command…',shutter_release:'Releasing the shutter controls…',
+  recovering:'Checking the same capture request…',receiving_original:'Waiting for the original JPEG from the camera…',
   waiting_buffer:'Waiting for the original JPEG from the camera…',object_info:'Checking the captured image…',
-  jpeg_transfer:'Receiving the original JPEG…',jpeg_validation:'Validating the original JPEG…',
-  durable_cache:'Safely saving the original JPEG…',buffer_drain:'Checking camera readiness…',
+  jpeg_transfer:'Receiving the original JPEG…',jpeg_validation:'JPEG received. Checking the image…',
+  durable_cache:'JPEG validated. Saving the original…',buffer_drain:'Checking camera readiness…',
   normalizing:'Preparing the captured photo for editing…',saving_original:'Saving the original photo…',saving_slot:'Saving the photo slot…'};
 
 async function cameraRequest(app,path,{method='GET',body,key,signal,scope}={}){
@@ -50,13 +54,56 @@ export function hostPreviewPerformance(app){
   return result;
 }
 
-function displayStatus(app,text,state='error'){
+const cameraStatusDetails=new WeakMap();
+const shutterTransitions=new WeakMap();
+const SHUTTER_HOLD_MS=4000;
+
+function slideShutter(overlay,closed){
+  // Commit the starting position before changing the class (also on a fast mock capture).
+  getComputedStyle(overlay,'::before').transform;
+  overlay.classList.toggle('is-closed',closed);
+  const duration=parseFloat(getComputedStyle(overlay,'::before').transitionDuration)*1000;
+  if(!duration)return Promise.resolve();
+  return new Promise(resolve=>{
+    const end=event=>{
+      if(event&&(event.propertyName!=='transform'||event.pseudoElement==='::after'))return;
+      clearTimeout(fallback);
+      overlay.removeEventListener('transitionend',end);
+      resolve();
+    };
+    const fallback=setTimeout(end,duration+50);
+    overlay.addEventListener('transitionend',end);
+  });
+}
+
+function closeShutter(transition){
+  transition.closing??=slideShutter(transition.overlay,true).then(()=>performance.now());
+}
+
+function finishShutterTransition(app,transition){
+  if(!transition||shutterTransitions.get(app)!==transition)return;
+  shutterTransitions.delete(app);
+  transition.overlay.classList.remove('is-closed');
+}
+
+function displayStatus(app,text,state='error',presentation=state){
   app.hostCameraState=state;
+  cameraStatusDetails.set(app,text);
+  const label=({
+    connecting:'Connecting camera...', recovering:'Reconnecting...',
+    connected:'Waiting for camera...', waiting:'Waiting for camera...', busy:'Camera is busy…',
+    busy_stopped:app.currentScreen==='home'?'Camera is busy. Select Start Capturing to retry.':'Camera is busy. Select Reconnect Camera.',
+    disconnected:'Camera disconnected', error:'Camera unavailable',
+    capturing:'Sending capture request...', transferring:'Saving photo...',
+    capture_stage:text, capture_blocked:text, usb_action:text,
+  })[presentation]||'';
   const status=document.getElementById('hostCameraStatus');
-  const hidden=app.cameraSource!=='host';
+  const waitingWithFreshFrame=app.hostPreviewHealthy&&!app.captureBusy&&(presentation==='waiting'||presentation==='busy');
+  const hidden=app.cameraSource!=='host'||!label||waitingWithFreshFrame;
   if(status.hidden!==hidden)status.hidden=hidden;
-  if(status.textContent!==text)status.textContent=text;
+  if(status.textContent!==label)status.textContent=label;
   if(status.dataset.state!==state)status.dataset.state=state;
+  if(status.dataset.presentation!==presentation)status.dataset.presentation=presentation;
   app.syncKioskStatus?.();
 }
 
@@ -85,19 +132,19 @@ function hidePreview(app){
   updatePreviewStats(app,true);
 }
 
-function previewUnavailable(app,message){
+function previewUnavailable(app,message,presentation='error'){
   hidePreview(app);
   if(app.captureBusy){displayStatus(app,'Receiving the photo file; preview is paused.','transferring');return;}
   // Preserve the countdown's remaining time and all saved slots. Never auto-resume.
   if(app.isCapturingSequence&&!app.sequencePaused)setCapturePaused(app,true);
-  displayStatus(app,message);
+  displayStatus(app,message,'error',presentation);
 }
 
 function armWatchdog(app,epoch){
   clearTimeout(app.hostPreviewWatchdog);
   app.hostPreviewWatchdog=setTimeout(()=>{
     if(epoch!==app.hostPreviewEpoch)return;
-    previewUnavailable(app,'No fresh live preview. Capture is paused; waiting for a new frame.');
+    previewUnavailable(app,'No fresh live preview. Capture is paused; waiting for a new frame.','waiting');
   },Math.max(0,PREVIEW_STALE_MS-(performance.now()-app.hostLastFrameAt)));
 }
 
@@ -113,14 +160,21 @@ export function stopHostPreview(app){
 function scheduleRecovery(app,epoch,context,frameOnly=false,delay){
   if(!context||app.cameraSource!=='host'||epoch!==app.hostPreviewEpoch||app.sessionContext!==context||!['home','capture'].includes(app.currentScreen))return;
   const stat=metrics(app);
-  if(!frameOnly&&stat.reconnectAttempts>=3){displayStatus(app,'Đã dừng kết nối lại sau 3 lần thử. '+(app.hostCameraLastConnectError||'')+' Kiểm tra camera rồi chọn Kết nối lại camera.','disconnected');return;}
+  if(!frameOnly&&stat.reconnectAttempts>=3){
+    const busy=app.hostCameraState==='busy';
+    displayStatus(app,'Stopped reconnecting after three attempts. '+(app.hostCameraLastConnectError||'')+' Check the camera and select Reconnect.',busy?'busy':'disconnected',busy?'busy_stopped':'disconnected');
+    return;
+  }
   clearTimeout(app.hostPreviewTimer);
   const wait=delay??(frameOnly?Math.min(2000,POLL_MS*2**Math.min(stat.consecutiveFailures,3)):2000*2**stat.reconnectAttempts);
   const due=performance.now()+wait;
   app.hostPreviewTimer=setTimeout(()=>{
     app.hostPreviewTimer=null;
     if(epoch!==app.hostPreviewEpoch||app.sessionContext!==context||app.cameraSource!=='host')return;
-    if(app.captureBusy&&!(frameOnly&&app.hostCaptureRequestActive)){scheduleRecovery(app,epoch,context,frameOnly,POLL_MS);return;}
+    // While the curtain holds a completed photo, the camera is already free
+    // to continue its existing frame loop underneath the presentation.
+    const showingSavedPhoto=shutterTransitions.get(app)?.imageReady;
+    if(app.captureBusy&&!(frameOnly&&(app.hostCaptureRequestActive||showingSavedPhoto))){scheduleRecovery(app,epoch,context,frameOnly,POLL_MS);return;}
     if(frameOnly){stat.timerLateMs=Math.max(0,performance.now()-due);nextFrame(app,epoch);}
     else{stat.reconnectAttempts++;stat.reconnects=(stat.reconnects||0)+1;prepareHostCamera(app,{automatic:true}).catch(()=>{});}
   },wait);
@@ -140,16 +194,24 @@ async function readFrame(app,epoch){
   if(epoch!==app.hostPreviewEpoch||app.cameraSource!=='host')return;
   const context=app.hostPreviewContext;
   if(app.captureBusy&&app.hostCaptureRequestActive){
+    const transition=shutterTransitions.get(app);
     try{
-      const status=await (await cameraRequest(app,'/status',{scope:context,signal:AbortSignal.timeout(2000)})).json();
+      const status=await (await cameraRequest(app,'/status',{scope:context,key:app.hostCaptureOperation?.key,signal:AbortSignal.timeout(2000)})).json();
       if(epoch===app.hostPreviewEpoch&&app.sessionContext===context&&app.hostCaptureRequestActive){
         const progress=status.capture_progress;
-        const stage=progress?.stage==='receiving_original'&&status.camera_progress?.capture_id===progress.capture_id
+        if(transition&&shutterTransitions.get(app)===transition&&transition.context===context&&
+          app.currentScreen==='capture'&&progress?.shutter_acknowledged&&
+          ['receiving_original','normalizing','saving_original','saving_slot','complete'].includes(progress.stage)&&!transition.closing){
+          closeShutter(transition);
+        }
+        const stage=['shutter','recovering','receiving_original'].includes(progress?.stage)&&status.camera_progress?.capture_id===progress.capture_id
           ?status.camera_progress.stage:progress?.stage;
-        if(CAPTURE_STAGES[stage])displayStatus(app,CAPTURE_STAGES[stage],'transferring');
+        if(CAPTURE_STAGES[stage])displayStatus(app,CAPTURE_STAGES[stage],'transferring','capture_stage');
       }
     }catch{/* The capture request owns errors; a status poll must never reconnect or retry a shutter. */}
-    if(epoch===app.hostPreviewEpoch)scheduleRecovery(app,epoch,context,true,1000);
+    // Reuse the capture-status poll, only checking sooner until the shutter is confirmed.
+    if(epoch===app.hostPreviewEpoch)scheduleRecovery(app,epoch,context,true,
+      transition&&!transition.closing&&shutterTransitions.get(app)===transition?150:1000);
     return;
   }
   const abort=new AbortController();app.hostPreviewAbort=abort;
@@ -208,7 +270,7 @@ async function readFrame(app,epoch){
     if(image.hidden)image.hidden=false;
     app.hostFrameSequence=sequence;app.hostPreviewHealthy=true;app.hostCameraNeedsReconnect=false;
     app.hostLastFrameAt=performance.now();armWatchdog(app,epoch);
-    if(!app.captureBusy)displayStatus(app,`${app.hostCameraStatus?.capabilities?.name||'Camera host'} • Đang xem trực tiếp`, 'previewing');
+    if(!app.captureBusy)displayStatus(app,'','previewing');
     if(app.hostPreviewStats){
       if(stat.pendingPaint)cancelAnimationFrame(stat.pendingPaint);
       // Observe the next paint opportunity without making polling wait for it.
@@ -229,16 +291,16 @@ async function readFrame(app,epoch){
     stat.consecutiveFailures++;
     if(error.code==='preview_pending'||error.code==='not_ready'||error.code==='busy')stat.pendingResponses=(stat.pendingResponses||0)+1;
     else stat.failedRequests=(stat.failedRequests||0)+1;
-    if(error.code==='busy'||app.captureBusy)displayStatus(app,'Camera đang bận. Đang chờ khung hình mới.','busy');
+    if(error.code==='busy'||app.captureBusy)displayStatus(app,'Camera is busy. Waiting for a fresh frame.','busy');
     else{
       const message=failure?.message||'HTTP preview interrupted. Retrying the frame; camera connection is unchanged.';
-      if(reopen||terminal||error.code==='stale_preview'||!app.hostPreviewHealthy||performance.now()-app.hostLastFrameAt>=PREVIEW_STALE_MS)previewUnavailable(app,message);
+      if(reopen||terminal||error.code==='stale_preview'||!app.hostPreviewHealthy||performance.now()-app.hostLastFrameAt>=PREVIEW_STALE_MS)previewUnavailable(app,message,reopen?'disconnected':terminal?'error':'waiting');
       else displayStatus(app,message,'waiting');
     }
     app.hostCameraNeedsReconnect=reopen;
     if(stat.busyFrames>=6&&!app.hostCaptureRequestActive){
       clearTimeout(app.hostPreviewWatchdog);
-      previewUnavailable(app,'Camera vẫn bận. Khi camera rảnh, chọn Kết nối lại camera.');
+      previewUnavailable(app,'Camera is still busy. Select Reconnect when it is ready.');
       return;
     }
     if(!terminal)scheduleRecovery(app,epoch,context,!reopen,error.code==='preview_pending'?POLL_MS:undefined);
@@ -252,7 +314,7 @@ async function readFrame(app,epoch){
 export async function enableHostCamera(app){
   app.clearTimers();app.stopCurrentStreams();app.cameraSource='host';app.cameraAdapter=null;
   document.getElementById('liveVideo').classList.add('hidden');document.getElementById('simLiveCanvas').classList.add('hidden');document.getElementById('cameraFallbackBar').classList.add('hidden');
-  for(const id of ['hostCameraTools','hostCameraStatus'])document.getElementById(id).hidden=false;
+  document.getElementById('hostCameraTools').hidden=false;
   if(new URLSearchParams(window.location.search).get('previewStats')==='1'){
     app.hostPreviewStats=document.getElementById('hostPreviewStats');
     app.hostPreviewStats.hidden=false;
@@ -272,7 +334,7 @@ export async function prepareHostCamera(app,{automatic=false}={}){
     if(app.hostPreviewHealthy&&performance.now()-app.hostLastFrameAt<PREVIEW_STALE_MS)return;
     await nextFrame(app,app.hostPreviewEpoch);
     if(app.hostPreviewHealthy)return;
-    const error=new Error(document.getElementById('hostCameraStatus').textContent||'Waiting for live preview.');
+    const error=new Error(cameraStatusDetails.get(app)||'Waiting for live preview.');
     error.previewRecoveryScheduled=true;throw error;
   }
   const requestedEpoch=app.hostPreviewEpoch;
@@ -283,7 +345,7 @@ export async function prepareHostCamera(app,{automatic=false}={}){
     const context=await app.ensureSession();
     connectionContext=context;
     if(requestedEpoch!==app.hostPreviewEpoch||app.sessionContext!==context)throw new Error('The session changed. Reconnect the camera.');
-    app.stopHostPreview();displayStatus(app,automatic?'Đang khôi phục kết nối camera…':'Đang kết nối camera trên laptop…',automatic?'recovering':'connecting');
+    app.stopHostPreview();displayStatus(app,automatic?'Reconnecting...':'Connecting camera...',automatic?'recovering':'connecting');
     metrics(app).samples=[];
     const epoch=app.hostPreviewEpoch;
     connectionEpoch=epoch;app.hostPreviewContext=context;
@@ -296,18 +358,17 @@ export async function prepareHostCamera(app,{automatic=false}={}){
     const connected=await (await cameraRequest(app,'/connect',{method:'POST',scope:context})).json();
     app.hostCameraLastConnectError='';
     await checkCancelled();app.hostCameraStatus=connected;
-    displayStatus(app,'Đã kết nối camera. Đang mở Live View…','connected');
+    displayStatus(app,'Waiting for camera...','connected');
     const cap=app.hostCameraStatus.capabilities;
     if(app.eventConfig?.event_mode&&(cap.demo||!cap.physical_shutter||!cap.original_file||!cap.hardware_verified))throw new Error('The real camera is not ready. Please ask event staff to check the equipment.');
     if(!cap.capture)throw new Error('This adapter does not support capture. The preview cannot be used as a substitute photo.');
     if(!cap.demo&&(!cap.physical_shutter||!cap.original_file))throw new Error('This camera does not support the shutter and original image file required.');
-    document.getElementById('demoModeBadge').textContent=cap.demo?'HOST CAMERA DEMO • '+cap.name+' • Không có shutter DSLR thật':'HOST CAMERA • '+cap.name+' • Chưa xác minh phần cứng tại trạm';
     await cameraRequest(app,'/live-view/start',{method:'POST',scope:context});
     await checkCancelled();
     app.hostFrameSequence=-1;
     await nextFrame(app,epoch);await checkCancelled();
     if(!app.hostPreviewHealthy){
-      const error=new Error(document.getElementById('hostCameraStatus').textContent||'The live view is not ready.');
+      const error=new Error(cameraStatusDetails.get(app)||'The live view is not ready.');
       // nextFrame has already chosen retry versus a terminal capability error.
       error.previewRecoveryScheduled=true;throw error;
     }
@@ -318,16 +379,36 @@ export async function prepareHostCamera(app,{automatic=false}={}){
       app.hostCameraLastConnectError=error.message||'Camera connection failed.';
       if(!error.previewRecoveryScheduled)app.hostCameraNeedsReconnect=true;
       hidePreview(app);
-      if(error.code==='busy')displayStatus(app,'Camera đang bận. '+error.message,'busy');
-      else if(REOPEN.includes(error.code))displayStatus(app,'Camera mất kết nối. '+error.message,'disconnected');
-      else if(!error.previewRecoveryScheduled)displayStatus(app,error.message||'Đang khôi phục kết nối camera…','recovering');
+      if(error.code==='busy')displayStatus(app,'Camera is busy. '+error.message,'busy');
+      else if(error.code==='wia_device_unavailable')displayStatus(app,error.message,'error','usb_action');
+      else if(REOPEN.includes(error.code))displayStatus(app,'Camera disconnected. '+error.message,'disconnected');
+      else if(!error.previewRecoveryScheduled){
+        const needsHelp=TERMINAL.includes(error.code)||/real camera is not ready|does not support/.test(error.message);
+        displayStatus(app,error.message||'Reconnecting...','recovering',needsHelp?'error':'recovering');
+      }
       if(!error.previewRecoveryScheduled&&!TERMINAL.includes(error.code))scheduleRecovery(app,connectionEpoch,connectionContext);
     }
     throw error;
   }finally{app.hostConnectRequest=null;}
 }
 
+export async function checkHostCaptureReadiness(app){
+  const context=app.sessionContext;
+  app.hostCaptureBlocker='';
+  app.syncKioskStatus?.();
+  try{await cameraRequest(app,'/status?check_capture=true',{scope:context,signal:AbortSignal.timeout(4000)});}
+  catch(error){
+    error.clear_pending=true; // This check cannot create a capture.
+    if(app.sessionContext===context){
+      app.hostCaptureBlocker=error.message;
+      app.syncKioskStatus?.();
+    }
+    throw error;
+  }
+}
+
 export function releaseHostCamera(app){
+  app.hostCaptureBlocker='';
   app.stopHostPreview();app.syncHostCaptureUI();
   const context=app.sessionContext;
   if(app.cameraSource!=='host'||!context?.id)return;
@@ -359,34 +440,44 @@ async function loadStoredPhoto(app,result,operation,context){
   }finally{URL.revokeObjectURL(url);}
 }
 
-export async function captureHostPhoto(app,slot){
+export async function captureHostPhoto(app,slot,{recoveryOnly=false}={}){
   let operation=app.hostCaptureOperation;
-  const recovering=!!operation&&operation.submitted===true&&!operation.retryNewShot;
+  const recovering=recoveryOnly||operation?.submitted===true;
+  if(recoveryOnly&&!operation)return {accepted:false};
   if(operation&&operation.slot!==slot)throw new Error('A camera request is still in progress. Retry saving before changing slots.');
-  if(!operation){operation={slot,key:newId(),submitted:false,completeAfterRecovery:app.singleRetakeIndex!==null||app.isCapturingSequence};app.hostCaptureOperation=operation;}
-  let captureContext;
+  if(!operation){
+    app.hostCaptureBlocker='';
+    operation={slot,key:newId(),submitted:false,completeAfterRecovery:app.singleRetakeIndex!==null||app.isCapturingSequence};
+    app.hostCaptureOperation=operation;
+  }
+  let captureContext,shutterTransition;
   try{
-    // A failed safe capture is retried only by an explicit user action. A lost
-    // response/transfer failure keeps its key so it cannot trigger another shot.
-    if(operation.retryNewShot){operation.key=newId();operation.retryNewShot=false;operation.submitted=false;}
+    // Retry Save reuses the original key and permits retrieval only.
     if(!recovering&&(!app.hostPreviewHealthy||performance.now()-app.hostLastFrameAt>PREVIEW_STALE_MS))await app.prepareHostCamera();
     captureContext=await app.ensureSession();
     const checkCurrent=()=>{
       if(app.sessionContext!==captureContext||app.hostCaptureOperation!==operation){
-        const error=new Error('Ảnh trả về thuộc phiên cũ; ảnh được giữ trên Host và không đưa vào phiên mới.');
+        const error=new Error('The Host saved this photo for the previous session.');
         error.code='capture_superseded';throw error;
       }
     };
     checkCurrent();
     operation.submitted=true;
     captureContext.cameraCapture={...operation};rememberSession(captureContext);
+    const overlay=!recovering&&app.currentScreen==='capture'&&document.getElementById('captureShutter');
+    if(overlay){
+      finishShutterTransition(app,shutterTransitions.get(app));
+      shutterTransition={context:captureContext,key:operation.key,overlay};
+      shutterTransitions.set(app,shutterTransition);
+    }
     app.hostCaptureRequestActive=true;
     displayStatus(app,'Capturing and receiving the image file from the host camera…','capturing');
-    const submit=()=>cameraRequest(app,'/captures',{method:'POST',body:{slot_index:slot},key:operation.key,scope:captureContext});
+    const submit=()=>cameraRequest(app,'/captures',{method:'POST',
+      body:{slot_index:slot,...(recovering?{recovery_only:true}:{})},key:operation.key,scope:captureContext});
     let response;
     try{response=await submit();}
     catch(error){
-      if(!recovering||!['not_connected','disconnected','disconnect'].includes(error.code))throw error;
+      if(!recovering||!['not_connected','disconnected','disconnect','transport_failed'].includes(error.code))throw error;
       // A saved ACK needs no camera. An unfinished transfer may need one
       // explicit reconnect, but never waits for Live View to download its JPEG.
       checkCurrent();
@@ -398,12 +489,26 @@ export async function captureHostPhoto(app,slot){
     }
     const result=await response.json();
     checkCurrent();
+    if(result.capture?.status==='captured')operation.savedOnHost=true;
+    // A fast response can arrive between status polls. A successful capture
+    // response also confirms this shot and can start the same curtain.
+    if(shutterTransition&&app.currentScreen==='capture')closeShutter(shutterTransition);
     const canvas=await loadStoredPhoto(app,result,operation,captureContext);
     checkCurrent();
-    app.photos[slot]=canvas;app.serverSession=result.session;app.hostCaptureOperation=null;
+    app.hostCaptureRequestActive=false;
+    if(shutterTransition?.closing&&app.currentScreen==='capture'){
+      shutterTransition.imageReady=true;
+      const closedAt=await shutterTransition.closing;
+      const remaining=closedAt+SHUTTER_HOLD_MS-performance.now();
+      if(remaining>0)await new Promise(resolve=>setTimeout(resolve,Math.ceil(remaining)));
+      checkCurrent();
+      if(app.currentScreen==='capture')await slideShutter(shutterTransition.overlay,false);
+      checkCurrent();
+    }
+    app.photos[slot]=canvas;app.serverSession=result.session;app.hostCaptureOperation=null;app.hostCaptureBlocker='';
     delete captureContext.cameraCapture;rememberSession(captureContext);
     app.finalOperation=null;app.lastSavedImage='';app.activeShare=null;app.saveState='capturing';app.persistenceError='';
-    app.transitionSession('PREVIEW');app.playShutterSound();app.triggerFlashEffect();app.updateCaptureScreenUI();
+    app.transitionSession('PREVIEW');app.playShutterSound();if(!shutterTransition)app.triggerFlashEffect();app.updateCaptureScreenUI();
     displayStatus(app,'Saved the camera image to slot '+(slot+1),'captured');
     return {accepted:true,photo:result.capture};
   }catch(error){
@@ -414,10 +519,25 @@ export async function captureHostPhoto(app,slot){
       displayStatus(app,error.message,'ready');
       throw error;
     }
-    operation.retryNewShot=['capture','timeout','disconnect','disconnected'].includes(error.code)&&error.stage!=='transfer'&&!error.uncertain;
-    if(captureContext){captureContext.cameraCapture={...operation};rememberSession(captureContext);}
-    displayStatus(app,error.message||'Could not connect to the host. Retry saving with the same request.');throw error;
+    operation.retryNewShot=false;
+    if(!operation.submitted){
+      error.clear_pending=true;
+      error.shutter_dispatched=false;
+    }
+    if(error.clear_pending===true)app.hostCaptureOperation=null;
+    if(captureContext){
+      if(error.clear_pending===true)delete captureContext.cameraCapture;
+      else captureContext.cameraCapture={...operation};
+      rememberSession(captureContext);
+    }
+    if(error.shutter_dispatched===false){
+      error.message = (error.message ? error.message+' ' : '')+'No new shutter command was sent.';
+      if(error.clear_pending===true)app.hostCaptureBlocker=error.message;
+      displayStatus(app,error.message,'error','capture_blocked');
+    }else displayStatus(app,error.message||'Could not connect to the host. Retry saving with the same request.');
+    throw error;
   }finally{
+    finishShutterTransition(app,shutterTransition);
     if((!captureContext||app.sessionContext===captureContext)&&(!app.hostCaptureOperation||app.hostCaptureOperation===operation))app.hostCaptureRequestActive=false;
   }
 }
@@ -428,7 +548,8 @@ export async function retryHostCapture(app){
   const current=()=>app.sessionContext===context&&(!app.hostCaptureOperation||app.hostCaptureOperation===operation);
   app.captureBusy=true;app.syncHostCaptureUI();
   try{
-    await app.captureHostPhoto(operation.slot);
+    const restored=await app.captureHostPhoto(operation.slot,{recoveryOnly:true});
+    if(restored?.accepted===false)return;
     if(!current())return;
     app.singleRetakeIndex=null;
     app.retakeReturnToReview=false;
@@ -438,8 +559,8 @@ export async function retryHostCapture(app){
     if(['capture_cancelled','capture_superseded'].includes(error.code)){
       app.persistenceError='';app.saveState='capturing';app.transitionSession('PREVIEW');
       app.showToast(error.code==='capture_superseded'
-        ?'This session has been replaced. Select New Session; previous photos are preserved.'
-        :'The old capture was cancelled. Saved photos are unchanged; choose Capture Now or New Session.','info');
+        ?'This session has ended. Select New Session to continue.'
+        :'The previous shot was cancelled. Select Capture Now to continue.','info');
     }else app.reportSaveError(error);
   }
   finally{if(current()){app.captureBusy=false;app.syncPersistenceUI();app.updateCaptureScreenUI();}}

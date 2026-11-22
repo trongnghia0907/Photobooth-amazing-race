@@ -9,19 +9,17 @@
 </head>
 <body class="gallery-page" data-photo-gallery>
   <header class="event-header">
-    <div class="official-event-art" role="img" aria-label="AMAZING RACE 2026 official artwork with BK and Monash University logos"></div>
-    <p class="event-label">PHOTOBOOTH · PHOTO GALLERY</p>
+    <div class="official-event-art" role="img" aria-label="AMAZING RACE 2026 with BK and MONASH UNIVERSITY logos"></div>
+    <p class="event-label">Photo Gallery</p>
     <h1>AMAZING RACE <span>2026</span></h1>
-    <p>Our event. Your moments.</p>
   </header>
   <main>
-    <p id="galleryStatus" role="status" aria-live="polite">Loading event photos…</p>
-    <section id="photoGrid" class="photo-grid" aria-label="Published event photos" aria-busy="true"></section>
-    <div id="galleryEmpty" class="empty-state" hidden><h2>The first moments are on their way</h2><p>Published photos will appear here while their photo links remain valid.</p></div>
-    <nav id="pagination" class="pagination" aria-label="Photo gallery pages"></nav>
-    <button id="retryGallery" type="button" hidden>Try Again</button>
+    <section id="photoGrid" class="photo-grid" aria-label="Event photos" aria-busy="true"></section>
+    <div id="galleryEmpty" class="empty-state" hidden><h2>No photos yet</h2></div>
+    <nav id="pagination" class="pagination" aria-label="Gallery pages"></nav>
+    <p id="galleryFeedback" role="status" hidden></p>
+    <button id="retryGallery" type="button" hidden>Retry</button>
   </main>
-  <footer>AMAZING RACE 2026 · Published photos are available only while their photo links remain valid.</footer>
   <script type="module" src="/gallery/assets/gallery.js"></script>
 </body>
 </html>

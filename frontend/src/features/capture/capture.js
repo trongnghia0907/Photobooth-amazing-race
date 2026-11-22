@@ -6,7 +6,7 @@ import {photoThumbnail} from '../../utils/photo-thumbnail.js';
 const renderedGrids=new WeakMap();
 
 export async function startAutomaticSession(app) {
-  if(!app.eventConfigurationReady||app.resumeRecoveryPending){app.showToast('Session setup or recovery is not ready. Please ask event staff to check the host.','error');return;}
+  if(!app.eventConfigurationReady||app.resumeRecoveryPending){app.showToast('Could not start. Please ask event staff for help.','error');return;}
   if (app.guestStarting || app.persistenceBusy || app.captureBusy || app.hasPendingWork()) return;
   app.ensureAudio();
   app.clearTimers();
@@ -15,15 +15,19 @@ export async function startAutomaticSession(app) {
     if (app.photos.every(Boolean) && !await app.confirmResetShots()) return;
     const epoch=app.captureEpoch;
     if (!await app.prepareSession() || epoch!==app.captureEpoch) return;
-    if(app.cameraSource==='host') await app.prepareHostCamera();
+    if(app.cameraSource==='host'){
+      await app.prepareHostCamera();
+      if(epoch!==app.captureEpoch)return;
+      await app.checkHostCaptureReadiness();
+    }
     else if(!app.isUsingSimulatedCamera){
       const video=document.getElementById('liveVideo');
       if(!app.stream?.getVideoTracks().some(track=>track.readyState==='live') || !video?.videoWidth || video.readyState<2)
         throw new Error('The camera is not ready. Check the connection and camera permissions, then try again.');
-    } else if(!app.simCanvas?.width) throw new Error('The demo preview is not ready. Reconnect the camera.');
+    } else if(!app.simCanvas?.width) throw new Error('Camera unavailable.');
     if(epoch!==app.captureEpoch)return;
     app.goToScreen('capture');
-    await app.startOrContinueSequence();
+    await app.startOrContinueSequence({preflightChecked:true});
   } catch(error){app.reportSaveError(error);}
   finally{app.guestStarting=false;app.syncPersistenceUI();}
 }
@@ -125,7 +129,7 @@ export function updateCaptureScreenUI(app) {
   if (titleEl) {
     titleEl.textContent = nextEmpty === -1 && app.singleRetakeIndex === null
       ? `All ${app.slotCount} photos captured! 🎉`
-      : `Tấm ${currentShotIndex + 1} / ${app.slotCount}`;
+      : `Photo ${currentShotIndex + 1} / ${app.slotCount}`;
   }
 
   const retakeBanner = document.getElementById('retakeBanner');
@@ -141,13 +145,13 @@ export function updateCaptureScreenUI(app) {
   const mainBtnText = document.getElementById('mainCaptureBtnText');
   if (mainBtnText) {
     if (app.isCapturingSequence) {
-      mainBtnText.textContent = app.sequencePaused?'Tiếp tục chụp':'Tạm dừng';
+      mainBtnText.textContent = app.sequencePaused?'Resume Capture':'Pause';
     } else if (app.singleRetakeIndex !== null) {
       mainBtnText.textContent = `Retake Slot #${app.singleRetakeIndex + 1} (${app.countdownSeconds}s)`;
     } else if (nextEmpty === -1) {
       mainBtnText.textContent = `Retake All ${app.slotCount} Photos`;
     } else if(app.photos.some(Boolean)){
-      mainBtnText.textContent='Tiếp tục chụp';
+      mainBtnText.textContent='Resume Capture';
     } else {
       mainBtnText.textContent = `Start Automatic Capture (${app.slotCount} Photos)`;
     }
@@ -216,7 +220,7 @@ export function onAllSixShotsCompleted(app) {
     return;
   }
   if (!app.fullAutoMode) {
-    app.showToast(`All ${app.slotCount} photos are captured! Select “Finish & Create Print” to continue.`, 'success');
+    app.showToast('Photos complete. Select Review Photos.', 'success');
     return;
   }
 
@@ -247,5 +251,5 @@ export function pauseAutoGraceForReview(app) {
   }
   const graceOverlay = document.getElementById('autoGraceOverlay');
   if (graceOverlay) graceOverlay.classList.add('hidden');
-  app.showToast('Automatic printing is paused. Tap any photo slot to retake it!', 'info');
+  app.showToast('Tap a photo to retake it.', 'info');
 }

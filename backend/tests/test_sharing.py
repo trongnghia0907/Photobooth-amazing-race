@@ -49,7 +49,7 @@ def test_two_guests_only_their_immutable_composite_and_no_public_gallery(shared_
         assert image_a.status_code==image_b.status_code==200
         assert Image.open(BytesIO(image_a.content)).getpixel((0,0))[:3]==(255,0,0)
         assert Image.open(BytesIO(image_b.content)).getpixel((0,0))[:3]==(0,0,255)
-        assert hashlib.sha256(image_a.content).hexdigest()==first['share']['print_ready']['sha256']
+        assert hashlib.sha256(image_a.content).hexdigest()==first['composite']['sha256']
         assert client.get(pa+'/download').content==image_a.content
         disposition=client.get(pa+'/download').headers['content-disposition']
         assert 'attachment;' in disposition and 'amazing-race-2026-photo-' in disposition

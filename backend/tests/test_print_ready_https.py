@@ -19,11 +19,12 @@ def test_drive_uses_print_ready_without_changing_official_composite(setup):
     sid,cid=confirmed(client,6);repo.drive.process_one();share=finalize(client,sid,cid).json()['share']
     with TestClient(create_public_app(https)) as public:
         public.app.state.repository.drive.client=fake
-        data=public.get(share['image_url']).content
-        assert data==public.get(share['download_url']).content
+        data=public.get(share['image_url'],params={'print_ready':1}).content
+        assert data==public.get(share['download_url'],params={'print_ready':1}).content
         assert decode(data)==share['share_url']
         with repo.db.connect() as db:source=db.execute('SELECT path FROM composites WHERE id=?',(cid,)).fetchone()[0]
         official=(settings.storage_root/source).read_bytes()
+        assert official==public.get(share['image_url']).content==public.get(share['download_url']).content
         assert next(iter(fake.files.values()))==official
         original=Image.open(BytesIO(official)).convert('RGB');printed=Image.open(BytesIO(data))
         assert printed.crop((0,0,*original.size)).tobytes()==original.tobytes()
@@ -41,7 +42,7 @@ def test_tunnel_change_preserves_old_files_and_token_and_blocks_local_print(sett
             marker.write_text(json.dumps({'phase':'ready','origin':origin,'expires_at':time.time()+100}))
             updated=client.get('/api/sessions/'+sid,headers=headers()).json()['share']
             assert updated['print_ready'] and updated['qr_embedded']
-            data=client.get(updated['image_url']).content
+            data=client.get(updated['image_url'],params={'print_ready':1}).content
             assert decode(data)==origin+'/p/'+token
             assert updated['share_url']==origin+'/p/'+token
             with repo.db.connect() as db:path=local.storage_root/db.execute('SELECT path FROM print_ready WHERE final_id=?',(share['final_id'],)).fetchone()[0]

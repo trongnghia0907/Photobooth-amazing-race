@@ -153,7 +153,10 @@ def create_app(settings: Settings | None = None):
     @app.exception_handler(CameraError)
     async def camera_error(request, exc):
         status = 409 if exc.code in ('busy','host_busy','not_connected','adapter_changed','disabled') else 504 if exc.code=='timeout' else 503
-        return JSONResponse(status_code=status,content={'error':{'code':exc.code,'message':str(exc),'stage':exc.stage,'uncertain':exc.uncertain,'capture_id':getattr(exc,'capture_id',None)}})
+        error={'code':exc.code,'message':str(exc),'stage':exc.stage,'uncertain':exc.uncertain,'capture_id':getattr(exc,'capture_id',None)}
+        if exc.shutter_dispatched is not None:error['shutter_dispatched']=exc.shutter_dispatched
+        if getattr(exc,'clear_pending',False):error['clear_pending']=True
+        return JSONResponse(status_code=status,content={'error':error})
 
     @app.middleware('http')
     async def admin_privacy(request, call_next):

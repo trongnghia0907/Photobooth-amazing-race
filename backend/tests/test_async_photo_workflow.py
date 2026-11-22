@@ -49,7 +49,8 @@ def test_qr_and_local_public_photo_do_not_wait_for_background_upload(setup,monke
             assert verified['public_ready'] and not repo.drive.ready(cid)
             data=public.get(share['download_url']).content
             assert public.get(share['image_url']).content==data
-            assert zxingcpp.read_barcode(Image.open(BytesIO(data))).text==share['share_url']
+            assert hashlib.sha256(data).hexdigest()==state['composite']['sha256']
+            assert zxingcpp.read_barcode(Image.open(BytesIO(data))) is None
             assert public.get('/admin').status_code==404
             # The same worker cannot claim the same in-flight job again.
             assert repo.drive.process_one() is False
@@ -68,7 +69,7 @@ def test_pending_page_recovers_without_changing_token_and_offline_upload_keeps_s
     with TestClient(create_public_app(settings)) as public:
         public.app.state.repository.drive.client=fake
         assert public.get('/p/'+token+'/status').status_code==503
-        page=public.get('/p/'+token);assert page.status_code==202 and 'Ảnh đang được xử lý' in page.text and 'setTimeout' in page.text
+        page=public.get('/p/'+token);assert page.status_code==202 and 'Ảnh đang được chuẩn bị' in page.text and 'setTimeout' in page.text
         assert 'id="guestDownload"' not in page.text
         saved.rename(path)
         fake.offline=True;repo.drive.process_one();assert path.is_file() and not repo.drive.ready(cid)

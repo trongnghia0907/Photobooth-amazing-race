@@ -1,6 +1,6 @@
 import { filters } from '../config/filters.js';
 import { defaults } from '../config/defaults.js';
-import { createEmptyPhotos } from '../config/layouts.js';
+import { createEmptyPhotos, defaultSlotMetrics } from '../config/layouts.js';
 
 /** Single state owner, no DOM access. A fresh store per app/test. */
 export function createStore() {
@@ -71,10 +71,11 @@ fullAutoMode: true,
 autoPrintPopup: defaults.autoPrintPopup,
 
 presetLayout: 'grid2x3',
+hostFrames: {},
 customFrameImg: null,
 customFrameName: '',
 detectedSlots: null,
-slotMetrics: { padX: 6, padTop: 7, padBottom: 15, gap: 3 },
+slotMetrics: { ...defaultSlotMetrics },
 
 photos: createEmptyPhotos('grid2x3'),
 isCapturingSequence: false,

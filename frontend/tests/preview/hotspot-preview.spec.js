@@ -12,6 +12,35 @@ test.afterEach(async({page})=>{
   await page.unrouteAll({behavior:'ignoreErrors'});
 });
 
+test('Booth hides diagnostics on a fresh preview and shows concise camera warnings',async({page,context})=>{
+  await context.addCookies(cookies);
+  let releaseConnect;
+  const connecting=new Promise(resolve=>{releaseConnect=resolve;});
+  await page.route('**/camera/connect',async route=>{await connecting;await route.fallback();});
+  let failure='preview_pending';
+  await page.route('**/camera/frame',route=>failure
+    ?route.fulfill({status:503,json:{error:{code:failure,message:'WIA/PTP adapter debug information'}}})
+    :route.fallback());
+  try{
+    await page.goto('http://127.0.0.1:8028/booth');
+    const status=page.locator('#hostCameraStatus');
+    await expect(page.locator('#demoModeBadge')).toHaveCount(0);
+    await expect(status).toHaveText('Connecting camera...');
+    releaseConnect();
+    await expect(status).toHaveText('Waiting for camera...');
+    await expect(status).toBeVisible();
+    failure=null;
+    await expect(page.locator('#hostCameraPreview')).toBeVisible();
+    await expect(status).toBeHidden();
+    await expect(page.locator('#setupCameraStatus')).toBeHidden();
+    await expect(page.locator('#setupStartCaptureBtn')).toHaveAccessibleName('Start Capturing');
+    failure='unsupported';
+    await expect(status).toHaveText('Camera unavailable');
+    await expect(status).toBeVisible();
+    await expect(page.locator('#hostCameraPreview')).toBeHidden();
+  }finally{releaseConnect();}
+});
+
 test('lost first frame and temporary preview disconnect retry reads without reconnecting camera',async({page,context})=>{
   await context.addCookies(cookies);
   let connects=0,fail=true;
@@ -40,7 +69,7 @@ test('frame timeout is explicit, stops capture safely and recovers without a cam
     if(stalled){await new Promise(resolve=>setTimeout(resolve,4500));await route.abort().catch(()=>{});}
     else await route.fallback();
   });
-  await expect(page.locator('#hostCameraStatus')).toContainText('Live preview timed out',{timeout:9000});
+  await expect(page.locator('#hostCameraStatus')).toContainText('Waiting for camera',{timeout:9000});
   stalled=false;await page.waitForFunction(()=>app.hostPreviewHealthy);
   expect(connects).toBe(0);
   expect(await page.evaluate(()=>app.photos.filter(Boolean).length)).toBe(0);

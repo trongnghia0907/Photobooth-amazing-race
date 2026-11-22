@@ -10,7 +10,7 @@ const slots=Array.from({length:4},(_,index)=>{
 const keyOf=item=>item.id+':'+item.approved_at;
 async function api(path,options={}){
   const response=await fetch(prefix+path,{...options,headers:{'X-OSA-Display':'1',...options.headers},credentials:'same-origin',cache:'no-store',signal:options.signal||AbortSignal.timeout(5000)});
-  if(!response.ok){await response.json().catch(()=>null);const message=response.status===401?'The display code is incorrect or the event display is not enabled.':`Could not connect to the event display (HTTP ${response.status}). It will retry automatically.`;const error=new Error(message);error.status=response.status;throw error;}
+  if(!response.ok){await response.json().catch(()=>null);const message=response.status===401?'Invalid display code or the display is unavailable.':'Could not connect. Retrying…';const error=new Error(message);error.status=response.status;throw error;}
   return response.json();
 }
 function clearSlot(slot){slot.revision++;slot.key=null;slot.node.classList.remove('fading');slot.node.removeAttribute('data-photo-id');slot.node.replaceChildren();}
@@ -24,7 +24,7 @@ function wait(ms,signal){return new Promise(resolve=>{
   const timer=setTimeout(done,ms);signal.addEventListener('abort',done,{once:true});if(signal.aborted)done();
 });}
 function preload(item,signal){return new Promise(resolve=>{
-  const image=new Image();image.alt='Approved composite photo';image.decoding='async';
+  const image=new Image();image.alt='Event photo';image.decoding='async';
   const done=value=>{clearTimeout(timer);image.onload=null;image.onerror=null;signal.removeEventListener('abort',cancel);if(!value)image.removeAttribute('src');resolve(value);};
   const cancel=()=>done(null),timer=setTimeout(cancel,8000);
   image.onload=()=>done(image);image.onerror=cancel;signal.addEventListener('abort',cancel,{once:true});
@@ -71,11 +71,11 @@ async function poll(generation){
     const result=await api('/api/photos?limit=100',{signal:abort.signal});if(stopped||generation!==epoch)return;
     if(!Array.isArray(result.items))throw new Error('Invalid photo feed response');
     $('displayPresentation').hidden=false;$('displayLogin').hidden=true;render(result.items);
-    $('displayStatus').textContent='Live · Automatically updating approved photos';
+    $('displayStatus').textContent='';
   }catch(error){
     if(stopped||generation!==epoch)return;
     if(error.status===401)locked(error.message);
-    else $('displayStatus').textContent='Connection lost · Retrying automatically…';
+    else $('displayStatus').textContent='Connection lost. Retrying…';
   }finally{clearTimeout(timeout);if(!stopped&&generation===epoch)pollTimer=setTimeout(()=>poll(generation),2500);}
 }
 function startPolling(){clearTimeout(pollTimer);pollAbort?.abort();poll(++epoch);}

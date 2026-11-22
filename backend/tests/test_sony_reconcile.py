@@ -88,7 +88,13 @@ def test_new_session_replays_cancel_receipt_database_crash_safely(settings,monke
         record=json.loads(journal.read_text());record['object']=None
         journal.write_text(json.dumps(record));wire.photos.clear()
         camera.adapter.driver.connect()
-        camera.adapter.driver.cancel_capture(cid,time.monotonic()+5,confirm_discard=True)
+        # Fixture for receipts written before abandonment remained unresolved.
+        archive=journal.parent/'cancelled'/journal.name
+        archive.parent.mkdir(parents=True,exist_ok=True)
+        archive.write_bytes(journal.read_bytes())
+        record.update(status='cancelled',cancel_reason='Legacy operator cancellation')
+        journal.write_text(json.dumps(record))
+        camera.adapter.driver.unresolved.discard(journal)
         if not restart:
             camera._reconcile_cancelled_receipts()
             first=None

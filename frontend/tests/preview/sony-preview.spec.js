@@ -31,7 +31,7 @@ test('development Sony contract tolerates first pending frame and does not reope
   });
   await page.goto('/?previewStats=1');await page.waitForFunction(()=>window.app?.hostPreviewDiagnostics?.frames>=20);
   expect(connects).toBe(1);expect(maxInflight).toBe(1);
-  await expect(page.locator('#demoModeBadge')).not.toContainText('Production is not supported');
+  await expect(page.locator('#demoModeBadge')).toHaveCount(0);
   await expect(page.locator('#hostCameraPreview')).toBeVisible();
   await expect(page.locator('#hostPreviewStats')).toContainText(/FPS.*request p95.*frame age/);
   await expect(page.locator('#hostPreviewStats')).toContainText(/next paint \d+.*timer late/);
