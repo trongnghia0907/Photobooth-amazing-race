@@ -250,6 +250,8 @@ class SharingService:
         repo = self.repository
         repo.get(sid,owner,prepare_print=not defer_print)
         def mutate(db, session, paths):
+            if db.execute('SELECT 1 FROM photo_deletions WHERE composite_id=?',(composite_id,)).fetchone():
+                raise HTTPException(404)
             if session['status'] != 'completed' or session['composite_id'] != composite_id:
                 raise HTTPException(409, 'Chỉ tạo QR cho composite hiện tại đã xác nhận hoàn tất.')
             composite = db.execute('SELECT * FROM composites WHERE id=? AND session_id=?', (composite_id, sid)).fetchone()

@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { handlePublic } from './api/public.mjs';
 import { handlePublication } from './api/publication.mjs';
-import { blobKey, personalToken } from './lib/catalog.mjs';
+import { blobKey, deletedVersion, personalToken } from './lib/catalog.mjs';
 
 const routes = JSON.parse(await readFile(new URL('./vercel.json',import.meta.url))).rewrites;
 const publishSecret = 'local-test-publish-secret'.repeat(3);
@@ -22,8 +22,19 @@ const item = {id,version:1,approved:true,sha:checksum(original),size:original.le
 test('public route contracts share one approved asset and enforce expiry and hide', async t => {
   const data = new Map();
   const objects = new Map([[blobKey(id,item.sha),original],[blobKey(id,item.thumb_sha,true),thumbnail]]);
+  const otherId = 'a1234567-c7d1-4e31-861c-4e5bfba50a0c';
+  const otherKey = blobKey(otherId,item.sha);
+  objects.set(otherKey, original);
+  let failDeletion = true;
+  const listObjects = ({prefix}) => ({blobs:[...objects.keys()].filter(key=>key.startsWith(prefix))
+    .map(pathname=>({pathname}))});
+  const remove = keys => {
+    if (failDeletion) throw new Error('Fixture Blob outage');
+    for (const key of keys) objects.delete(key);
+  };
   const open = () => ({find:key=>data.get(key),count:()=>Array.from(data.values()).filter(row=>row.approved).length,
     list:(limit,offset)=>Array.from(data.values()).filter(row=>row.approved).slice(offset,offset+limit),
+    markDeleted(key){data.set(key,{id:key,version:deletedVersion,approved:false});},
     set(value){
       const before = data.get(value.id);
       if (before?.version >= value.version) return before;
@@ -53,7 +64,7 @@ test('public route contracts share one approved asset and enforce expiry and hid
       const chunks = [];
       for await (const chunk of req) chunks.push(chunk);
       req.body = Buffer.concat(chunks).toString('utf8');
-      return handlePublication(req,res,{open,verify});
+      return handlePublication(req,res,{open,verify,listObjects,remove});
     }
     for (const {source,destination} of routes) {
       const match = new RegExp('^'+source.replace(/:(\w+)/g,'(?<$1>[^/]+)')+'$').exec(url.pathname);
@@ -102,6 +113,20 @@ test('public route contracts share one approved asset and enforce expiry and hid
   assert.equal((await publish(item)).status,409);
   assert.equal((await fetch(root+galleryItem.preview_url,{headers:{'If-None-Match':'"fixture"'}})).status,404);
   assert.equal((await fetch(root+event.items[0].image_url)).status,404);
+  assert.equal((await publish({...item,version:3})).status,200);
+  const deletePhoto = (secret = publishSecret) => fetch(root+'/api/publication',{
+    method:'DELETE',headers:{authorization:`Bearer ${secret}`},body:JSON.stringify({id})});
+  assert.equal((await deletePhoto('wrong')).status,401);
+  assert.equal((await deletePhoto()).status,503);
+  assert.equal((await (await fetch(root+'/gallery/api/photos')).json()).total,0);
+  assert.deepEqual((await (await fetch(root+'/event-display/api/photos')).json()).items,[]);
+  assert.equal((await fetch(root+receipt.share_path+'/download')).status,404);
+  assert.equal((await publish({...item,version:4})).status,409);
+  assert.equal((await publish({...item,version:deletedVersion})).status,422);
+  failDeletion = false;
+  assert.deepEqual(await (await deletePhoto()).json(),{deleted:id});
+  assert.deepEqual(await (await deletePhoto()).json(),{deleted:id});
+  assert.deepEqual([...objects.keys()],[otherKey]);
   for (const path of ['/admin','/api/admin','/api/camera','/api/sessions','/api/print-config','/health']) {
     assert.equal((await fetch(root+path)).status,404);
   }

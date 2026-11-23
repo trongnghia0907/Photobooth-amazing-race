@@ -14,6 +14,7 @@ class DriveStorage:
         self.repo=repo;self.client=client or GoogleDriveClient(repo.settings)
         self.stop_event=threading.Event();self.thread=None;self.lease=None
         self.process_lock=threading.Lock()
+        self.restore_lock=threading.Lock()
         self.last_result='Chưa kiểm tra OAuth/quyền Drive.';self.privacy_ok=False
     def queue(self,db,composite_id):
         if self.repo.settings.google_drive_enabled:
@@ -46,7 +47,9 @@ class DriveStorage:
     def _process_one(self):
         with self.repo.db.connect() as db:
             row=db.execute("""SELECT u.*,c.path,c.sha256 FROM drive_uploads u JOIN composites c ON c.id=u.composite_id
-                WHERE u.state!='SYNCED' AND u.next_attempt<=? ORDER BY u.next_attempt LIMIT 1""",(time.time(),)).fetchone()
+                WHERE u.state!='SYNCED' AND u.next_attempt<=?
+                AND NOT EXISTS(SELECT 1 FROM photo_deletions d WHERE d.composite_id=u.composite_id)
+                ORDER BY u.next_attempt LIMIT 1""",(time.time(),)).fetchone()
         if not row:return False
         cid=row['composite_id']
         started=time.perf_counter()
@@ -89,6 +92,8 @@ class DriveStorage:
         return True
     def local(self,composite_id):
         with self.repo.db.connect() as db:
+            if db.execute('SELECT 1 FROM photo_deletions WHERE composite_id=?',(composite_id,)).fetchone():
+                raise HTTPException(404)
             row=db.execute('SELECT c.path,c.sha256,u.state,u.drive_file_id FROM composites c JOIN drive_uploads u ON u.composite_id=c.id WHERE c.id=?',(composite_id,)).fetchone()
         if not row:return None
         if row['state']!='SYNCED':raise HTTPException(503,'Ảnh đã lưu an toàn; đang chờ đồng bộ Google Drive.',headers={'Retry-After':'5'})
@@ -101,7 +106,10 @@ class DriveStorage:
             data=self.client.download(row['drive_file_id'])
             if hashlib.sha256(data).hexdigest()!=row['sha256']:raise DriveError('Checksum Drive download không khớp.')
             # Verified private retrieval, cached for existing image/printing APIs.
-            if not path.exists() or hashlib.sha256(path.read_bytes()).hexdigest()!=row['sha256']:atomic_write(path,data)
+            with self.restore_lock, self.repo.db.connect() as db:
+                if db.execute('SELECT 1 FROM photo_deletions WHERE composite_id=?',(composite_id,)).fetchone():
+                    raise HTTPException(404)
+                if not path.exists() or hashlib.sha256(path.read_bytes()).hexdigest()!=row['sha256']:atomic_write(path,data)
             return data
         except DriveError:raise HTTPException(503,'Ảnh tạm thời chưa truy cập được từ Drive. Hãy thử lại.',headers={'Retry-After':'5'}) from None
     def retry(self):

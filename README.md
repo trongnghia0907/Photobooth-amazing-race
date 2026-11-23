@@ -1,5 +1,12 @@
 # AMAZING RACE 2026 Photobooth
 
+The Windows laptop runs Booth, controls the Sony over USB, saves the final composite and handles printing. Google Drive can back up finalized PNGs privately.
+
+| Mode | Where photos are served |
+| --- | --- |
+| **Local Mode** | The laptop Host serves Booth, Gallery and Event Display. An optional photo-only HTTPS gateway lets phones scan QR links while the Host is online. Vercel credentials are optional. |
+| **Vercel Cloud Publishing** | The laptop also queues new approved composites for publication. Vercel serves its own public Gallery, Event Display and QR photo pages from a shared cloud catalog. Camera, Confirm, Drive backup and printing stay on the laptop. |
+
 ## 1. Build & Installation
 
 ### Install once
@@ -64,7 +71,7 @@ Environment variables apply to the current PowerShell terminal. Configuration fi
 
 - **Mock (`mock`):** working synthetic preview and saved test images. No physical shutter or camera JPEG.
 - **Webcam (`uvc_demo`):** optional OpenCV video-frame capture in development mode. It is DEMO, not a replacement for original photographs from a mirrorless camera.
-- **Sony ZV-E10 (`sony_zve10`): implemented and automated-tested; physical Sony ZV-E10 validation pending.** This adapter targets the first-generation ZV-E10, not ZV-E10 II.
+- **Sony ZV-E10 (`sony_zve10`):** Real Live View, shutter and original JPEG transfer have been observed with the first-generation ZV-E10. The Host has recorded completed Sony sessions for both 4- and 6-photo layouts. Six retained 6000 × 4000 originals matched their recorded SHA-256 and decoded successfully. The adapter still reports `hardware_verified=false`. Recheck consecutive captures on the event hardware.
 
 The current code includes Windows device discovery/transport (`sony_wia.py`), Sony PTP commands (`sony_ptp.py`), adapter validation (`sony_zve10.py`) and a diagnostic script. Live View, remote shutter and original JPEG transfer have implementation paths. Protocol/adapter tests use simulated transport; they do **not** prove physical compatibility or stability. A failed Sony connection never silently switches to DEMO capture.
 
@@ -72,16 +79,12 @@ The transport uses Windows' built-in WIA/PTP interfaces through Python's standar
 
 ### Prepare the original Sony ZV-E10
 
-The intended connection is:
-
-**Sony ZV-E10 -> USB data cable -> Windows Host -> Wi-Fi/phone hotspot -> iPad.**
-
-The iPad does not connect to the camera by USB or use its own camera in Host mode.
+The primary setup connects **Sony ZV-E10 → USB data cable → Windows laptop running Booth**. An optional LAN client uses the laptop Host's camera.
 
 1. Use the first-generation **ZV-E10**, a charged/powered camera and a USB data cable. A charge-only cable is insufficient.
 2. On the camera, set **Network > Smartphone Connect > Smartphone Connection > Off**.
 3. Set **Network > PC Remote Function > PC Remote > On** and **PC Remote Cnct Method > USB**.
-4. For this backend, set still-image **File Format > JPEG** and **Drive Mode > Single Shooting**; RAW/RAW & JPEG are not accepted by the current capture check. Choose **Still Img. Save Dest. > PC+Camera**, insert a writable memory card, and select **PC Save Image Size > Original**. Use PC Remote rather than USB Streaming/webcam mode.
+4. Set **File Format > JPEG**, **Drive Mode > Single Shooting**, and **PC Save Image Size > Original**. Use **Still Img. Save Dest. > PC Only** for isolated acceptance or recovery, keeping the old SD card out after recovery. The adapter also accepts **PC+Camera** with a writable card. Use PC Remote mode.
 5. Connect the camera directly to the Windows laptop. If needed, independently check it with Sony's official [Imaging Edge Desktop](https://support.d-imaging.sony.co.jp/app/imagingedge/en/), then fully close Remote and other camera applications before Photobooth diagnostics. Only one application may own the camera.
 
 These settings follow the [Sony ZV-E10 PC Remote guide](https://helpguide.sony.net/ilc/2070/v1/en/contents/TP0002392805.html). Imaging Edge working is a useful independent check, not proof that this project's driver works on the same hardware.
@@ -116,11 +119,11 @@ These settings follow the [Sony ZV-E10 PC Remote guide](https://helpguide.sony.n
 
 Diagnostics print JSON to the terminal; they do not automatically create a diagnostic log file. Capture outputs and recovery receipts are under `sony-test-output/camera_originals/sony-recovery/`; `saved_test_image` gives the exact JPEG path. Keep this directory private. Optional `--timeout` accepts **1–60 seconds** (default 15). Preview/capture checks exit **0** on PASS or **2** on FAIL.
 
-A diagnostic PASS covers only the requested checks. It does not mark the adapter `hardware_verified` or unlock Event mode. Full 4/6-photo and stability testing remains pending.
+A diagnostic PASS covers the requested checks. Event mode still requires the adapter's separate `hardware_verified` flag. Check complete 4- and 6-photo sessions on the event setup.
 
 ### Select the Sony adapter
 
-After diagnostics finish, start the Sony Host command in section 3A. On the laptop, open `/admin`, sign in and inspect Camera Settings. Open `/booth` and verify Live Preview, then repeat from the iPad on the same LAN. Use **development** for initial hardware validation: Event mode requires verified physical hardware, and the current Sony adapter still reports `hardware_verified=false`. Do not bypass that restriction.
+After diagnostics finish, start the Sony Host command in section 3A. Sign in at `/admin` and inspect Camera Settings. Open `/booth` on the laptop and verify fresh Live View frames. Use **development** for Sony acceptance while the adapter reports `hardware_verified=false`.
 
 For software-only testing, replace `--camera sony_zve10` with `--camera mock`. For an optional webcam test, install the following, then use `--camera uvc_demo`:
 
@@ -130,7 +133,7 @@ For software-only testing, replace `--camera sony_zve10` with `--camera mock`. F
 
 ### Camera troubleshooting
 
-- **Not detected:** check power, a USB data cable, another USB port and Device Manager. `pnp.status=UNAVAILABLE` means Windows could not complete the query; it does not prove the camera is absent.
+- **Not detected or Windows Code 10/43:** check power, a USB data cable, another direct USB port and Device Manager. Resolve active device errors before retrying the Host. `pnp.status=UNAVAILABLE` means Windows could not complete the query.
 - **Busy/access/WIA error:** stop Host before using the diagnostic script; close Imaging Edge and other camera apps. Recheck PC Remote/USB settings.
 - **USB/PTP/protocol or unsupported-model error:** confirm original ZV-E10, PC Remote settings and the reported error code. A failure after detection may be a transport/protocol compatibility issue, not a broken camera.
 - **Live View timeout:** inspect USB/PTP connection and camera state first; a preview timeout alone does not prove disconnection. Reproduce with `--connect-preview` on the laptop before investigating Wi-Fi.
@@ -171,6 +174,11 @@ After `abandonment_isolated`, start the Host, select **New Session**, and connec
 
 ## 3. Running the Complete Photobooth System
 
+1. **Capture and review.** In laptop Booth, choose 2×2 (4 photos) or 2×3 (6 photos). During countdown, the counters sit beside Live View. Review the captured slots in order.
+2. **Confirm.** Select **Confirm & Display**. The Host finalizes the session in SQLite and saves the framed PNG at `runtime/composites/<session-id>/<composite-id>.png`. Temporary originals can be cleaned up after finalization.
+3. **Back up and display.** Drive backup queues independently when enabled. Publication follows the Host's auto-publish setting and consent recorded at confirmation, or operator approval in Dashboard. Event Display shows approved composites with available local files. Gallery lists eligible approved finals independently of personal QR expiry.
+4. **Share and print.** The personal QR opens a preview and download of the clean finalized PNG. Local printing uses a separate print-ready image with a QR footer. Drive sync does not gate Confirm, Event Display or a verified QR backed by a local file.
+
 ### A. Terminal 1: start the Host
 
 Connect the laptop to the intended Wi-Fi/hotspot, then run from the repository root:
@@ -192,28 +200,25 @@ Open `http://localhost:8000/api/health` on the laptop and check for `"status":"o
 
 | Website | Purpose | URL / route | Requirements |
 | --- | --- | --- | --- |
-| Guest UI | Capture and customize on iPad | `http://LAPTOP_IP:8000/booth`; laptop: `http://localhost:8000/booth` | Same verified LAN, no code by default |
+| Booth | Capture and customize on laptop | `http://localhost:8000/booth` | A LAN client can use the printed Booth URL and pair if required |
 | Host Dashboard | Manage equipment and sessions | `http://localhost:8000/admin` | Host login; laptop localhost only |
 | Event Live Display | Four-corner projector presentation | `http://LAPTOP_IP:8000/event-display` | Same LAN, no code by default |
-| All-Photos Gallery | Browse published final composites | `http://LAPTOP_IP:8000/gallery`; public HTTPS origin + `/gallery` when enabled | Gallery flag; published, non-revoked photo with an unexpired issued QR |
+| All-Photos Gallery | Browse published final composites | `http://LAPTOP_IP:8000/gallery`; public HTTPS origin + `/gallery` when enabled | `PUBLIC_GALLERY_ENABLED=true`; approved, non-hidden, non-revoked final |
 | QR Guest Photo Page | View/download one confirmed photo | `/p/{token}` on the generated share origin | Valid share token; verified public HTTPS for phones on other networks |
 
 Localhost refers to the device opening the page. Use the laptop's LAN address on the iPad, never the iPad's localhost. Cloudflare forwards selected requests to the laptop; it is not a cloud-server deployment.
 
-### C. Connect the iPad over a phone hotspot
+### C. Optional LAN access
 
-1. Enable the phone's 4G/5G Wi-Fi hotspot.
-2. Connect both the Windows laptop and iPad to that hotspot.
-3. Run the LAN Host command above. Find the current IPv4 if needed:
+Put the Host and the viewing device on the same trusted Wi-Fi or hotspot. Use the Wi-Fi IPv4 address printed by the launcher. To check the address:
 
    ```powershell
    Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.IPAddress -notmatch '^(127\.|169\.254\.)' } | Select-Object InterfaceAlias,IPAddress
    ```
 
-4. Use the active Wi-Fi address, not a VPN address. Open the printed `/booth` URL in Safari. Enter the kiosk pairing code only if the launcher requested one.
+If automatic detection chooses a VPN or another interface, restart Host with `--lan-ip LAPTOP_IP` using the current Wi-Fi address. Reopen the URL if DHCP changes it.
 
-**Live Preview check.** On the Host laptop, open `http://localhost:8000/booth?previewStats=1`. For a separate test over Wi-Fi, close the laptop Booth tab and open `http://LAPTOP_IP:8000/booth?previewStats=1` on a second phone joined to the same hotspot. Keep the Dashboard on the laptop and only one Booth viewer active. Pair the second phone, keep its Booth page in the foreground for two minutes, and note FPS, request p95, estimated frame age and any freezes. Move an object in view periodically to confirm the picture keeps updating. Repeat in Safari on the iPad before the event. The laptop's LAN address opened on the laptop does not measure Wi-Fi between devices. Omit `previewStats=1` for the regular Booth view.
-5. If automatic detection chooses another interface, stop Host and replace `--lan-ip auto` with `--lan-ip LAPTOP_IP`, using the actual current address. Reopen the URL after DHCP changes; no fixed IP is required.
+For a separate Live View test over Wi-Fi, open `/booth?previewStats=1` on a second device and keep only one Booth viewer active. Move an object in view and note frame age, FPS and any freezes. Remove the query parameter for normal use.
 
 On a trusted hotspot, use a Windows **Private** network profile. If needed, an administrator can add a Private-network-only rule; replace `Wi-Fi` with the actual interface alias:
 
@@ -227,11 +232,11 @@ Do not disable the firewall. Some hotspots isolate connected devices; if the cor
 
 On a computer **on the same LAN**, open the printed `/event-display` URL. A display code is only required if the Host starts with `EVENT_DISPLAY_PIN_REQUIRED=true`. Connect its projector/LED by HDMI/USB-C and press F11 for presentation. Newly published final composites appear automatically; Host can hide them.
 
-**A computer on a different auditorium network cannot currently use Event Display through the photo-only Cloudflare gateway.** The public gateway does not serve `/event-display`. Use the same LAN or connect the projector directly to the Host. Cross-network Event Display needs a separately approved private connection or future deployment; it is not currently provided. Never expose Host port 8000 publicly to work around this restriction.
+The local Event Display feed skips missing historical files and returns an empty list when no approved local files are available. Use the same LAN or connect the projector directly to the Host. A remotely hosted Event Display is part of the optional Vercel app in [section 4](#4-vercel-cloud-publishing).
 
 ### E. Optional Google Drive upload
 
-Skip this for a local-only test. A new Windows installation needs its own Google authorization; do not copy another user's encrypted credentials.
+Drive backup is optional in Local Mode. Each Windows installation needs its own Google authorization.
 
 1. Install the optional dependencies:
 
@@ -239,7 +244,7 @@ Skip this for a local-only test. A new Windows installation needs its own Google
    & ./backend/.venv/Scripts/python.exe -m pip install -r backend/requirements-drive-optional.txt
    ```
 
-2. In your Google Cloud project, enable Drive and Picker APIs, configure a Desktop OAuth client and authorize a test user if required. Store its client JSON privately at `.tools/google-drive/client_secret.json`. The account needs Editor/Owner access to the approved target folder `1QO_i__d-JzrQOCL7muz9lkgjOe1JxNGH`. Update `GOOGLE_DRIVE_FOLDER_ID` if your existing environment file still specifies the previous folder.
+2. Enable Drive and Picker APIs in your Google Cloud project, configure a Desktop OAuth client and authorize a test user if required. Store the client JSON privately at `.tools/google-drive/client_secret.json`. Use the approved Restricted folder and account permissions described in [Drive setup](docs/PRIVATE_GOOGLE_DRIVE.md).
 3. Grant that exact folder through the existing Picker and run the privacy check:
 
    ```powershell
@@ -249,7 +254,7 @@ Skip this for a local-only test. A new Windows installation needs its own Google
 
 4. After authorization/privacy pass, set `$env:GOOGLE_DRIVE_ENABLED="true"` in **Terminal 1 before starting/restarting Host**. Confirm startup says `Google Drive: enabled (background upload)`.
 
-Final composites upload privately in the background. Failed uploads remain queued locally. Do not delete pending files or change folder permissions to bypass a privacy error. See [Drive setup](docs/PRIVATE_GOOGLE_DRIVE.md) for authorization problems.
+Final composites upload privately in the background. Failed uploads remain queued locally. Keep pending files and the folder's Restricted permissions.
 
 ### F. Terminal 2: optional public HTTPS QR and Gallery
 
@@ -264,34 +269,26 @@ If Drive is configured and required for the test, append `--require-drive` to th
 
 Wait for the **actual HTTPS URL** and successful isolation checks. Open that origin plus `/gallery` for public browsing. Confirm a new composite and wait for the Result UI to display a verified HTTPS QR before scanning it over 4G/5G. Test both the correct image and Download.
 
-Confirmation durably saves one final composite on Host and creates/reuses its stable share token. The authorized gateway can serve the checksum-verified local staging image while private Drive upload runs asynchronously. QR readiness does **not** wait for Drive `SYNCED`; it requires a reachable, verified HTTPS origin and verification of that session's available photo. Print-ready preparation is separate.
+The gateway can serve the checksum-verified local PNG. QR readiness requires a reachable HTTPS origin that can verify the specific photo.
 
 If the tunnel disconnects, public sharing becomes unavailable; the saved composite and upload queue remain intact. Reconnect the tunnel and use **Retry sharing** if automatic retries have stopped. For `getaddrinfo failed (11001)`, check DNS/network connectivity; try another network or configure a working DNS resolver. Do not bypass isolation checks or advertise a localhost/LAN QR as public.
 
-The public gateway serves only Guest Photo resources and the enabled public Gallery. It does not expose Booth, Host login, camera/printing controls or Event Display. Gallery can be empty even when Event Display has photos: public Gallery also requires an issued, unexpired QR. QR links expire 24 hours after first successful public verification; restarting a tunnel does not extend them.
+The public gateway serves Guest Photo resources and the enabled Gallery. Local personal QR links expire 24 hours after first successful public verification, while Gallery eligibility follows publication approval and revocation. Restarting the tunnel does not extend a personal QR's lifetime.
 
 Keep the laptop, Internet and tunnel running. Quick Tunnel domains are temporary; replacing a tunnel can invalidate old printed QR URLs. No permanent cloud server is deployed by these commands.
 
 ### G. Optional physical printing
 
-For USB printing on Windows, connect the printer, install its manufacturer driver, and print a Windows test page from **Settings → Bluetooth & devices → Printers & scanners → Printer properties**. Set the paper size and orientation in **Printing preferences**.
+Connect the physical printer, install its Windows driver and check it in **Settings → Printers & scanners**. For a real print test, append `--printer windows --enable-physical-printing` to the Host command.
 
-Stop Host and append `--printer windows --enable-physical-printing` to your usual Host command. Open **/admin → Hàng đợi in** to check availability. Host uses the Windows default printer unless you select another in the dashboard or set `PRINTER_NAME`. If the Windows default is a virtual queue such as Print to PDF or OneNote, select the physical printer in the dashboard. Open a completed session with a print-ready image, enter the copy count, and choose **In lại**. A print-ready image with QR requires a verified public photo URL. The queue's **Submitted** status means Windows accepted the job. Check the physical output and QR on paper.
+In **/admin → Hàng đợi in**, select the physical printer and save a paper size and orientation offered by its driver. Open the completed session in **Kho ảnh**, use **Xem trước trên giấy**, then select the copy count and submit the print job. The QR print workflow uses the existing local public HTTPS share configuration. **Submitted** means the Windows spooler accepted the job. Check both layouts on the actual printer for margins, scale and QR readability.
 
 ### H. Basic end-to-end check
 
-1. Complete installation and verify `frontend/dist-host/index.html` exists.
-2. **Sony hardware:** before Host startup, run discovery, connection/Live View and the explicitly confirmed one-shutter diagnostic. Open the transferred original JPEG; record each result separately.
-3. **Sony hardware:** start Host with `--camera sony_zve10`; check `/api/health` reports `ok` and verify laptop Live Preview. Physical compatibility/stability is still **PENDING** until the tester performs these checks.
-4. **iPad/LAN:** open the printed `/booth` URL and verify Live Preview in Safari.
-5. **Sony hardware:** complete a four-photo session and inspect all captured slots.
-6. **Sony hardware:** repeat with a six-photo session.
-7. Test Pause, Resume, Capture Now, Complete, individual Retake and Start Over. In Pause mode, manually fill all slots and use Complete to open Review without finalizing.
-8. Review/customize and select **Confirm, Display Photo & Get QR** to save one official composite and authorize event publication. Temporary originals may be cleaned up after durable finalization; inspect them before confirmation if needed.
-9. Check local Event Display publication. With optional public HTTPS configured, check Gallery after the photo has a valid issued QR; verify Host hide/revoke removes it.
-10. **Optional public HTTPS/phone:** scan the real QR using 4G/5G; verify the correct photo and Download. This requires a running, verified tunnel, not just a localhost URL.
-11. **Optional Drive:** verify upload reaches `SYNCED`. QR and local Event Display must not wait for an otherwise safely staged photo's upload.
-12. **Optional printer hardware:** verify the actual printed image and embedded QR, including paper size/orientation.
+1. Verify fresh Live View, then complete a 4-photo session and a 6-photo session. Check that each JPEG reaches the right slot and Live View returns after capture. Stop if a shutter outcome is uncertain.
+2. In a test session, check Pause, Resume, Capture Now, Complete and an individual retake. Inspect any originals needed for acceptance before Confirm.
+3. Confirm an approved test composite. Check the local PNG, Gallery and Event Display. If configured, verify the Drive job reaches `SYNCED` and scan the active HTTPS QR from a phone to download the clean PNG.
+4. If testing printing, check a copy from each layout on the event printer. Verify the printed QR and paper positioning.
 
 ### I. Stop safely
 
@@ -308,3 +305,32 @@ If you started mobile HTTPS testing, stop those owned services separately:
 ```
 
 Restart with the same credentials and runtime. These stop commands preserve photos; do not delete storage or stop unrelated processes.
+
+## 4. Vercel Cloud Publishing
+
+The public-only project lives in [cloud/](cloud/). Set Vercel's Root Directory to `cloud`, use Node.js 22.x, and enable **Include source files outside of the Root Directory in the Build Step** for the shared UI and theme assets. The build uses `npm ci` and `npm run build`, with output in `public` as configured in [vercel.json](cloud/vercel.json). Use a dedicated **private Vercel Blob** store and **Neon Free** database, then apply [the catalog schema](cloud/schema.sql). Check Hobby eligibility and limits before provisioning. [Vercel project setup](https://vercel.com/docs/monorepos/monorepo-faq) · [Vercel terms](https://vercel.com/legal/terms)
+
+| Where | Required environment variables |
+| --- | --- |
+| Vercel server | `DATABASE_URL`, `BLOB_READ_WRITE_TOKEN`, `PHOTO_CLOUD_PUBLISH_SECRET`, `PHOTO_CLOUD_QR_SECRET` |
+| Windows Host | `PHOTO_CLOUD_ORIGIN` (stable Vercel HTTPS origin), `PHOTO_CLOUD_PUBLISH_SECRET` (same value as Vercel), `PHOTO_CLOUD_BLOB_TOKEN` (same private store) |
+
+Keep credentials server-side and use separate publishing and QR secrets of at least 32 characters. On the laptop, run `npm.cmd --prefix cloud ci` before enabling the worker. Keep the local public share origin or gateway when using the existing local QR or print-ready workflow. The Host keeps running locally with the cloud variables unset.
+
+To connect the local Sony Host to Vercel, put the Windows Host variables listed above in the Git-ignored `.env.cloud-local` file at the repository root. From that directory, run this PowerShell command in Terminal 1 in place of the Local Mode command in section 3A:
+
+```powershell
+& .\backend\.venv\Scripts\python.exe scripts/run_host.py --env-file .env.cloud-local --profile lan --lan-ip auto --mode development --camera sony_zve10
+```
+
+The worker publishes only new, confirmed and approved composites. It uploads the clean PNG and a thumbnail directly to Blob, verifies the bytes before registering the image, and retries from SQLite after restart. Historical photos are excluded. All three Vercel pages share the catalog. Booth can show a verified local QR while cloud publication is pending. [Detailed P2 setup, quotas and acceptance checks](docs/VERCEL_P2_DEPLOYMENT_READINESS.md)
+
+## 5. Verification status
+
+| Capability | Evidence and remaining checks |
+| --- | --- |
+| **Sony hardware** | Successful original JPEGs and completed 4- and 6-photo sessions are recorded. Recheck the event camera, cable and laptop against the local checklist. Event mode still enforces the separate `hardware_verified` flag. |
+| **Local Booth and Event Display** | Mock-camera browser tests covered both layouts without cloud credentials. An isolated five-minute LAN run verified feed polling, empty state, recovery and automatic display of a newly approved photo. |
+| **Drive and HTTPS QR** | The operational database records Drive jobs as `SYNCED`. P2 verified queue independence and clean downloads in controlled tests. Recheck live OAuth and scan the active HTTPS QR from a phone on the intended network. |
+| **Local printing** | Software tests covered queue, paper size, orientation and preview. The event printer, paper alignment and printed QR still need physical verification. |
+| **Vercel Cloud Publishing** | The public build passed locally. Upload retry and access rules passed with simulated services. Real deployment, private Blob, Neon and delivery of a PNG over 4.5 MB still need live verification. |

@@ -1,6 +1,6 @@
-import { get } from '@vercel/blob';
+import { del, get, list } from '@vercel/blob';
 import { createHash } from 'node:crypto';
-import { blobKey, catalog, matches, personalToken, uuid } from '../lib/catalog.mjs';
+import { blobKey, catalog, deletedVersion, matches, personalToken, uuid } from '../lib/catalog.mjs';
 
 const sha256 = /^[a-f0-9]{64}$/;
 const positiveInt = (value, max) => Number.isSafeInteger(value) && value > 0 && value <= max;
@@ -26,9 +26,26 @@ export default async function publication(req, res) {
   return handlePublication(req, res);
 }
 
-export async function handlePublication(req, res, {open = catalog, verify = verifyBlob} = {}) {
+async function deleteBlobs(id, {listObjects = list, remove = del} = {}) {
+  const prefix = `photos/${id}/`;
+  const signal = AbortSignal.timeout(15000);
+  const pages = [];
+  let cursor;
+  do {
+    const batch = await listObjects({prefix, cursor, abortSignal:signal});
+    const keys = batch.blobs.map(blob => blob.pathname).filter(key =>
+      key.startsWith(prefix) && /^[a-f0-9]{64}\.(png|jpg)$/.test(key.slice(prefix.length)));
+    if (keys.length) pages.push(keys);
+    cursor = batch.hasMore ? batch.cursor : undefined;
+    if (batch.hasMore && !cursor) throw new Error('Incomplete Blob listing');
+  } while (cursor);
+  for (const keys of pages) await remove(keys,{abortSignal:signal});
+}
+
+export async function handlePublication(req, res, {open = catalog, verify = verifyBlob,
+  listObjects, remove} = {}) {
   res.setHeader('Cache-Control','no-store');
-  if (req.method !== 'POST') return res.status(405).json({error:'Method not allowed'});
+  if (!['POST','DELETE'].includes(req.method)) return res.status(405).json({error:'Method not allowed'});
   const secret = process.env.PHOTO_CLOUD_PUBLISH_SECRET;
   if (!secret || secret.length < 32 || !matches(req.headers.authorization, `Bearer ${secret}`)) {
     return res.status(401).json({error:'Unauthorized'});
@@ -37,8 +54,19 @@ export async function handlePublication(req, res, {open = catalog, verify = veri
   if (typeof item === 'string') {
     try { item = JSON.parse(item); } catch { /* rejected below */ }
   }
-  if (!item || typeof item.id !== 'string' || !uuid.test(item.id)
-      || !positiveInt(item.version, 2147483647) || typeof item.approved !== 'boolean'
+  if (!item || typeof item.id !== 'string' || !uuid.test(item.id)) {
+    return res.status(422).json({error:'Invalid photo ID'});
+  }
+  if (req.method === 'DELETE') {
+    try {
+      await open().markDeleted(item.id);
+      await deleteBlobs(item.id,{listObjects,remove});
+      return res.status(200).json({deleted:item.id});
+    } catch {
+      return res.status(503).json({error:'Deletion pending'});
+    }
+  }
+  if (!positiveInt(item.version, deletedVersion-1) || typeof item.approved !== 'boolean'
       || (item.approved && (typeof item.sha !== 'string' || typeof item.thumb_sha !== 'string'
         || !sha256.test(item.sha) || !sha256.test(item.thumb_sha) || !positiveInt(item.size, 100 * 1024 * 1024)
         || !positiveInt(item.thumb_size, 1024 * 1024) || !positiveInt(item.width, 12000)

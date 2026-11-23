@@ -10,9 +10,9 @@ const photoContent = url => `<h2 class="photo-heading">Ảnh của bạn</h2>
 <img id="guestPhoto" src="${url}/image" alt="Ảnh của bạn">
 <a id="guestDownload" href="${url}/download" download>Tải ảnh về máy</a>`;
 
-function page(res, status, content) {
+function page(res, status, content, personal) {
   res.setHeader('Content-Type','text/html; charset=utf-8');
-  res.status(status).end(`<!doctype html><html lang="vi"><head><meta charset="utf-8">
+  res.status(status).end(`<!doctype html><html lang="vi"${personal ? ' class="qr-photo-page"' : ''}><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Ảnh của bạn • AMAZING RACE 2026</title><link rel="stylesheet" href="/p/assets/photo.css">
 </head><body><main><header class="guest-brand"><h1>AMAZING RACE 2026</h1></header>
@@ -31,7 +31,7 @@ export async function handlePublic(req, res, {open = catalog, read = get} = {}) 
   if (req.method !== 'GET' && req.method !== 'HEAD') return res.status(405).end();
   if (!views.has(view)) return res.status(404).end();
   const unavailable = () => photoPage
-    ? page(res,404,'<h2>Không thể xem ảnh</h2><p role="alert">Liên kết đã hết hạn hoặc ảnh hiện không khả dụng.</p>')
+    ? page(res,404,'<h2>Không thể xem ảnh</h2><p role="alert">Liên kết đã hết hạn hoặc ảnh hiện không khả dụng.</p>',personal)
     : res.status(404).end();
   try {
     const db = open();
@@ -56,7 +56,7 @@ export async function handlePublic(req, res, {open = catalog, read = get} = {}) 
     if (typeof photoId !== 'string' || !uuid.test(photoId)) return unavailable();
     const photo = await db.find(photoId);
     if (!photo?.approved || (personal && !(new Date(photo.expires_at).getTime() > Date.now()))) return unavailable();
-    if (photoPage) return page(res,200,photoContent(personal ? `/p/${token}` : `/gallery/photo/${photoId}`));
+    if (photoPage) return page(res,200,photoContent(personal ? `/p/${token}` : `/gallery/photo/${photoId}`),personal);
 
     const thumbnail = view === 'preview';
     const options = {access:'private'};
@@ -82,7 +82,7 @@ export async function handlePublic(req, res, {open = catalog, read = get} = {}) 
     res.removeHeader('Content-Disposition');
     res.setHeader('Cache-Control','no-store');
     res.setHeader('Retry-After','5');
-    if (photoPage) return page(res,503,'<h2>Ảnh đang được chuẩn bị</h2><p role="status">Vui lòng tải lại trang sau ít phút.</p>');
+    if (photoPage) return page(res,503,'<h2>Ảnh đang được chuẩn bị</h2><p role="status">Vui lòng tải lại trang sau ít phút.</p>',personal);
     return res.status(503).end();
   }
 }

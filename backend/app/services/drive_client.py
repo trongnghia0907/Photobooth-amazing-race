@@ -67,7 +67,7 @@ class GoogleDriveClient:
             raise DriveError('Không truy cập được Google Drive. Kiểm tra mạng/OAuth rồi thử lại; giữ ảnh local.') from error
     def metadata(self,file_id):
         response=self.request('GET','drive/v3/files/'+quote(file_id,safe=''),
-            params={'fields':'id,name,mimeType,parents,trashed,size,md5Checksum,inheritedPermissionsDisabled,capabilities(canAddChildren,canListChildren)','supportsAllDrives':'true'})
+            params={'fields':'id,name,mimeType,parents,trashed,size,md5Checksum,appProperties,inheritedPermissionsDisabled,capabilities(canAddChildren,canListChildren)','supportsAllDrives':'true'})
         return response.json() if response else None
     def permissions(self,file_id):
         items=[];token=None
@@ -157,3 +157,13 @@ class GoogleDriveClient:
         response=self.request('GET','drive/v3/files/'+quote(file_id,safe=''),params={'alt':'media','supportsAllDrives':'true'})
         if response is None:raise DriveError('File Drive đã mất hoặc OAuth không còn quyền; không xóa cache.')
         return response.content
+
+    def delete_composite(self, file_id, composite_id):
+        metadata = self.metadata(file_id)
+        if (not metadata or metadata.get('id') != file_id or metadata.get('mimeType') != 'image/png'
+                or (metadata.get('appProperties') or {}).get('photobooth_composite') != composite_id):
+            raise DriveError('Không xác minh được ảnh hoặc quyền truy cập Google Drive.')
+        response = self.request('DELETE', 'drive/v3/files/' + quote(file_id, safe=''),
+                                params={'supportsAllDrives': 'true'})
+        if response is None or response.status_code != 204:
+            raise DriveError('Google Drive chưa xác nhận xóa vĩnh viễn.')

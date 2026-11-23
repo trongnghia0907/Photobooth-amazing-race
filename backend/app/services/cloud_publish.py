@@ -16,6 +16,8 @@ from urllib.parse import urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 from PIL import Image
+from fastapi import HTTPException
+from .drive_client import DriveError
 
 
 class CloudPublisher:
@@ -39,7 +41,8 @@ class CloudPublisher:
 
     @staticmethod
     def enroll(db, composite_id, size):
-        db.execute('INSERT INTO cloud_publications(composite_id,size_bytes) VALUES (?,?)', (composite_id, size))
+        db.execute('INSERT INTO cloud_publications(composite_id,size_bytes,remote_started) VALUES (?,?,0)',
+                   (composite_id, size))
 
     @staticmethod
     def set_approval(db, composite_id, approved):
@@ -71,9 +74,10 @@ class CloudPublisher:
         subprocess.run(['node', str(helper), key, mime], input=data, env=env,
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=90, check=True)
 
-    def register(self, payload):
+    def register(self, payload, *, method='POST'):
         request = Request(self.origin + '/api/publication', json.dumps(payload).encode(),
-                          {'Authorization': 'Bearer ' + self.secret, 'Content-Type': 'application/json'})
+                          {'Authorization': 'Bearer ' + self.secret, 'Content-Type': 'application/json'},
+                          method=method)
         # Do not follow a redirect with Host credentials.
         class RejectRedirect(HTTPRedirectHandler):
             def redirect_request(self, *args, **kwargs):
@@ -81,11 +85,88 @@ class CloudPublisher:
         with build_opener(RejectRedirect).open(request, timeout=40) as response:
             return json.loads(response.read(4096))
 
+    def request_deletion(self, sid, item):
+        with self.repo.db.connect() as db:
+            db.execute('BEGIN IMMEDIATE')
+            final = db.execute('''SELECT q.version,q.remote_started FROM session_finals f
+                JOIN sessions s ON s.id=f.session_id AND s.status='completed' AND s.composite_id=f.composite_id
+                LEFT JOIN cloud_publications q ON q.composite_id=f.composite_id
+                WHERE f.session_id=? AND f.composite_id=?''', (sid, item)).fetchone()
+            if final is None:
+                raise HTTPException(404, 'Không tìm thấy ảnh đã hoàn tất.')
+            # A pre-upgrade job with a nonzero version may already have uploaded
+            # bytes, even if the Host never received a publication receipt.
+            cloud_pending = bool(final['version'] and final['remote_started'] != 0)
+            db.execute('INSERT OR IGNORE INTO photo_deletions(composite_id,cloud_pending) VALUES (?,?)',
+                       (item, cloud_pending))
+            db.execute('UPDATE event_display_photos SET approved=0,hidden_at=? WHERE composite_id=? AND approved=1',
+                       (time.time(), item))
+            db.execute("UPDATE shares SET revoked_at=datetime('now') WHERE composite_id=? AND revoked_at IS NULL",
+                       (item,))
+            db.execute('DELETE FROM cloud_publications WHERE composite_id=?', (item,))
+            state = db.execute('SELECT completed FROM photo_deletions WHERE composite_id=?', (item,)).fetchone()
+            db.execute('UPDATE photo_deletions SET next_attempt=0 WHERE composite_id=? AND completed=0', (item,))
+            db.commit()
+        return {'state': 'deleted' if state['completed'] else 'pending'}
+
+    def process_deletion(self):
+        with self.repo.db.connect() as db:
+            job = db.execute('''SELECT d.*, c.session_id,c.path FROM photo_deletions d
+                JOIN composites c ON c.id=d.composite_id WHERE d.completed=0 AND d.next_attempt<=?
+                ORDER BY d.next_attempt LIMIT 1''', (time.time(),)).fetchone()
+        if not job:
+            return False
+        item = job['composite_id']
+        errors = []
+        if job['cloud_pending']:
+            try:
+                if not self.configured:
+                    raise ValueError('Missing cloud configuration')
+                if self.register({'id': item}, method='DELETE') != {'deleted': item}:
+                    raise ValueError('Unverified cloud deletion')
+                with self.repo.db.connect() as db:
+                    db.execute('UPDATE photo_deletions SET cloud_pending=0 WHERE composite_id=?', (item,))
+            except (OSError, ValueError):
+                errors.append('Vercel / Neon')
+        drive = self.repo.drive
+        if drive.process_lock.acquire(blocking=False):
+            try:
+                with self.repo.db.connect() as db:
+                    upload = db.execute('SELECT drive_file_id FROM drive_uploads WHERE composite_id=?', (item,)).fetchone()
+                if upload:
+                    if upload['drive_file_id']:
+                        drive.client.delete_composite(upload['drive_file_id'], item)
+                    with self.repo.db.connect() as db:
+                        db.execute('DELETE FROM drive_uploads WHERE composite_id=?', (item,))
+            except DriveError:
+                errors.append('Google Drive')
+            finally:
+                drive.process_lock.release()
+        else:
+            errors.append('Google Drive')
+
+        if not errors:
+            try:
+                root = self.repo.settings.storage_root.resolve()
+                expected = f'composites/{job["session_id"]}/{item}.png'
+                path = root / expected
+                if Path(job['path']) != Path(expected) or path.resolve() != path:
+                    raise ValueError('Unexpected final composite path')
+                with drive.restore_lock:
+                    path.unlink(missing_ok=True)
+            except (OSError, ValueError):
+                errors.append('Ảnh trên Host')
+        with self.repo.db.connect() as db:
+            db.execute('''UPDATE photo_deletions SET completed=?,next_attempt=?,last_error=?
+                WHERE composite_id=?''',
+                (not errors, time.time()+30 if errors else 0, ', '.join(errors) or None, item))
+        return True
+
     def still_eligible(self, item, version):
         with self.repo.db.connect() as db:
             db.execute('BEGIN IMMEDIATE')
             current = db.execute('SELECT version FROM cloud_publications WHERE composite_id=?', (item,)).fetchone()
-            if current['version'] != version:
+            if not current or current['version'] != version:
                 return False
             row = db.execute('''SELECT 1 FROM event_display_photos e
                 JOIN session_finals f ON f.composite_id=e.composite_id AND f.session_id=e.session_id
@@ -107,6 +188,10 @@ class CloudPublisher:
             return False
         item = job['composite_id']
         version = job['version']
+        with self.repo.db.connect() as db:
+            if not db.execute('UPDATE cloud_publications SET remote_started=1 WHERE composite_id=? AND version=?',
+                              (item, version)).rowcount:
+                return True
         payload = {'id': item, 'version': version, 'approved': bool(job['approved'])}
         thumb_size = None
         stage = 'upload'
@@ -162,13 +247,10 @@ class CloudPublisher:
         return True
 
     def start(self):
-        if not self.configured:
-            return
-
         def run():
             while not self.stopping.is_set():
                 try:
-                    more = self.process_one()
+                    more = self.process_deletion() or (self.configured and self.process_one())
                 except Exception:
                     logging.getLogger(__name__).exception('cloud publication worker failed')
                     more = False

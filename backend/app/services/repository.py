@@ -300,6 +300,8 @@ class Repository:
         table = 'photos' if kind == 'photos' else 'composites'
         with self.db.connect() as db:
             session = self.authorize(db, sid, token)
+            if kind=='composites' and db.execute('SELECT 1 FROM photo_deletions WHERE composite_id=?',(image_id,)).fetchone():
+                raise HTTPException(404)
             if session['status']=='completed' and (kind=='photos' or session['composite_id']!=image_id):
                 raise HTTPException(410,'Phiên đã chốt. Chỉ ảnh composite cuối được giữ để xem/tải.')
             row = db.execute(f'SELECT path FROM {table} WHERE id=? AND session_id=?', (image_id, sid)).fetchone()

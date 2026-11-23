@@ -23,7 +23,7 @@ def page(content, status=200, script=''):
     nonce=secrets.token_urlsafe(18)
     headers={**PRIVATE_HEADERS,'Content-Security-Policy':
         f"default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; script-src 'nonce-{nonce}'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'"}
-    html='''<!doctype html><html lang="vi"><head><meta charset="utf-8">
+    html='''<!doctype html><html lang="vi" class="qr-photo-page"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="robots" content="noindex,nofollow">
 <title>Ảnh của bạn • AMAZING RACE 2026</title><style>
 *{box-sizing:border-box}
@@ -79,6 +79,29 @@ section>h2:not(.photo-heading),p[role=status],p[role=alert]{
 #guestDownload:focus-visible{outline:3px solid #9b429c;outline-offset:4px}
 p[role=alert]{color:#8f2540;background:#fff0f1ed}
 .photo-heading{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+
+.qr-photo-page{background:#08090B;color-scheme:dark}
+.qr-photo-page body{color:#e9ebef}
+.qr-photo-page body::before{content:none}
+.qr-photo-page main{max-width:960px;padding:20px 12px 16px;gap:12px}
+.qr-photo-page .guest-brand{padding:0;background:none;box-shadow:none}
+.qr-photo-page h1{font-size:13px;letter-spacing:.16em;color:#c8cbd2}
+.qr-photo-page section{gap:12px}
+.qr-photo-page h2:not(.photo-heading){background:none;color:#f1f2f5}
+.qr-photo-page p[role=status],.qr-photo-page p[role=alert]{background:#191b20;color:#d7dbe3}
+.qr-photo-page #guestPhoto{
+  --photo-space:calc(122px + var(--safe-top) + var(--safe-bottom));
+  max-height:max(140px,calc(100vh - var(--photo-space)));
+  max-height:max(140px,calc(100dvh - var(--photo-space)));
+  outline:1px solid #363941;box-shadow:0 6px 24px #0008;
+}
+.qr-photo-page #guestDownload{
+  min-height:48px;padding:10px 16px;border:1px solid transparent;border-radius:10px;
+  background:#eef0f4;color:#101217;box-shadow:none;
+}
+.qr-photo-page #guestDownload:hover{background:#fff}
+.qr-photo-page #guestDownload:active{background:#dce0e7}
+.qr-photo-page #guestDownload:focus-visible{outline:2px solid #aabfff;outline-offset:4px}
 </style></head><body><main><header class="guest-brand"><h1>AMAZING RACE 2026</h1></header><section>'''+content+'</section></main>'
     if script:
         html+=f'<script nonce="{nonce}">{script}</script>'

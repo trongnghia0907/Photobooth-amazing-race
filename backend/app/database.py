@@ -10,7 +10,7 @@ class Database:
         with self.connect() as db:
             db.execute('PRAGMA journal_mode=WAL')
             version = db.execute('PRAGMA user_version').fetchone()[0]
-            if version > 10:
+            if version > 11:
                 raise RuntimeError('Database schema newer than this backend')
             if version == 0:
                 migration = Path(__file__).parent / 'migrations/001_initial.sql'
@@ -68,6 +68,10 @@ class Database:
                     db.execute('ALTER TABLE print_jobs ADD COLUMN orientation TEXT')
                 db.execute('PRAGMA user_version=10')
                 db.commit()
+                version = 10
+            if version == 10:
+                migration = Path(__file__).parent / 'migrations/011_photo_deletions.sql'
+                db.executescript('BEGIN IMMEDIATE;\n' + migration.read_text() + '\nCOMMIT;')
 
     @contextmanager
     def connect(self):

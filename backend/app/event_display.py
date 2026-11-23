@@ -87,7 +87,8 @@ class EventDisplay:
             db.execute('BEGIN IMMEDIATE')
             row=db.execute('''SELECT c.* FROM session_finals f JOIN composites c ON c.id=f.composite_id
                 JOIN sessions s ON s.id=f.session_id WHERE f.session_id=? AND s.status='completed'
-                AND s.composite_id=c.id AND c.session_id=s.id''',(sid,)).fetchone()
+                AND s.composite_id=c.id AND c.session_id=s.id
+                AND NOT EXISTS(SELECT 1 FROM photo_deletions d WHERE d.composite_id=c.id)''',(sid,)).fetchone()
             if not row:raise HTTPException(409,'Chỉ được duyệt composite cuối đã lưu và chốt thành công.')
             if payload.approved:
                 self.file(row,verify=True)

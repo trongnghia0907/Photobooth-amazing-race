@@ -2,6 +2,9 @@ import { neon } from '@neondatabase/serverless';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 
 export const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
+// Reserve the highest integer version for permanent deletion. No normal
+// publication can replace this ID or recover its cleared metadata.
+export const deletedVersion = 2147483647;
 
 export const blobKey = (id, sha, thumbnail = false) => `photos/${id}/${sha}.${thumbnail ? 'jpg' : 'png'}`;
 
@@ -20,6 +23,11 @@ export function catalog(sql = neon(process.env.DATABASE_URL)) {
   return {
     async find(id) {
       return (await sql`SELECT * FROM photos WHERE id=${id}`)[0];
+    },
+    async markDeleted(id) {
+      await sql`INSERT INTO photos (id,version,approved) VALUES (${id},${deletedVersion},false)
+        ON CONFLICT (id) DO UPDATE SET version=excluded.version, approved=false,
+          sha=NULL, thumb_sha=NULL, width=NULL, height=NULL, approved_at=NULL, expires_at=NULL`;
     },
     async set(item) {
       const {id, version, approved, sha = null, thumb_sha = null, width = null, height = null} = item;

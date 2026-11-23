@@ -110,6 +110,7 @@ async function showDetail(sid){
   }
   for(const c of session.composites){
     const card=el('article');card.append(el('p',`Composite revision ${c.revision}`));imageLink(card,c.image_url,'composite gốc');
+    if(session.status==='completed')card.append(button('Xóa vĩnh viễn',()=>deletePhoto({id:sid,composite_id:c.id})));
     if(c.cloud?.version){
       const cloud=c.cloud;const queued=cloud.synced_version!==cloud.version;
       const state=queued ? (cloud.approved?'Chờ đăng cloud':'Chờ gỡ khỏi cloud') : (cloud.approved?'Đã đăng cloud':'Đã gỡ khỏi cloud');
@@ -145,21 +146,36 @@ async function showDetail(sid){
     }$('composites').append(card);
   }
 }
+async function deletePhoto(session){
+  if(!session.deletion_pending&&!window.confirm('Xóa vĩnh viễn ảnh ghép này trên Host, Google Drive và trang công khai? Không thể hoàn tác.'))return;
+  const result=await api(`/sessions/${session.id}/composites/${session.composite_id}`,{method:'DELETE'});
+  ++detailEpoch;$('detail').hidden=true;
+  message(result.state==='deleted'?'Đã xóa vĩnh viễn ảnh.':'Đã nhận yêu cầu xóa. Ảnh đã ẩn trên Host và đang chờ xác nhận xóa.');
+  await refreshGallery();
+}
 async function refreshGallery(){
   const requestedOffset=offset;
   const data=await api(`/sessions?limit=20&offset=${requestedOffset}`);if(requestedOffset!==offset)return;total=data.total;
+  if(offset&&!data.items.length){offset=Math.max(0,offset-20);return refreshGallery();}
   $('galleryStatus').textContent=data.items.length?'':'Chưa có composite hoàn tất.';
   const signature=JSON.stringify(data);
   if(signature===galleryKey)return;galleryKey=signature;$('gallery').replaceChildren();
   $('galleryStatus').textContent=data.items.length?'':'Chưa có composite hoàn tất.';
   for(const s of data.items){const card=el('article');card.className='photo-card';
+    if(s.deletion_pending){
+      card.append(el('p',dateLabel(s.created_at)),el('p',s.deletion_error
+        ? `Đang chờ xóa · Cần xác nhận từ ${s.deletion_error}` : 'Đang xóa ảnh…'),
+        button('Thử xóa lại',()=>deletePhoto(s)));
+      $('gallery').append(card);continue;
+    }
     if(s.composite_id){const img=el('img');img.src=`/api/admin/sessions/${s.id}/images/composites/${s.composite_id}`;img.alt='Composite cuối của phiên '+s.id.slice(0,8);img.loading='lazy';card.append(img);}
     card.append(el('p',dateLabel(s.created_at)),el('p',`${s.slot_count} ảnh • ${s.display_approved?'Đã duyệt sự kiện':'Chưa duyệt sự kiện'}`));
     card.append(button('Xem phiên / In lại',()=>showDetail(s.id)));$('gallery').append(card);}
   $('pagination').textContent=` ${total?offset+1:0}–${Math.min(offset+20,total)} / ${total} `;$('previous').disabled=offset===0;$('next').disabled=offset+20>=total;
 }
 async function refreshRecent(){
-  const data=await api('/sessions?limit=6&offset=0'),signature=JSON.stringify(data.items);
+  const data=await api('/sessions?limit=6&offset=0');data.items=data.items.filter(item=>!item.deletion_pending);
+  const signature=JSON.stringify(data.items);
   if(signature===recentKey)return;recentKey=signature;$('overviewPhotos').replaceChildren();
   if(!data.items.length)$('overviewPhotos').append(el('p','Chưa có composite hoàn tất.'));
   for(const session of data.items){const item=button('',()=>showDetail(session.id));item.setAttribute('aria-label','Xem ảnh '+dateLabel(session.created_at));const img=el('img');img.src=`/api/admin/sessions/${session.id}/images/composites/${session.composite_id}`;img.alt=`Composite ${session.slot_count} ảnh`;img.loading='lazy';item.append(img);$('overviewPhotos').append(item);}

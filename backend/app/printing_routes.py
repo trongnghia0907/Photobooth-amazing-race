@@ -81,13 +81,25 @@ def status(request: Request):
 def sessions(request: Request,limit: int=20,offset: int=0,include_working:bool=False):
     limit,offset = max(1,min(100,limit)),max(0,offset)
     with request.app.state.repository.db.connect() as db:
-        predicate='' if include_working else 'WHERE f.session_id IS NOT NULL'
+        predicate='WHERE COALESCE(d.completed,0)=0'
+        if not include_working:
+            predicate+=' AND f.session_id IS NOT NULL'
         rows = db.execute(f'''SELECT s.id,s.status,s.layout,s.slot_count,s.created_at,s.updated_at,f.composite_id,
-            COALESCE(e.approved,0) AS display_approved
+            COALESCE(e.approved,0) AS display_approved, d.composite_id IS NOT NULL AS deletion_pending,
+            d.last_error AS deletion_error
             FROM sessions s LEFT JOIN session_finals f ON f.session_id=s.id
+            LEFT JOIN photo_deletions d ON d.composite_id=f.composite_id
             LEFT JOIN event_display_photos e ON e.session_id=s.id {predicate} ORDER BY s.created_at DESC LIMIT ? OFFSET ?''',(limit,offset)).fetchall()
         return {'items':[dict(r) for r in rows],'limit':limit,'offset':offset,
-                'total':db.execute('SELECT COUNT(*) FROM sessions' if include_working else 'SELECT COUNT(*) FROM session_finals').fetchone()[0]}
+                'total':db.execute(f'''SELECT COUNT(*) FROM sessions s LEFT JOIN session_finals f ON f.session_id=s.id
+                    LEFT JOIN photo_deletions d ON d.composite_id=f.composite_id {predicate}''').fetchone()[0]}
+
+
+@admin.delete('/sessions/{sid}/composites/{cid}',dependencies=[Depends(host)])
+def delete_composite(request: Request,sid: UUID,cid: UUID,response: Response):
+    result = request.app.state.repository.cloud.request_deletion(str(sid), str(cid))
+    response.status_code = 202 if result['state'] == 'pending' else 200
+    return result
 
 
 @admin.get('/sessions/{sid}',dependencies=[Depends(host)])
@@ -99,7 +111,8 @@ def detail(request: Request,sid: UUID):
             raise HTTPException(404,'Không tìm thấy phiên')
         composites = []
         event=db.execute('SELECT approved,approval_basis FROM event_display_photos WHERE session_id=?',(str(sid),)).fetchone()
-        for c in db.execute('SELECT c.* FROM composites c JOIN session_finals f ON f.composite_id=c.id WHERE f.session_id=?',(str(sid),)).fetchall():
+        for c in db.execute('''SELECT c.* FROM composites c JOIN session_finals f ON f.composite_id=c.id
+                WHERE f.session_id=? AND NOT EXISTS(SELECT 1 FROM photo_deletions d WHERE d.composite_id=c.id)''',(str(sid),)).fetchall():
             share = db.execute('SELECT id FROM shares WHERE composite_id=?',(c['id'],)).fetchone()
             ready = db.execute('SELECT * FROM print_ready WHERE final_id=?',(share['id'],)).fetchone() if share else None
             cloud = db.execute('''SELECT version,synced_version,approved,size_bytes,thumbnail_bytes,last_error
@@ -116,6 +129,9 @@ def detail(request: Request,sid: UUID):
 def host_image(request: Request,sid: UUID,kind: Literal['composites','print_ready','photos'],image_id: UUID,download: bool=False):
     repo = request.app.state.repository
     with repo.db.connect() as db:
+        if db.execute('''SELECT 1 FROM photo_deletions d JOIN session_finals f ON f.composite_id=d.composite_id
+                WHERE f.session_id=?''', (str(sid),)).fetchone():
+            raise HTTPException(404)
         if kind=='photos':raise HTTPException(404,'Host Dashboard chỉ cung cấp composite cuối và bản in của phiên.')
         if kind == 'print_ready':
             row = db.execute('SELECT p.path FROM print_ready p JOIN shares s ON s.id=p.final_id JOIN session_finals f ON f.composite_id=s.composite_id WHERE p.final_id=? AND f.session_id=?',(str(image_id),str(sid))).fetchone()
