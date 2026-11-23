@@ -130,7 +130,7 @@ def guest(request: Request, token: str):
     content=f'''<h2 class="photo-heading">Ảnh của bạn</h2><p id="loading" role="status">Đang tải ảnh…</p>
 <p id="error" role="alert" hidden>Chưa thể tải ảnh. Đang thử lại…</p>
 <img id="guestPhoto" alt="Ảnh của bạn" hidden>
-<a id="guestDownload" href="/p/{token}/download" download hidden>Tải ảnh về máy</a>'''
+<a id="guestDownload" href="/p/{token}/download" download hidden>Download</a>'''
     script=f'''const image=document.getElementById('guestPhoto');
 image.onload=()=>{{image.hidden=false;document.getElementById('loading').hidden=true;document.getElementById('error').hidden=true;document.getElementById('guestDownload').hidden=false;}};
 image.onerror=()=>{{image.hidden=true;document.getElementById('guestDownload').hidden=true;document.getElementById('loading').hidden=false;document.getElementById('loading').textContent='Ảnh đang được chuẩn bị';document.getElementById('error').hidden=false;setTimeout(()=>{{image.src='/p/{token}/image?retry='+Date.now();}},5000);}};

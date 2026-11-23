@@ -6,9 +6,9 @@ import { blobKey, catalog, matches, personalToken, uuid } from '../lib/catalog.m
 const views = new Set(['gallery','event','preview','event-media','detail','image','download',
   'personal','personal-image','personal-download']);
 const tokenPattern = /^([a-f0-9-]{36})\.[a-f0-9]{64}$/;
-const photoContent = url => `<h2 class="photo-heading">Ảnh của bạn</h2>
+const photoContent = (url, personal) => `<h2 class="photo-heading">Ảnh của bạn</h2>
 <img id="guestPhoto" src="${url}/image" alt="Ảnh của bạn">
-<a id="guestDownload" href="${url}/download" download>Tải ảnh về máy</a>`;
+<a id="guestDownload" href="${url}/download" download>${personal ? 'Download' : 'Tải ảnh về máy'}</a>`;
 
 function page(res, status, content, personal) {
   res.setHeader('Content-Type','text/html; charset=utf-8');
@@ -56,7 +56,7 @@ export async function handlePublic(req, res, {open = catalog, read = get} = {}) 
     if (typeof photoId !== 'string' || !uuid.test(photoId)) return unavailable();
     const photo = await db.find(photoId);
     if (!photo?.approved || (personal && !(new Date(photo.expires_at).getTime() > Date.now()))) return unavailable();
-    if (photoPage) return page(res,200,photoContent(personal ? `/p/${token}` : `/gallery/photo/${photoId}`),personal);
+    if (photoPage) return page(res,200,photoContent(personal ? `/p/${token}` : `/gallery/photo/${photoId}`,personal),personal);
 
     const thumbnail = view === 'preview';
     const options = {access:'private'};
