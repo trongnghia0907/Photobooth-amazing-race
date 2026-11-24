@@ -2,14 +2,14 @@
 body{margin:0;padding:18px 3vw 24px;height:100vh;height:100dvh;overflow:hidden;display:flex;flex-direction:column}
 main{flex:1;min-height:0}#displayPresentation{position:relative;height:100%;min-height:0}
 #displayStatus{position:absolute;bottom:0;left:32%;right:32%;text-align:center;font-size:clamp(10px,.8vw,14px);color:#b3c9e8;margin:0}
-#photoWall{height:100%;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));grid-template-rows:repeat(2,minmax(0,1fr));gap:clamp(8px,1.3vmin,16px);padding-bottom:28px}
+#photoWall{height:100%;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));grid-template-rows:repeat(2,minmax(0,1fr));gap:clamp(8px,1.3vmin,16px);padding-bottom:28px}
 #photoWall figure{margin:0;min-width:0;min-height:0;overflow:hidden;opacity:1;transition:opacity 500ms ease}
 #photoWall figure:empty{visibility:hidden}#photoWall figure.fading{opacity:0}#photoWall img{width:100%;height:100%;object-fit:contain;display:block}
 #displayEmpty{position:absolute;left:32%;right:32%;top:38%;text-align:center;color:#c6d9f5}#displayEmpty h2{font-size:clamp(16px,2vw,32px)}#displayEmpty p{font-size:clamp(12px,1vw,18px)}
 #displayLogin{display:grid;place-items:center;height:100%;overflow:auto}form{width:min(100%,460px);padding:28px;border:1px solid #334966;border-radius:20px;background:#101a2c}form p{color:#b3c9e8;line-height:1.6}form label,form input,form button{display:block;width:100%;margin:12px 0}button,input{font:inherit;min-height:44px;border-radius:10px;border:1px solid #405778;background:#17253c;color:#eef4ff;padding:9px 14px}button{cursor:pointer}button:disabled{opacity:.5;cursor:wait}button:focus-visible,input:focus-visible{outline:3px solid #fbbf24;outline-offset:3px}#displayLoginError{color:#fda4af}
 @media(prefers-reduced-motion:reduce){#photoWall figure{transition:none}}
 
-/* Full-viewport artwork behind the four approved photos. */
+/* Full-viewport artwork behind the approved photos. */
 :root{color-scheme:light;color:#16365b;background:#ccf1fc}
 body{
   --theme-top:clamp(6px,1dvh,12px);
@@ -29,8 +29,8 @@ body{
 main{position:relative;z-index:1}
 #displayPresentation{width:100%;margin:0}
 #photoWall{
-  /* Keep both columns close to the width needed by the landscape composites. */
-  width:min(100%,calc(150dvh - var(--brand-safe-top)));
+  /* Three landscape composites per row, with room for the title above. */
+  width:min(100%,calc(2.25 * (100dvh - var(--brand-safe-top))));
   margin-inline:auto;
   gap:clamp(4px,.65vmin,9px);
   padding-bottom:0;

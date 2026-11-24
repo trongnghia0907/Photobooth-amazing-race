@@ -2,9 +2,9 @@
 const prefix='/event-display';
 let pollTimer,pollAbort,stopped=false,epoch=0,initialized=false,working=false,clock=0;
 let eligible=new Map(),seen=new Set(),queue=[],queued=new Set(),lifecycle=new AbortController();
-const slots=Array.from({length:4},(_,index)=>{
+const slots=Array.from({length:6},(_,index)=>{
   const node=document.createElement('figure');node.dataset.slot=String(index);
-  node.setAttribute('aria-label',['Top left','Top right','Bottom left','Bottom right'][index]);
+  node.setAttribute('aria-label',['Top left','Top center','Top right','Bottom left','Bottom center','Bottom right'][index]);
   $('photoWall').append(node);return {node,key:null,since:0,revision:0};
 });
 const keyOf=item=>item.id+':'+item.approved_at;
@@ -56,7 +56,7 @@ function render(next){
   eligible=new Map(valid.map(item=>[keyOf(item),item]));
   for(const slot of slots)if(slot.key&&!eligible.has(slot.key))clearSlot(slot);
   let incoming;
-  if(!initialized){initialized=true;incoming=valid.slice(0,4);for(const item of valid.slice(4))seen.add(keyOf(item));}
+  if(!initialized){initialized=true;incoming=valid.slice(0,slots.length);for(const item of valid.slice(slots.length))seen.add(keyOf(item));}
   else incoming=valid.filter(item=>!seen.has(keyOf(item)));
   // The API returns newest approval first. Replay publications oldest first.
   incoming.sort((a,b)=>a.approved_at-b.approved_at||a.id.localeCompare(b.id));
