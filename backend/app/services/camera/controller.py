@@ -600,7 +600,13 @@ class CameraController:
                     current = db.execute('SELECT expected_revision FROM camera_captures WHERE id=?',(capture_id,)).fetchone()[0]
                 self._capture_stage(capture_id,'saving_slot')
                 self.repo.upload_photo(sid,token,'camera_'+capture_id,slot,source,validated,current,capture_id)
-                if isinstance(self.adapter,SonyZvE10CameraAdapter):self.adapter.capture_persisted(capture_id)
+                if isinstance(self.adapter,SonyZvE10CameraAdapter):
+                    try:self.adapter.capture_persisted(capture_id)
+                    except OSError:
+                        # SQLite and both image files are already durable. The
+                        # retained recovery cache must not turn that ACK into failure.
+                        logging.getLogger(__name__).warning(
+                            'camera_cache_cleanup_pending capture_id=%s', capture_id)
             self._capture_stage(capture_id,'complete')
             self.state = 'captured';self.last_error = None
             self.lease_until = time.monotonic()+self.settings.camera_lease_seconds

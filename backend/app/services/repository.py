@@ -280,6 +280,7 @@ class Repository:
                 self.cloud.set_approval(db,composite_id,True)
         try:
             result = self.operation(sid, token, key, {'action': 'complete', 'composite_id': composite_id}, mutate)
+            self.cloud.wake()
             logging.getLogger(__name__).info('completion_and_durable_upload_job_ms=%.1f',(time.perf_counter()-started)*1000)
             try:self.temporary_assets.process_session(sid)
             except (OSError,sqlite3.Error):pass

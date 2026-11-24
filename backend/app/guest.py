@@ -139,17 +139,17 @@ image.src='/p/{token}/image';'''
 
 
 @router.get('/{token}/image')
-def view_image(request: Request, token: str, print_ready: bool=False):
+def view_image(request: Request, token: str, print_ready: bool=False, v: str | None=None):
     service=request.app.state.repository.sharing
-    row=service.lookup(token,prepare_print=print_ready)
+    row=service.lookup(token,prepare_print=print_ready,print_version=v)
     if '_drive_bytes' in row:return Response(row['_drive_bytes'],media_type='image/png',headers=PRIVATE_HEADERS)
     return FileResponse(service.file(row),media_type='image/png',headers=PRIVATE_HEADERS)
 
 
 @router.get('/{token}/download')
-def download(request: Request, token: str, print_ready: bool=False):
+def download(request: Request, token: str, print_ready: bool=False, v: str | None=None):
     service=request.app.state.repository.sharing
-    row=service.lookup(token,prepare_print=print_ready)
+    row=service.lookup(token,prepare_print=print_ready,print_version=v)
     filename=f"amazing-race-2026-{'print-ready' if print_ready else 'photo'}-{row['id']}.png"
     if '_drive_bytes' in row:
         return Response(row['_drive_bytes'],media_type='image/png',headers={**PRIVATE_HEADERS,'Content-Disposition':f'attachment; filename="{filename}"'})

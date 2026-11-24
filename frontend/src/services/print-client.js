@@ -2,10 +2,13 @@ import { request } from './api-client.js';
 import { newId } from '../utils/ids.js';
 
 function confirmed(app){
-  return app.activeShare?.print_ready && app.activeShare.public_ready===true && app.serverSession?.status==='completed'
-    && app.activeShare.composite_id===app.finalOperation?.compositeId
+  const cloud=app.sharingConfig?.cloud_configured;
+  const share=cloud ? app.cloudShare : app.activeShare;
+  const asset=cloud ? share?.print_asset : share?.print_ready && share;
+  return asset && share.public_ready===true && app.serverSession?.status==='completed'
+    && share.composite_id===app.finalOperation?.compositeId
     && app.lastSavedImage===document.getElementById('compositeCanvas')?.toDataURL('image/png')
-    && !app.hasPendingWork() && !app.persistenceBusy;
+    && !app.hasPendingWork() && !app.persistenceBusy ? asset : null;
 }
 
 export function stopPrintPolling(app){clearTimeout(app.printPollTimer);app.printPollTimer=null;app.printPollingStopped=true;}
@@ -17,18 +20,36 @@ export async function loadPrintConfig(app){
 
 export function syncPrintUI(app){
   const button=document.getElementById('printPhotoBtn');if(!button)return;
-  const ready=confirmed(app),share=app.activeShare;
-  const preview=document.getElementById('printReadyPreview');document.getElementById('printReadyBox').hidden=!ready;
-  const composite=document.getElementById('compositeCanvas');
-  if(composite?.parentElement)composite.parentElement.hidden=!!ready;
+  const share=confirmed(app);
+  const preview=document.getElementById('printReadyPreview');
+  const box=document.getElementById('printReadyBox');
   const download=document.getElementById('printReadyDownload');
-  if(ready)download.href=share.download_url+'?print_ready=1';else download.removeAttribute('href');
-  const version=share?.print_ready_version||share?.final_id;
-  if(ready && preview.dataset.finalId!==version){
-    document.getElementById('printReadyBox').open=true;
-    preview.dataset.finalId=version;preview.src=share.image_url+'?print_ready=1&v='+encodeURIComponent(version);
-  preview.onerror=()=>{app.printError='Could not load the print preview.';document.getElementById('printStatus').textContent=app.printError;};
-  }else if(!ready){preview.removeAttribute('src');delete preview.dataset.finalId;}
+  const version=share?.print_ready_version;
+  const query='?print_ready=1&v='+encodeURIComponent(version);
+  if(version && preview.dataset.finalId!==version){
+    delete preview.dataset.loaded;
+    preview.dataset.finalId=version;
+    preview.onload=()=>{
+      preview.dataset.loaded=version;
+      if(app.printError==='Could not load the print preview.')app.printError='';
+      syncPrintUI(app);
+    };
+    preview.onerror=()=>{
+      delete preview.dataset.finalId;
+      app.printError='Could not load the print preview.';
+      document.getElementById('printStatus').textContent=app.printError;
+    };
+    preview.src=share.image_url+query;
+  }else if(!version){
+    preview.removeAttribute('src');
+    delete preview.dataset.finalId;
+    delete preview.dataset.loaded;
+  }
+  const ready=!!version && preview.dataset.loaded===version;
+  box.hidden=!ready;
+  const composite=document.getElementById('compositeCanvas');
+  if(composite?.parentElement)composite.parentElement.hidden=ready;
+  if(ready)download.href=share.download_url+query;else download.removeAttribute('href');
   const copies=document.getElementById('printCopies'),max=app.printConfig?.max_copies||3;
   if(copies.options.length!==max)copies.replaceChildren(...Array.from({length:max},(_,i)=>new Option(`${i+1} ${i===0?'copy':'copies'}`,String(i+1))));
   const current=app.printOperation?.finalId===share?.final_id?app.printOperation:null;
@@ -52,15 +73,18 @@ export async function pollPrintJob(app){
 
 export async function triggerPrint(app){
   if(app.printBusy)return;
-  if(!confirmed(app)){app.showToast('Confirm your photo before printing.','info');return;}
-  const finalId=app.activeShare.final_id;
+  const share=confirmed(app);
+  if(!share || document.getElementById('printReadyPreview').dataset.loaded!==share.print_ready_version){
+    app.showToast('Confirm your photo before printing.','info');return;
+  }
+  const finalId=share.final_id,version=share.print_ready_version;
   let operation=app.printOperation;
   const copies=operation?.finalId===finalId&&operation.sent?operation.copies:Number(document.getElementById('printCopies').value);
   if(operation?.finalId===finalId&&operation.job&&operation.job.status!=='cancelled')return;
   if(!operation||operation.finalId!==finalId||operation.copies!==copies||operation.job?.status==='cancelled'){
-    app.stopPrintPolling();operation={finalId,copies,key:newId(),sid:app.sessionContext.id,token:app.sessionContext.token,job:null};app.printOperation=operation;
+    app.stopPrintPolling();operation={finalId,version,copies,key:newId(),sid:app.sessionContext.id,token:app.sessionContext.token,job:null};app.printOperation=operation;
   }
   operation.sent=true;app.printPollingStopped=false;app.printBusy=true;app.printError='';app.syncPrintUI();
-  try{operation.job=await request(`/sessions/${operation.sid}/print-jobs`,{method:'POST',token:operation.token,key:operation.key,body:{final_id:finalId,copies}});if(app.printOperation===operation)app.pollPrintJob();}
+  try{operation.job=await request(`/sessions/${operation.sid}/print-jobs`,{method:'POST',token:operation.token,key:operation.key,body:{final_id:finalId,copies,print_ready_version:operation.version}});if(app.printOperation===operation)app.pollPrintJob();}
   catch(error){if(app.printOperation===operation)app.printError=error.message;}finally{app.printBusy=false;app.syncPrintUI();}
 }

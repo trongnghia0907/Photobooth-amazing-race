@@ -100,3 +100,31 @@ test('thumbnail is bounded, preserves ratio, caches immutable canvases and never
     photoThumbnail({width:80,height:60});assert.deepEqual(sizes[2],[80,60]);
   }finally{globalThis.document=previous;}
 });
+
+test('stalled saved-photo decode clears request flag and retains the same recovery key',async()=>{
+  const previous={fetch:globalThis.fetch,document:globalThis.document,Image:globalThis.Image,
+    sessionStorage:globalThis.sessionStorage,setTimeout:globalThis.setTimeout,clearTimeout:globalThis.clearTimeout};
+  const context={id:'A',token:'owner-A'},operation={slot:0,key:'same-key',submitted:true};
+  const original={saved:true};
+  const app={hostCaptureOperation:operation,sessionContext:context,ensureSession:async()=>context,photos:[original]};
+  globalThis.document={getElementById:()=>({dataset:{}})};
+  globalThis.sessionStorage={setItem(){}};
+  globalThis.Image=class {set src(value){}};
+  globalThis.setTimeout=callback=>setImmediate(callback);
+  globalThis.clearTimeout=timer=>clearImmediate(timer);
+  const calls=[];
+  globalThis.fetch=async(url,options)=>{
+    calls.push({url,body:options.body});
+    return {ok:true,json:async()=>({capture:{status:'captured',photo_id:'saved'},
+      session:{photos:[{id:'saved',slot_index:0}]}}),blob:async()=>new Blob(['fixture'])};
+  };
+  try{
+    await assert.rejects(captureHostPhoto(app,0),/decoded in time/);
+    assert.equal(app.hostCaptureRequestActive,false);
+    assert.equal(app.hostCaptureOperation,operation);
+    assert.equal(operation.savedOnHost,true);
+    assert.equal(operation.key,'same-key');
+    assert.equal(app.photos[0],original);
+    assert.equal(JSON.parse(calls[0].body).recovery_only,true);
+  }finally{Object.assign(globalThis,previous);}
+});

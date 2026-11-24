@@ -170,14 +170,14 @@ class SharingService:
         raw = hmac.new(self.secret(db), material, hashlib.sha256).digest()
         return base64.urlsafe_b64encode(raw).decode().rstrip('=')
 
-    def metadata(self, db, composite_id):
+    def metadata(self, db, composite_id, *, prepare_print=True):
         row = db.execute('SELECT * FROM shares WHERE composite_id=? AND revoked_at IS NULL', (composite_id,)).fetchone()
         if row is None or (row['expires_at'] and datetime.fromisoformat(row['expires_at']) <= datetime.now(timezone.utc)):
             return None
         token = self.token(db, row)
         try:base=self.origin()
         except HTTPException:base=row['public_base_url']
-        if not db.in_transaction:self.repository.print_ready.backfill(row['id'])
+        if prepare_print and not db.in_transaction:self.repository.print_ready.backfill(row['id'])
         ready = self.repository.print_ready.current(db,row['id'])
         return {
             'final_id': row['id'], 'composite_id': row['composite_id'],
@@ -285,7 +285,7 @@ class SharingService:
         logging.getLogger(__name__).info('share_finalize_ms=%.1f',(time.perf_counter()-started)*1000)
         return result
 
-    def lookup(self, token, metadata_only=False, *, prepare_print=True):
+    def lookup(self, token, metadata_only=False, *, prepare_print=True, print_version=None):
         if not re.fullmatch(r'[A-Za-z0-9_-]{43}', token):
             raise HTTPException(404, 'Link ảnh không hợp lệ hoặc không còn hiệu lực.')
         token_hash = hashlib.sha256(token.encode()).hexdigest()
@@ -309,7 +309,11 @@ class SharingService:
             ready = self.repository.print_ready.current(db,final_id)
             result = dict(row)
             if ready is None:
+                if print_version or self.repository.cloud.configured:
+                    raise HTTPException(409, 'Print version is unavailable.')
                 return result
+            if print_version and ready['sha256'] != print_version:
+                raise HTTPException(409, 'Print version changed. Refresh the preview.')
             result.update({k: ready[k] for k in ('path','sha256','width','height')})
             return result
 

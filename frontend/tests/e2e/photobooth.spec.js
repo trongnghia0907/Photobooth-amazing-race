@@ -565,7 +565,6 @@ test('Phase 5 lost capture ACK, retry without another shot, stale preview recove
 test('Phase 4 kiosk print-ready, lost response deduplication, Host gallery/reprint/logout and guest isolation',async({page,context,browser})=>{
   const state=await confirmGuest(page,'Phase 4 print fixture');
   await expect(page.locator('#printPhotoBtn')).toBeEnabled();
-  await page.locator('#printReadyBox summary').click();
   await expect(page.locator('#printReadyPreview')).toBeVisible();
   expect(await page.locator('#printReadyPreview').evaluate(img=>img.naturalHeight>img.naturalWidth)).toBe(true);
   await page.locator('#printCopies').selectOption('2');
@@ -599,7 +598,7 @@ test('Phase 4 kiosk print-ready, lost response deduplication, Host gallery/repri
   const card=host.locator('#gallery article').filter({has:host.locator(`img[src*="${state.session.session_id}"]`)});
   await card.getByRole('button').click();
   await expect(host.locator('#sessionInfo')).toContainText(state.session.session_id);
-  await expect(host.locator('#composites img')).toHaveCount(2);
+  await expect(host.locator('#composites img')).toHaveCount(1);
   await host.locator('#composites input').fill('1');
   await host.getByRole('button',{name:'In lại',exact:true}).click();
   await expect(host.locator('#message')).toContainText('Đã tạo job');
@@ -607,8 +606,8 @@ test('Phase 4 kiosk print-ready, lost response deduplication, Host gallery/repri
   const ownJobs=listed.items.filter(j=>j.final_id===state.share.final_id);
   expect(ownJobs).toHaveLength(2);expect(ownJobs.map(j=>j.copies).sort()).toEqual([1,2]);
   expect(ownJobs.every(j=>!j.physical_print_confirmed)).toBe(true);
-  const downloadEvent=host.waitForEvent('download');
-  await host.getByRole('link',{name:'Tải bản in có QR'}).click();
+  const downloadEvent=page.waitForEvent('download');
+  await page.locator('#printReadyDownload').click();
   const {createHash}=await import('node:crypto');
   expect(createHash('sha256').update(readFileSync(await (await downloadEvent).path())).digest('hex')).toBe(state.share.print_ready.sha256);
   await host.screenshot({path:evidence+'phase4-host-dashboard.png'});

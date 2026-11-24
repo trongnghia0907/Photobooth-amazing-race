@@ -3,6 +3,7 @@ from io import BytesIO
 import time
 
 import pytest
+import zxingcpp
 from PIL import Image
 
 from app.services.repository import Repository
@@ -16,6 +17,7 @@ from test_sessions import headers, key
 @pytest.mark.parametrize('count', [4, 6])
 def test_confirm_and_publish_after_restart_without_duplicate_objects(setup, count):
     client, repo, drive, settings = setup
+    repo.cloud.stop()
     sid, final_id = confirmed(client,count)
     path = settings.storage_root / f'composites/{sid}/{final_id}.png'
     original = path.read_bytes()
@@ -71,6 +73,57 @@ def test_confirm_and_publish_after_restart_without_duplicate_objects(setup, coun
     assert path.read_bytes() == original
     with pytest.raises(Exception,match='cloud'):
         repo.drive.evict(final_id)
+
+
+def test_confirmed_cloud_qr_preview_and_print_use_the_same_asset(setup, caplog):
+    client, repo, _, settings = setup
+    repo.cloud.stop()
+    client.app.state.printing.stop()
+    cloud = repo.cloud
+    cloud.origin, cloud.secret, cloud.blob_token = 'https://event.invalid', 'fixture'*8, 'fixture'
+    uploads = []
+    cloud.upload = lambda path, data, mime: uploads.append(mime)
+    sid, cid = confirmed(client)
+    assert cloud.work_available.is_set()
+    cloud.register = lambda item: {
+        'version':item['version'], 'expires_at':time.time()+600, 'share_path':f'/p/{cid}.'+'a'*64,
+    }
+    share = finalize(client,sid,cid).json()['share']
+    assert not share['print_ready']
+    csrf = login(client,settings)
+    assert approve(client,sid,csrf).status_code == 200
+    url = f'/api/sessions/{sid}/cloud-share'
+    assert client.get(url,headers=headers()).json()['state'] == 'pending'
+    with caplog.at_level('INFO'):
+        assert cloud.process_one()
+    print(next(line for line in caplog.messages if 'share_since_confirm_ms=' in line))
+    status = client.get(url,headers=headers()).json()
+    assert status['share_url'] == f'{cloud.origin}/p/{cid}.'+'a'*64
+    repo.print_ready.backfill(share['final_id'])
+    asset = client.get(url,headers=headers()).json()['print_asset']
+    query = {'print_ready':1,'v':asset['print_ready_version']}
+    preview = client.get(asset['image_url'],params=query).content
+    assert preview == client.get(asset['download_url'],params=query).content
+    original = client.get(asset['download_url']).content
+    with Image.open(BytesIO(preview)) as printed, Image.open(BytesIO(original)) as clean:
+        assert printed.width == clean.width
+        assert printed.crop((0,0,*clean.size)).tobytes() == clean.convert('RGB').tobytes()
+        assert zxingcpp.read_barcode(printed).text == status['share_url']
+        assert set(printed.crop((0,clean.height,printed.width,printed.height)).getcolors()) == set(
+            printed.crop((0,clean.height,printed.width,printed.height)).getcolors(2))
+    response = client.post(f'/api/sessions/{sid}/print-jobs',headers=headers(key()),
+        json={'final_id':asset['final_id'],'print_ready_version':asset['print_ready_version']})
+    assert response.status_code == 200, response.text
+    with repo.db.connect() as db:
+        job = db.execute('SELECT * FROM print_jobs WHERE id=?',(response.json()['id'],)).fetchone()
+        assert job['sha256'] == sha256(preview).hexdigest()
+        assert (settings.storage_root/job['print_ready_file']).read_bytes() == preview
+    assert uploads == ['image/png','image/jpeg']
+    assert approve(client,sid,csrf,approved=False).status_code == 200
+    assert client.get(asset['image_url'],params=query).status_code == 409
+    assert client.app.state.printing.process_one()
+    with repo.db.connect() as db:
+        assert db.execute('SELECT status FROM print_jobs WHERE id=?',(job['id'],)).fetchone()['status'] == 'failed'
 
 
 def test_local_reapproval_does_not_enroll_historical_final(setup):

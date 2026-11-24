@@ -10,6 +10,7 @@ export function copyQRLink(app) {
 
 export function renderQRCodeVisual(app,targetUrl) {
   const container=document.getElementById('qrCodeContainer');
+  const renderStarted=performance.now();
   const share=app.cloudShare?.share_url===targetUrl ? app.cloudShare : app.activeShare;
   if(!container || !share || targetUrl!==share.share_url) return;
   if(share.local_only||share.lan_only||!share.public_ready||!share.expires_at){
@@ -23,7 +24,13 @@ export function renderQRCodeVisual(app,targetUrl) {
     }
     app.qrPhase='ready';
     clearTimeout(app.qrImageTimer);app.qrImageTimer=null;
-    if(app.qrStartedAt){app.qrDisplayMs=Math.round(performance.now()-app.qrStartedAt);app.qrStartedAt=null;}
+    if(app.qrStartedAt){
+      app.qrDisplayMs=Math.round(performance.now()-app.qrStartedAt);app.qrStartedAt=null;
+      if(share===app.cloudShare)console.info('[photobooth] cloud_qr_rendered', {
+        composite_id:share.composite_id, confirmation_request_to_render_ms:app.qrDisplayMs,
+        share_received_to_render_ms:Math.round(performance.now()-renderStarted)
+      });
+    }
     app.shareError='';
     container.dataset.phase='ready';
     app.lastUploadedUrl=targetUrl;
@@ -34,7 +41,10 @@ export function renderQRCodeVisual(app,targetUrl) {
   };
   const existing=container.querySelector('img');
   if(container.dataset.shareUrl===targetUrl && existing) {
-    if(existing.complete && existing.naturalWidth>0) {markReady(existing);return;}
+    if(existing.complete && existing.naturalWidth>0) {
+      if(container.dataset.phase!=='ready')markReady(existing);
+      return;
+    }
     if(!existing.complete) return;
   }
   container.replaceChildren();

@@ -12,12 +12,12 @@ import re
 import subprocess
 import threading
 import time
-from urllib.parse import urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 from PIL import Image
 from fastapi import HTTPException
 from .drive_client import DriveError
+from .sharing import public_origin
 
 
 class CloudPublisher:
@@ -28,16 +28,17 @@ class CloudPublisher:
         self.blob_token = os.getenv('PHOTO_CLOUD_BLOB_TOKEN', '')
         self.thread = None
         self.stopping = threading.Event()
+        self.work_available = threading.Event()
 
     @property
     def configured(self):
         try:
-            url = urlsplit(self.origin)
-            return (url.scheme == 'https' and bool(url.hostname) and not url.username
-                    and not url.password and not (url.path or url.query or url.fragment)
-                    and len(self.secret) >= 32 and bool(self.blob_token))
-        except ValueError:
+            return len(self.secret) >= 32 and bool(self.blob_token) and public_origin(self.origin) == self.origin
+        except HTTPException:
             return False
+
+    def wake(self):
+        self.work_available.set()
 
     @staticmethod
     def enroll(db, composite_id, size):
@@ -50,23 +51,40 @@ class CloudPublisher:
         db.execute('''UPDATE cloud_publications SET version=version+1, approved=?, next_attempt=0,
             attempts=0, last_error=NULL WHERE composite_id=? AND approved<>?''', (approved, composite_id, approved))
 
+    def ready_url(self, row):
+        if not row or not row['approved'] or row['synced_version'] != row['version']:
+            return None
+        if not row['expires_at'] or row['expires_at'] <= time.time():
+            return None
+        url = row['share_url']
+        prefix = f"{self.origin}/p/{row['composite_id']}."
+        if url and url.startswith(prefix) and re.fullmatch(r'[a-f0-9]{64}', url[len(prefix):]):
+            return url
+
     def share(self, sid, owner):
         with self.repo.db.connect() as db:
             self.repo.authorize(db, sid, owner)
             if not self.configured:
                 return {'state': 'local'}
             row = db.execute('''SELECT q.* FROM cloud_publications q JOIN session_finals f
-                ON f.composite_id=q.composite_id WHERE f.session_id=?''', (sid,)).fetchone()
+                ON f.composite_id=q.composite_id WHERE f.session_id=? AND NOT EXISTS
+                (SELECT 1 FROM shares s WHERE s.composite_id=q.composite_id AND s.revoked_at IS NOT NULL)''', (sid,)).fetchone()
+            url = self.ready_url(row)
+            local = self.repo.sharing.metadata(db, row['composite_id'], prepare_print=False) if url else None
         if not row or not row['approved']:
             return {'state': 'local'}
         if row['synced_version'] != row['version']:
             return {'state': 'pending', 'composite_id': row['composite_id']}
-        if not row['expires_at'] or row['expires_at'] <= time.time():
+        if not url:
             return {'state': 'expired', 'composite_id': row['composite_id']}
-        return {'state': 'ready', 'composite_id': row['composite_id'], 'share_url': row['share_url'],
+        qr = self.repo.sharing.qr_bytes(url)
+        if local and not local['print_ready']:
+            self.repo.print_ready.prepare_async(local['final_id'])
+        print_asset = {field: local[field] for field in ('final_id', 'image_url', 'download_url', 'print_ready_version')} if local and local['print_ready'] else None
+        return {'state': 'ready', 'composite_id': row['composite_id'], 'share_url': url,
                 'public_ready': True, 'expires_at': datetime.fromtimestamp(row['expires_at'], timezone.utc).isoformat(),
-                'qr_image_data': 'data:image/png;base64,' + base64.b64encode(
-                    self.repo.sharing.qr_bytes(row['share_url'])).decode('ascii')}
+                'print_asset': print_asset,
+                'qr_image_data': 'data:image/png;base64,' + base64.b64encode(qr).decode('ascii')}
 
     def upload(self, key, data, mime):
         helper = Path(__file__).resolve().parents[3] / 'cloud' / 'upload.mjs'
@@ -107,6 +125,7 @@ class CloudPublisher:
             state = db.execute('SELECT completed FROM photo_deletions WHERE composite_id=?', (item,)).fetchone()
             db.execute('UPDATE photo_deletions SET next_attempt=0 WHERE composite_id=? AND completed=0', (item,))
             db.commit()
+        self.wake()
         return {'state': 'deleted' if state['completed'] else 'pending'}
 
     def process_deletion(self):
@@ -180,8 +199,9 @@ class CloudPublisher:
 
     def process_one(self):
         with self.repo.db.connect() as db:
-            job = db.execute('''SELECT q.*, c.path, c.sha256, c.width, c.height, c.session_id
+            job = db.execute('''SELECT q.*, c.path, c.sha256, c.width, c.height, c.session_id, f.confirmed_at
                 FROM cloud_publications q JOIN composites c ON c.id=q.composite_id
+                JOIN session_finals f ON f.composite_id=q.composite_id
                 WHERE q.version>q.synced_version AND q.next_attempt<=?
                 ORDER BY q.approved, q.next_attempt LIMIT 1''', (time.time(),)).fetchone()
         if job is None:
@@ -194,6 +214,8 @@ class CloudPublisher:
                 return True
         payload = {'id': item, 'version': version, 'approved': bool(job['approved'])}
         thumb_size = None
+        upload_ms = 0
+        since_confirm_ms = (time.time() - datetime.fromisoformat(job['confirmed_at']).timestamp()) * 1000
         stage = 'upload'
         try:
             if job['approved']:
@@ -214,13 +236,16 @@ class CloudPublisher:
                 thumb = output.getvalue()
                 thumb_size = len(thumb)
                 thumb_sha = hashlib.sha256(thumb).hexdigest()
+                upload_started = time.perf_counter()
                 self.upload(f'photos/{item}/{job["sha256"]}.png', data, 'image/png')
                 self.upload(f'photos/{item}/{thumb_sha}.jpg', thumb, 'image/jpeg')
+                upload_ms = (time.perf_counter() - upload_started) * 1000
                 payload.update(sha=job['sha256'], size=len(data), width=job['width'], height=job['height'],
                                thumb_sha=thumb_sha, thumb_size=thumb_size)
                 if not self.still_eligible(item,version):
                     return True
             stage = 'register'
+            register_started = time.perf_counter()
             result = self.register(payload)
             if not isinstance(result,dict):
                 raise ValueError('Invalid catalog response')
@@ -236,8 +261,12 @@ class CloudPublisher:
                     share_url=?,expires_at=?,thumbnail_bytes=COALESCE(?,thumbnail_bytes),last_error=NULL
                     WHERE composite_id=? AND version=?''',
                     (self.origin + share_path if job['approved'] else None, expires, thumb_size, item, version))
-            logging.getLogger(__name__).info('cloud_publication confirmed id=%s bytes=%s thumbnail=%s approved=%s',
-                                             item, job['size_bytes'], thumb_size, bool(job['approved']))
+            logging.getLogger(__name__).info(
+                'cloud_publication id=%s approved=%s bytes=%s worker_since_confirm_ms=%.1f blob_upload_ms=%.1f '
+                'catalog_ack_ms=%.1f share_since_confirm_ms=%.1f',
+                item, bool(job['approved']), job['size_bytes'], since_confirm_ms, upload_ms,
+                (time.perf_counter()-register_started)*1000,
+                (time.time()-datetime.fromisoformat(job['confirmed_at']).timestamp())*1000)
         except (OSError, ValueError, subprocess.SubprocessError):
             delay = min(300, 5 * 2 ** min(6, job['attempts']))
             with self.repo.db.connect() as db:
@@ -249,17 +278,19 @@ class CloudPublisher:
     def start(self):
         def run():
             while not self.stopping.is_set():
+                self.work_available.clear()
                 try:
                     more = self.process_deletion() or (self.configured and self.process_one())
                 except Exception:
                     logging.getLogger(__name__).exception('cloud publication worker failed')
                     more = False
-                self.stopping.wait(0.1 if more else 3)
+                self.work_available.wait(0.1 if more else 3)
 
         self.thread = threading.Thread(target=run, daemon=True, name='photobooth-cloud-publication')
         self.thread.start()
 
     def stop(self):
         self.stopping.set()
+        self.wake()
         if self.thread:
             self.thread.join(timeout=3)

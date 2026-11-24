@@ -103,6 +103,7 @@ class EventDisplay:
                 db.execute('UPDATE event_display_photos SET approved=0,hidden_at=? WHERE session_id=?',(time.time(),sid))
             self.repo.cloud.set_approval(db,row['id'],payload.approved)
             db.commit()
+        self.repo.cloud.wake()
         return {'approved':payload.approved}
 
 

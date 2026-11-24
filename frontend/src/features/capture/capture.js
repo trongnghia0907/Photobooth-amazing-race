@@ -160,7 +160,8 @@ export function updateCaptureScreenUI(app) {
   const control=document.getElementById('mainCaptureBtn');
   if(control){control.disabled=!!(app.captureBusy||app.persistenceBusy||app.sequenceStarting);control.setAttribute('aria-pressed',String(!!app.sequencePaused));}
   for(const id of ['manualInstantSnapBtn','resetAllShotsBtn','cancelRetakeBtn']){
-    const button=document.getElementById(id);if(button)button.disabled=!!(app.captureBusy||app.persistenceBusy);
+    const button=document.getElementById(id);if(button)button.disabled=!!(app.captureBusy||app.persistenceBusy
+      ||(id==='manualInstantSnapBtn'&&app.isCapturingSequence&&!app.sequencePaused));
   }
   const complete=document.getElementById('completeCaptureBtn');
   if(complete){
@@ -174,7 +175,8 @@ export function updateCaptureScreenUI(app) {
 }
 
 export async function captureCurrentFrameImmediately(app) {
-  if (app.persistenceBusy || app.captureBusy || app.sequenceStarting || app.hasPendingWork()) return;
+  if (app.persistenceBusy || app.captureBusy || app.sequenceStarting
+      || (app.isCapturingSequence&&!app.sequencePaused) || app.hasPendingWork()) return;
   const paused=app.sequencePaused;
   app.clearTimers();
   // A manual shot cancels the obsolete countdown, but keeps paused controls.

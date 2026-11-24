@@ -25,6 +25,7 @@ from ..images import atomic_write, is_jpeg_image
 SHOT = 0xffffc001
 LIVE = 0xffffc002
 FILE_INFO = 0xd215
+UNCLAIMED_BUFFER = 'Camera contains an unclaimed image after reconciliation. Preserve it; no new shutter was sent.'
 LIVE_STATUS = 0xd221
 SAVE_DESTINATION = 0xd222
 ONE_SHOT = 0xd2c7
@@ -432,7 +433,7 @@ class SonyPtpDriver:
             # Also reject a late/unclaimed image after an earlier cancellation.
             # Do not consume or label it as a new session's photograph.
             if self._value(self._properties(deadline),FILE_INFO)!=0:
-                raise CameraError('camera_recovery_pending','Camera contains an unclaimed image after reconciliation. Preserve it; no new shutter was sent.',stage='transfer',uncertain=True)
+                raise CameraError('camera_recovery_pending',UNCLAIMED_BUFFER,stage='transfer',uncertain=True)
             return results
 
     def supersede_capture(self, capture_id, session_id, successor_id, deadline):
@@ -526,13 +527,15 @@ class SonyPtpDriver:
         if self._unassigned_pending():
             raise CameraError('camera_recovery_pending','The operator must finish verifying the preserved Sony buffer before a new shutter.',shutter_dispatched=False)
 
-    def preserve_unassigned_buffer(self, capture_id, deadline, *, known_hashes):
+    def preserve_unassigned_buffer(self, capture_id, deadline, *, known_hashes, unclaimed_preflight=False):
         """Preserve one ready buffer object without assigning it to any slot."""
         with self.lock:
             self._ready()
             journal,_=self._paths(capture_id)
-            record=json.loads(journal.read_bytes())
-            if (record.get('status')!='superseded' or not record.get('buffer_checked_at')
+            record={} if unclaimed_preflight else json.loads(journal.read_bytes())
+            if unclaimed_preflight and journal.exists():
+                raise CameraError('recovery_required','A shutter receipt exists. Use the original capture recovery.')
+            if not unclaimed_preflight and (record.get('status')!='superseded' or not record.get('buffer_checked_at')
                     or record.get('capture_outcome')!='buffer_empty_original_unavailable'
                     or record.get('release_pending') is not False or record.get('half_release_pending')
                     or not (record.get('identity_conflict') or {}).get('observed')):
@@ -564,14 +567,14 @@ class SonyPtpDriver:
                     raise CameraError('recovery_required',f'Expected one ready Sony JPEG; FILE_INFO=0x{count:04X}.')
                 info=object_info(self._command(0x1008,(SHOT,),deadline=deadline))
                 if (info['format']!=0x3801 or not info['name'].lower().endswith(('.jpg','.jpeg'))
-                        or info!=(record.get('identity_conflict') or {}).get('observed')):
+                        or (not unclaimed_preflight and info!=(record.get('identity_conflict') or {}).get('observed'))):
                     raise CameraError('recovery_required','The current ObjectInfo differs from the recorded unmatched JPEG; preserve the camera buffer for inspection.')
                 if shutil.disk_usage(self.root).free<=info['size']:
                     raise CameraError('recovery_required','Insufficient space to preserve the buffered original.')
                 recovery_id=str(uuid.uuid4())
                 audit=directory/(recovery_id+'.json')
                 evidence={'recovery_id':recovery_id,'status':'transfer_started','blocking_receipt':capture_id,
-                          'old_object':record['object'],'observed_object':info,'file_info_before':count,
+                          'old_object':record.get('object'),'observed_object':info,'file_info_before':count,
                           'save_destination':self._value(props,SAVE_DESTINATION),
                           'started_at':datetime.now(timezone.utc).isoformat()}
                 atomic_write(audit,json.dumps(evidence,sort_keys=True).encode())
@@ -770,6 +773,14 @@ class SonyPtpDriver:
                     # path proves that the full-press command was never sent.
                     record.update(shutter_not_dispatched=True,release_pending=False)
                     self._record(journal,record)
+                # A failed focus/property read can leave both controls pressed.
+                # Release the journaled controls while this connection is usable.
+                # Keep the original error and receipt if release also fails.
+                if self.connected:
+                    try:self.recover_capture(capture_id,deadline)
+                    except CameraError:
+                        logging.getLogger('uvicorn.error').warning(
+                            'sony_release_pending capture_id=%s; recover the same receipt', capture_id)
                 error.uncertain = shutter_dispatched is not False
                 error.shutter_dispatched = shutter_dispatched
                 raise

@@ -433,7 +433,14 @@ async function loadStoredPhoto(app,result,operation,context){
   if(!response.ok)throw new Error('The photo was saved but could not be loaded on screen. Select Retry Save; you do not need to retake it.');
   const url=URL.createObjectURL(await response.blob());
   try{
-    const image=await new Promise((resolve,reject)=>{const img=new Image();img.onload=()=>resolve(img);img.onerror=()=>reject(new Error('Could not read the saved camera photo.'));img.src=url;});
+    const image=await new Promise((resolve,reject)=>{
+      const img=new Image();
+      const finish=callback=>{clearTimeout(timer);img.onload=null;img.onerror=null;callback();};
+      const timer=setTimeout(()=>finish(()=>reject(new Error('The saved photo could not be decoded in time. Select Retry Save.'))),20000);
+      img.onload=()=>finish(()=>resolve(img));
+      img.onerror=()=>finish(()=>reject(new Error('Could not read the saved camera photo.')));
+      img.src=url;
+    });
     const canvas=document.createElement('canvas');canvas.width=image.naturalWidth;canvas.height=image.naturalHeight;
     canvas.getContext('2d').drawImage(image,0,0); // saved capture file, never the preview element
     return canvas;

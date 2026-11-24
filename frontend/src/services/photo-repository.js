@@ -221,6 +221,7 @@ export async function confirmAndSaveSession(app,publishToEvent=false) {
   if (app.persistenceBusy || app.captureBusy || pending(app)) return;
   if (app.serverSession?.finalized) return app.generateQRCodeForCurrentPhoto(true);
   if (!app.photos.every(Boolean)) return;
+  app.qrStartedAt=performance.now();
   app.clearTimers();
   busy(app, true);
   // Freeze the editor only while its chosen snapshot is being persisted.

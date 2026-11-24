@@ -118,21 +118,6 @@ async function showDetail(sid){
       info.className='muted';card.append(info);
     }
     if(c.print_ready_url){
-      imageLink(card,c.print_ready_url,'bản in có QR');
-      const preview=el('section');preview.className='print-page-preview';card.append(preview);
-      preview.append(button('Xem trước trên giấy',async()=>{
-        const printerId=$('printers').dataset.saved;
-        const {selected}=await api('/printers/media?printer_id='+encodeURIComponent(printerId));
-        const params=new URLSearchParams({printer_id:printerId});
-        if(selected.paper_id)params.set('paper_id',selected.paper_id);
-        if(selected.orientation)params.set('orientation',selected.orientation);
-        const page=await api('/printers/preview?'+params);
-        if(!page)throw new Error('Driver của máy in đã chọn chưa cung cấp vùng in.');
-        const paper=el('div');paper.className='print-paper';paper.style.aspectRatio=page.ratio;
-        const image=el('img');image.src=c.print_ready_url;image.alt='Bản in có QR trong vùng in của khổ giấy';
-        for(const field of ['left','top','width','height'])image.style[field]=`${page[field]*100}%`;
-        paper.append(image);preview.querySelector('.print-paper')?.remove();preview.append(paper);
-      }));
       const controls=el('div');controls.className='actions';const copies=el('input');copies.type='number';copies.min=1;copies.max=maxCopies;copies.value=1;copies.setAttribute('aria-label','Số bản in lại');controls.append(copies);card.append(controls);
       let operation;
       controls.append(button('In lại',async()=>{
@@ -376,7 +361,6 @@ exclusive('savePrinterMedia',async()=>{
   const orientation=$('paperOrientation').value||null;
   await api('/printers/selected',{method:'PUT',body:{printer_id,paper_id,orientation}});
   $('printerMediaStatus').textContent='Đã lưu. Thiết lập áp dụng cho job in mới.';
-  document.querySelectorAll('.print-paper').forEach(paper=>paper.remove());
 });
 exclusive('saveCamera',async()=>{await api('/camera/config',{method:'PUT',body:{adapter:$('cameraAdapter').value,guest_enabled:$('cameraGuestEnabled').checked}});message('Đã cập nhật camera host.');await refresh();});
 exclusive('disconnectCamera',async()=>{await api('/camera/disconnect',{method:'POST'});message('Đã ngắt camera host.');await refresh();});

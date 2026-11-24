@@ -15,6 +15,7 @@ admin = APIRouter(prefix='/api/admin')
 class PrintRequest(BaseModel):
     final_id: UUID
     copies: StrictInt = 1
+    print_ready_version: str | None = Field(default=None, pattern=r'^[a-f0-9]{64}$')
 
 
 @router.get('/print-config')
@@ -24,7 +25,8 @@ def print_config(request: Request):
 
 @router.post('/sessions/{sid}/print-jobs')
 def enqueue(request: Request, sid: UUID, payload: PrintRequest, owner: Auth, key: Key):
-    return request.app.state.printing.enqueue(str(sid),str(payload.final_id),payload.copies,key,owner)
+    return request.app.state.printing.enqueue(str(sid),str(payload.final_id),payload.copies,key,owner,
+                                              print_version=payload.print_ready_version)
 
 
 @router.get('/sessions/{sid}/print-jobs/{job_id}')

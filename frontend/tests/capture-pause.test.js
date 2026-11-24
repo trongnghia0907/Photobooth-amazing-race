@@ -34,7 +34,12 @@ async function scenario(count,action){
 }
 
 for(const count of [4,6])test(`${count} shots: fractional countdown pause, gap pause, rapid resume and automatic Review`,()=>scenario(count,async({app,nodes,shots,advance,start,reviews,timers})=>{
-  await start();await advance(1500);await start();
+  await start();
+  assert.equal(nodes.manualInstantSnapBtn.disabled,true);
+  await captureCurrentFrameImmediately(app);
+  assert.deepEqual(shots,[]);
+  await advance(1500);await start();
+  assert.equal(nodes.manualInstantSnapBtn.disabled,false);
   assert.equal(nodes.mainCaptureBtnText.textContent,'Resume Capture');assert.equal(app.countdownState.remainingMs,1500);
   assert.equal(document.body.classList.contains('host-capture-fullscreen'),false);
   assert.equal(nodes.countdownOverlay.classList.contains('hidden'),true);

@@ -16,7 +16,7 @@ sys.path.insert(0,str(ROOT/'backend'))
 sys.path.insert(0,str(ROOT))
 from app.runtime_lock import RuntimeLock
 from app.services.camera.base import CameraError
-from app.services.camera.sony_ptp import SonyPtpDriver
+from app.services.camera.sony_ptp import SonyPtpDriver, UNCLAIMED_BUFFER
 from scripts.diagnose_sony_camera import probe_windows
 
 
@@ -73,8 +73,15 @@ def cancel(storage, capture_id, *, confirm_discard, timeout=15, isolation_step=N
             driver=SonyPtpDriver(storage,timeout)
             if isolation_step!='power_off':driver.connect()
             if preserve_buffer:
-                if db.execute("""SELECT 1 FROM camera_captures WHERE adapter_mode='sony_zve10' AND id!=?
-                    AND uncertain=1 AND status!='captured' AND COALESCE(error_code,'') NOT IN ('capture_cancelled','capture_superseded') LIMIT 1""",(capture_id,)).fetchone():
+                def blocked_before_shutter(item):
+                    return (item['status']=='failed' and item['error_code']=='camera_recovery_pending'
+                            and item['error_message']==UNCLAIMED_BUFFER and not item['adapter_reference']
+                            and not item['native_path'] and not item['photo_id']
+                            and not (root/(item['id']+'.json')).exists())
+                unclaimed_preflight=blocked_before_shutter(row)
+                other=db.execute("""SELECT * FROM camera_captures WHERE adapter_mode='sony_zve10' AND id!=?
+                    AND uncertain=1 AND status!='captured' AND COALESCE(error_code,'') NOT IN ('capture_cancelled','capture_superseded')""",(capture_id,))
+                if any(not blocked_before_shutter(item) for item in other):
                     raise RuntimeError('Another Sony capture is unresolved. Use the original recovery for it first.')
                 known_hashes={}
                 for other in db.execute('SELECT id,native_sha256 FROM camera_captures WHERE native_sha256 IS NOT NULL'):
@@ -83,7 +90,13 @@ def cancel(storage, capture_id, *, confirm_discard, timeout=15, isolation_step=N
                     record=json.loads(path.read_bytes())
                     for digest in (record.get('sha256'),record.get('received_sha256')):
                         if digest:known_hashes.setdefault(digest,set()).add(path.stem)
-                return driver.preserve_unassigned_buffer(capture_id,time.monotonic()+timeout,known_hashes=known_hashes)
+                result=driver.preserve_unassigned_buffer(capture_id,time.monotonic()+timeout,known_hashes=known_hashes,
+                                                        unclaimed_preflight=unclaimed_preflight)
+                if unclaimed_preflight and result['buffer_drained']:
+                    db.execute("""UPDATE camera_captures SET error_code='capture_cancelled', uncertain=0,
+                        error_message='No shutter sent. Unassigned JPEG preserved separately.',
+                        updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=?""",(capture_id,))
+                return result
             receipt=driver.cancel_capture(capture_id,time.monotonic()+timeout,confirm_discard=True,isolation_step=isolation_step)
             if isolation_step=='verify_reconnect' and receipt.get('isolation_verified_at'):
                 return {'status':'abandonment_isolated','physical_outcome':'uncertain','file_info':'0x0000',

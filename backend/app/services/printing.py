@@ -115,11 +115,14 @@ class PrintingService:
             raise HTTPException(409, 'File print-ready bị mất/thay đổi; cần khôi phục storage. Không in.')
         return path
 
-    def enqueue(self, sid, final_id, copies, key, owner=None, retry_of=None, acknowledge=False):
+    def enqueue(self, sid, final_id, copies, key, owner=None, retry_of=None, acknowledge=False, *, print_version=None):
         if type(copies) is not int or not 1 <= copies <= self.settings.max_print_copies:
             raise HTTPException(422, f'Số bản in phải từ 1 đến {self.settings.max_print_copies}')
         scope = 'owner:'+sid if owner is not None else 'host'
-        fingerprint = digest(canonical({'session':sid,'final':final_id,'copies':copies,'retry':retry_of}))
+        payload = {'session':sid,'final':final_id,'copies':copies,'retry':retry_of}
+        if print_version:
+            payload['print_version'] = print_version
+        fingerprint = digest(canonical(payload))
         with self.repo.db.connect() as db:
             db.execute('BEGIN IMMEDIATE')
             if owner is not None:
@@ -137,6 +140,8 @@ class PrintingService:
             ready=self.repo.print_ready.ensure(db,final_id,[])
             if not ready:raise HTTPException(503,'Chờ URL HTTPS công khai hoạt động để tạo bản in có QR. Không in QR localhost.')
             self.checked_file(ready['path'], ready['sha256'])
+            if print_version and print_version != ready['sha256']:
+                raise HTTPException(409, 'Print version changed. Refresh the preview.')
             if retry_of:
                 previous = db.execute('SELECT * FROM print_jobs WHERE id=?', (retry_of,)).fetchone()
                 if not previous or previous['status'] != 'failed' or previous['final_id'] != final_id:
@@ -187,6 +192,9 @@ class PrintingService:
                 raise PrinterError('Printer mode đã thay đổi. Host cần kiểm tra rồi retry rõ ràng.')
             with self.repo.db.connect() as db:
                 active = db.execute('SELECT 1 FROM shares WHERE id=? AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at>?)', (row['final_id'],now())).fetchone()
+                if active and self.repo.cloud.configured:
+                    current = self.repo.print_ready.current(db, row['final_id'])
+                    active = current and current['sha256'] == row['sha256']
             if not active:
                 raise PrinterError('QR đã hết hạn/bị thu hồi khi job đang chờ. Không gửi in.')
             path = self.checked_file(row['print_ready_file'],row['sha256'])
